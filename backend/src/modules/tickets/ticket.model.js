@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import {
-  CATEGORIES, LABELS, SEVERITIES, PRIORITIES, LINK_RELS, STAGE_DECISIONS, STAGE_KEYS,
+  CATEGORIES, ENVIRONMENTS, LABELS, SEVERITIES, PRIORITIES, LINK_RELS, STAGE_DECISIONS, STAGE_KEYS,
 } from '@pms/shared';
 import toJSON from '../../platform/toJSON.plugin.js';
 
@@ -98,10 +98,12 @@ const ticketSchema = new mongoose.Schema(
     project: { type: objectId, ref: 'Project', required: true, index: true },
     title: { type: String, required: true, trim: true },
     description: { type: String, trim: true },
+    stepsToReproduce: { type: String, trim: true },
 
     // Validated against project.modules in the service, not by an enum here.
     module: { type: String, trim: true },
     page: { type: String, trim: true },
+    environment: { type: String, enum: ENVIRONMENTS, default: 'Staging' },
 
     category: { type: String, enum: CATEGORIES },
     labels: { type: [{ type: String, enum: LABELS }], default: [] },

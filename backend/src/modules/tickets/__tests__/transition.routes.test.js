@@ -37,12 +37,19 @@ async function seed() {
     .set('Authorization', bearer(admin))
     .send({
       project: String(project._id),
-      title: 'Broken login',
+      title: 'Broken login button',
+      description: 'Expected login to succeed but the button does nothing when clicked.',
       assignedTo: String(admin._id),
-      estimatedResolutionAt: IN_A_WEEK,
-      expectedReleaseDate: IN_A_WEEK,
     })
     .expect(201);
+
+  // Estimates are triage fields — set directly so transition guards can be exercised.
+  await Ticket.updateOne({ _id: created.body.id }, {
+    $set: {
+      estimatedResolutionAt: IN_A_WEEK,
+      expectedReleaseDate: IN_A_WEEK,
+    },
+  });
 
   return { admin, ticket: created.body };
 }

@@ -33,13 +33,19 @@ async function actorAndProject(role = 'member') {
   return { user, project };
 }
 
+const createBody = (projectId, title = 'Broken login button') => ({
+  project: String(projectId),
+  title,
+  description: 'Expected login to succeed but the button does nothing when clicked.',
+});
+
 test('POST /v1/tickets creates and returns 201 with a ticketId', async () => {
   const { user, project } = await actorAndProject();
 
   const res = await request(app())
     .post('/v1/tickets')
     .set('Authorization', bearer(user))
-    .send({ project: String(project._id), title: 'Broken login' })
+    .send(createBody(project._id))
     .expect(201);
 
   assert.equal(res.body.ticketId, 'WEB-1');
@@ -48,7 +54,7 @@ test('POST /v1/tickets creates and returns 201 with a ticketId', async () => {
 test('PATCH /v1/tickets/:id rejects status outright', async () => {
   const { user, project } = await actorAndProject();
   await request(app()).post('/v1/tickets').set('Authorization', bearer(user))
-    .send({ project: String(project._id), title: 'Broken login' });
+    .send(createBody(project._id));
 
   const res = await request(app())
     .patch('/v1/tickets/WEB-1')
@@ -64,12 +70,12 @@ test('PATCH /v1/tickets/:id rejects status outright', async () => {
 test('a body carrying role or createdBy is rejected, not silently dropped', async () => {
   const { user, project } = await actorAndProject('member');
   await request(app()).post('/v1/tickets').set('Authorization', bearer(user))
-    .send({ project: String(project._id), title: 'Broken login' });
+    .send(createBody(project._id));
 
   const res = await request(app())
     .patch('/v1/tickets/WEB-1')
     .set('Authorization', bearer(user))
-    .send({ revision: 0, priority: 'urgent', role: 'admin' })
+    .send({ revision: 0, priority: 'Urgent', role: 'admin' })
     .expect(400);
 
   assert.equal(res.body.error.code, 'VALIDATION_ERROR');
@@ -87,7 +93,7 @@ test('an unauthenticated request gets 401 carrying a requestId', async () => {
 test('DELETE /v1/tickets/:id is admin-only and returns 403 for a lead', async () => {
   const { user, project } = await actorAndProject('lead');
   await request(app()).post('/v1/tickets').set('Authorization', bearer(user))
-    .send({ project: String(project._id), title: 'Broken login' });
+    .send(createBody(project._id));
 
   const res = await request(app())
     .delete('/v1/tickets/WEB-1')
@@ -100,20 +106,20 @@ test('DELETE /v1/tickets/:id is admin-only and returns 403 for a lead', async ()
 test('GET /v1/tickets/:id resolves the human ticketId', async () => {
   const { user, project } = await actorAndProject();
   await request(app()).post('/v1/tickets').set('Authorization', bearer(user))
-    .send({ project: String(project._id), title: 'Broken login' });
+    .send(createBody(project._id));
 
   const res = await request(app())
     .get('/v1/tickets/WEB-1')
     .set('Authorization', bearer(user))
     .expect(200);
 
-  assert.equal(res.body.title, 'Broken login');
+  assert.equal(res.body.title, 'Broken login button');
 });
 
 test('POST /v1/tickets/bulk returns per-item results, not blanket success', async () => {
   const { user, project } = await actorAndProject('lead');
   await request(app()).post('/v1/tickets').set('Authorization', bearer(user))
-    .send({ project: String(project._id), title: 'One' });
+    .send(createBody(project._id, 'Ticket one for bulk assign'));
 
   const res = await request(app())
     .post('/v1/tickets/bulk')

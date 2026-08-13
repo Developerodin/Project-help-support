@@ -148,9 +148,9 @@ test('drill counts by dimension and names the empty case explicitly', async () =
   const web = await project();
 
   await Ticket.insertMany([
-    row(1, { project: web._id, status: 'pending', module: 'ATS', severity: 'critical' }),
-    row(2, { project: web._id, status: 'pending', module: 'ATS', severity: 'minor' }),
-    row(3, { project: web._id, status: 'pending', severity: 'minor' }),
+    row(1, { project: web._id, status: 'pending', module: 'ATS', severity: 'Critical' }),
+    row(2, { project: web._id, status: 'pending', module: 'ATS', severity: 'Minor' }),
+    row(3, { project: web._id, status: 'pending', severity: 'Minor' }),
   ]);
 
   const byModule = await drill(actor, { dimension: 'module' });
@@ -161,7 +161,7 @@ test('drill counts by dimension and names the empty case explicitly', async () =
 
   const bySeverity = await drill(actor, { dimension: 'severity' });
   assert.deepEqual(bySeverity.rows, [
-    { key: 'minor', count: 2 },
-    { key: 'critical', count: 1 },
+    { key: 'Minor', count: 2 },
+    { key: 'Critical', count: 1 },
   ]);
 });

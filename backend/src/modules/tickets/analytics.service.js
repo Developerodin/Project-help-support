@@ -33,7 +33,7 @@ export async function overview(actor, query = {}) {
     // Deliberately overlapping: a critical ticket is also counted in its lane.
     // It is reported BESIDE the tiles, never as one of them, so the lane tiles
     // keep summing to the total.
-    if (ticket.severity === 'critical' || (ticket.labels || []).includes('blocker')) {
+    if (ticket.severity === 'Critical' || ticket.severity === 'Blocker') {
       blockerCritical += 1;
     }
   }

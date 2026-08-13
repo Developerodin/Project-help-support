@@ -25,16 +25,16 @@ async function fixture() {
     {
       ticketId: 'WEB-101', project: web._id, title: 'Login button does nothing',
       description: 'Clicking sign in is inert', createdBy: actor._id,
-      severity: 'critical', priority: 'urgent', status: 'pending',
+      severity: 'Critical', priority: 'Urgent', status: 'pending',
     },
     {
       ticketId: 'WEB-102', project: web._id, title: 'Slow dashboard',
       createdBy: other._id, assignedTo: actor._id, status: 'in_progress',
-      severity: 'minor', priority: 'low',
+      severity: 'Minor', priority: 'Low',
     },
     {
       ticketId: 'MOB-1', project: mob._id, title: 'Crash on launch',
-      createdBy: other._id, status: 'pending', severity: 'critical',
+      createdBy: other._id, status: 'pending', severity: 'Critical',
     },
   ]);
 
@@ -86,7 +86,7 @@ test('q matches an exact ticketId that no text index would find', async () => {
 test('filters compose', async () => {
   const { actor, web } = await fixture();
   const page = await listTickets(actor, {
-    project: String(web._id), severity: 'critical', status: 'pending',
+    project: String(web._id), severity: 'Critical', status: 'pending',
   });
   assert.deepEqual(page.results.map((t) => t.ticketId), ['WEB-101']);
 });

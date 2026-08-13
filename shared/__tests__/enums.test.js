@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ROLES, SEVERITIES, PRIORITIES, CATEGORIES, LABELS, LINK_RELS, STAGE_DECISIONS,
+  ROLES, SEVERITIES, PRIORITIES, CATEGORIES, LABELS, ENVIRONMENTS, LINK_RELS, STAGE_DECISIONS,
 } from '../enums.js';
 
-const ALL = { ROLES, SEVERITIES, PRIORITIES, CATEGORIES, LABELS, LINK_RELS, STAGE_DECISIONS };
+const ALL = { ROLES, SEVERITIES, PRIORITIES, CATEGORIES, LABELS, ENVIRONMENTS, LINK_RELS, STAGE_DECISIONS };
 
 test('every enum is a frozen array of unique non-empty strings', () => {
   for (const [name, values] of Object.entries(ALL)) {

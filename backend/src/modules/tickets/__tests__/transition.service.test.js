@@ -23,10 +23,16 @@ async function seed({ estimates = true, owned = true } = {}) {
 
   const ticket = await createTicket(admin, {
     project: web.id,
-    title: 'Broken login',
-    ...(estimates ? { estimatedResolutionAt: IN_A_WEEK, expectedReleaseDate: IN_A_WEEK } : {}),
+    title: 'Broken login button',
+    description: 'Expected login to succeed but the button does nothing when clicked.',
     ...(owned ? { assignedTo: dev._id } : {}),
   });
+
+  if (estimates) {
+    await Ticket.updateOne({ _id: ticket.id }, {
+      $set: { estimatedResolutionAt: IN_A_WEEK, expectedReleaseDate: IN_A_WEEK },
+    });
+  }
 
   return { admin, dev, web, ticket };
 }

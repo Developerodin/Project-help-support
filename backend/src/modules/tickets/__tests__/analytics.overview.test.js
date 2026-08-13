@@ -54,12 +54,12 @@ test('byStage reports all ten stages, including the empty ones', async () => {
   assert.equal(result.byStage.qa_approved, 0);
 });
 
-test('blockerCritical counts critical severity OR the blocker label, once each', async () => {
+test('blockerCritical counts Critical or Blocker severity, once each', async () => {
   await seed([
-    { status: 'pending', severity: 'critical' },
-    { status: 'in_progress', labels: ['blocker'] },
-    { status: 'live', severity: 'critical', labels: ['blocker'] },
-    { status: 'pending', severity: 'minor' },
+    { status: 'pending', severity: 'Critical' },
+    { status: 'in_progress', severity: 'Blocker' },
+    { status: 'live', severity: 'Critical', labels: ['regression'] },
+    { status: 'pending', severity: 'Minor' },
   ]);
 
   const result = await overview(actor, {});
@@ -71,12 +71,12 @@ test('blockerCritical counts critical severity OR the blocker label, once each',
 
 test('the same filters as the ticket list apply, and the sum still holds', async () => {
   const project = await seed([
-    { status: 'pending', severity: 'critical' },
-    { status: 'live', severity: 'minor' },
+    { status: 'pending', severity: 'Critical' },
+    { status: 'live', severity: 'Minor' },
   ]);
 
   const filtered = await overview(actor, {
-    project: String(project._id), severity: 'critical',
+    project: String(project._id), severity: 'Critical',
   });
 
   assert.equal(filtered.total, 1);

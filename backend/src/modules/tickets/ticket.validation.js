@@ -1,5 +1,7 @@
 import Joi from 'joi';
-import { CATEGORIES, LABELS, SEVERITIES, PRIORITIES, STAGE_KEYS } from '@pms/shared';
+import {
+  CATEGORIES, ENVIRONMENTS, LABELS, SEVERITIES, PRIORITIES, STAGE_KEYS,
+} from '@pms/shared';
 
 const objectId = Joi.string().hex().length(24);
 /** :id is either a Mongo id or a human ticketId — both forms, every route. */
@@ -43,20 +45,24 @@ export const clearBlockedSchema = {
 export const createTicketSchema = {
   body: Joi.object({
     project: objectId.required(),
-    title: Joi.string().trim().min(1).max(200).required(),
-    description: Joi.string().trim().max(20000).allow(''),
-    module: Joi.string().trim().max(80),
-    page: Joi.string().trim().max(80),
-    category: Joi.string().valid(...CATEGORIES),
+    title: Joi.string().trim().min(5).max(200).required().messages({
+      'string.min': 'Title must be at least 5 characters long',
+    }),
+    description: Joi.string().trim().min(10).max(5000).required().messages({
+      'string.min': 'Description must be at least 10 characters long',
+    }),
+    stepsToReproduce: Joi.string().trim().max(5000).allow('', null),
+    module: Joi.string().trim().max(100).allow('', null),
+    page: Joi.string().trim().max(100).allow('', null),
+    category: Joi.string().valid(...CATEGORIES).default('Bug'),
     labels: Joi.array().items(Joi.string().valid(...LABELS)).default([]),
-    severity: Joi.string().valid(...SEVERITIES),
-    priority: Joi.string().valid(...PRIORITIES),
+    severity: Joi.string().valid(...SEVERITIES).default('Major'),
+    priority: Joi.string().valid(...PRIORITIES).default('Medium'),
+    environment: Joi.string().valid(...ENVIRONMENTS).default('Staging'),
     assignedTo: objectId,
     testedBy: objectId,
     team: objectId,
     watchers: Joi.array().items(objectId).default([]),
-    estimatedResolutionAt: Joi.date().iso(),
-    expectedReleaseDate: Joi.date().iso(),
   }),
 };
 
@@ -73,10 +79,12 @@ export const patchTicketSchema = {
       'any.unknown': 'Use POST /v1/tickets/:id/transition to change the stage',
     }),
     createdBy: Joi.any().forbidden(),
-    title: Joi.string().trim().min(1).max(200),
-    description: Joi.string().trim().max(20000).allow(''),
-    module: Joi.string().trim().max(80).allow(null),
-    page: Joi.string().trim().max(80).allow(null),
+    title: Joi.string().trim().min(5).max(200),
+    description: Joi.string().trim().min(10).max(5000),
+    stepsToReproduce: Joi.string().trim().max(5000).allow(null),
+    module: Joi.string().trim().max(100).allow(null),
+    page: Joi.string().trim().max(100).allow(null),
+    environment: Joi.string().valid(...ENVIRONMENTS),
     category: Joi.string().valid(...CATEGORIES),
     labels: Joi.array().items(Joi.string().valid(...LABELS)),
     severity: Joi.string().valid(...SEVERITIES),

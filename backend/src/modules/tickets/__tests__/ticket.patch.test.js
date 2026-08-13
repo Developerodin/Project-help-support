@@ -26,26 +26,26 @@ async function seed() {
 test('a patch with the current revision succeeds and bumps it', async () => {
   const { reporter, ticket } = await seed();
 
-  const updated = await patchTicket(reporter, ticket.id, { revision: 0, priority: 'urgent' });
+  const updated = await patchTicket(reporter, ticket.id, { revision: 0, priority: 'Urgent' });
 
-  assert.equal(updated.priority, 'urgent');
+  assert.equal(updated.priority, 'Urgent');
   assert.equal(updated.revision, 1);
 });
 
 test('a patch with a stale revision returns 409 and overwrites nothing', async () => {
   const { reporter, ticket } = await seed();
 
-  await patchTicket(reporter, ticket.id, { revision: 0, priority: 'urgent' });
+  await patchTicket(reporter, ticket.id, { revision: 0, priority: 'Urgent' });
 
   await assert.rejects(
-    () => patchTicket(reporter, ticket.id, { revision: 0, severity: 'minor' }),
+    () => patchTicket(reporter, ticket.id, { revision: 0, severity: 'Minor' }),
     (err) => err.statusCode === 409
       && err.code === 'STALE_REVISION'
       && err.fields.currentRevision === 1,
   );
 
   const stored = await Ticket.findById(ticket.id);
-  assert.equal(stored.priority, 'urgent', 'the first edit survives');
+  assert.equal(stored.priority, 'Urgent', 'the first edit survives');
   assert.equal(stored.severity, undefined, 'the stale edit was not applied');
 });
 
@@ -53,8 +53,8 @@ test('concurrent patches: one wins, one gets 409', async () => {
   const { reporter, ticket } = await seed();
 
   const results = await Promise.allSettled([
-    patchTicket(reporter, ticket.id, { revision: 0, priority: 'urgent' }),
-    patchTicket(reporter, ticket.id, { revision: 0, priority: 'low' }),
+    patchTicket(reporter, ticket.id, { revision: 0, priority: 'Urgent' }),
+    patchTicket(reporter, ticket.id, { revision: 0, priority: 'Low' }),
   ]);
 
   assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
@@ -65,14 +65,14 @@ test('concurrent patches: one wins, one gets 409', async () => {
 
 test('a patch records an activityLog entry with before and after values', async () => {
   const { reporter, ticket } = await seed();
-  await patchTicket(reporter, ticket.id, { revision: 0, priority: 'urgent' });
+  await patchTicket(reporter, ticket.id, { revision: 0, priority: 'Urgent' });
 
   const last = (await Ticket.findById(ticket.id)).activityLog.at(-1);
 
   assert.equal(last.action, 'updated');
   assert.equal(last.changes.length, 1);
   assert.equal(last.changes[0].field, 'priority');
-  assert.equal(last.changes[0].to, 'urgent');
+  assert.equal(last.changes[0].to, 'Urgent');
 });
 
 test('a member who is neither reporter nor assignee cannot edit', async () => {

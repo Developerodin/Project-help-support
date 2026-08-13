@@ -1,20 +1,30 @@
 /** User roles. Authority in this product is this single field — there is no permission matrix. */
 export const ROLES = Object.freeze(['admin', 'lead', 'qa', 'developer', 'member']);
 
-export const SEVERITIES = Object.freeze(['critical', 'major', 'minor', 'trivial']);
+/** Aligned with Dharwin devTicket.model.js severity enum. */
+export const SEVERITIES = Object.freeze(['Minor', 'Major', 'Critical', 'Blocker']);
 
-export const PRIORITIES = Object.freeze(['urgent', 'high', 'medium', 'low']);
+/** Aligned with Dharwin devTicket.model.js priority enum. */
+export const PRIORITIES = Object.freeze(['Low', 'Medium', 'High', 'Urgent']);
 
-export const CATEGORIES = Object.freeze([
-  'bug', 'ui', 'performance', 'data', 'security', 'enhancement', 'question',
-]);
+/** Aligned with Dharwin devTicket.model.js category enum. */
+export const CATEGORIES = Object.freeze(['Bug', 'New Feature', 'Improvement']);
 
+/** Aligned with Dharwin devTicket.model.js labels enum. */
 export const LABELS = Object.freeze([
-  'blocker', 'regression', 'needs-info', 'duplicate', 'wont-fix', 'good-first-issue',
+  'regression',
+  'needs-repro',
+  'good-first-bug',
+  'performance',
+  'security',
+  'ui',
 ]);
 
-/** Relationship types for Ticket.links[].rel */
-export const LINK_RELS = Object.freeze(['blocks', 'blocked-by', 'duplicates', 'relates-to']);
+/** Aligned with Dharwin devTicket.model.js environment enum. */
+export const ENVIRONMENTS = Object.freeze(['Staging', 'Production']);
+
+/** Relationship types for Ticket.links[].rel — aligned with Dharwin LINK_RELS. */
+export const LINK_RELS = Object.freeze(['blocks', 'blocked-by', 'duplicate-of', 'relates-to']);
 
 /** Ticket.stageHistory[].decision — set only on the QA hops, null everywhere else. */
 export const STAGE_DECISIONS = Object.freeze(['approved', 'rejected']);

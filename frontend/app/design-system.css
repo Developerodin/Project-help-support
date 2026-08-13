@@ -727,7 +727,15 @@ input[type="checkbox"]{ accent-color:var(--sig); width:14px; height:14px; cursor
    fields keep a readable measure, and the width carries the side panel. */
 .formgrid{ display:grid; grid-template-columns:minmax(0,1fr) minmax(320px,380px); gap:24px; align-items:start; }
 .formgrid > .form{ max-width:none; }
-.formside{ display:flex; flex-direction:column; gap:14px; position:sticky; top:calc(var(--bar-h) + 20px); }
+.form-section{ margin:0 0 4px; font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+.form-hint{ margin:0 0 14px; font-size:12px; color:var(--muted); }
+.field-hint{ margin:4px 0 0; font-size:11px; color:var(--muted); }
+.field-hint.invalid{ color:var(--danger); }
+.req{ color:var(--danger); }
+.label-chips{ display:flex; flex-wrap:wrap; gap:6px; }
+.chip{ border:1px solid var(--border); background:var(--panel); border-radius:999px; padding:4px 10px; font-size:11px; cursor:pointer; }
+.chip-on{ background:var(--primary-soft); border-color:var(--primary); color:var(--primary); }
+
 .formside .panel{ background:var(--panel); }
 .formside .panel .note-line{ margin-bottom:12px; }
 @media (max-width:1160px){

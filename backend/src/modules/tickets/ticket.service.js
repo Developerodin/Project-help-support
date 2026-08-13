@@ -33,8 +33,10 @@ export async function createTicket(actor, body) {
     project: project._id,
     title: body.title,
     description: body.description,
+    stepsToReproduce: body.stepsToReproduce,
     module: body.module,
     page: body.page,
+    environment: body.environment,
     category: body.category,
     labels: body.labels || [],
     severity: body.severity,
@@ -45,8 +47,6 @@ export async function createTicket(actor, body) {
     team,
     watchers: body.watchers || [],
     createdBy: actor._id,
-    estimatedResolutionAt: body.estimatedResolutionAt,
-    expectedReleaseDate: body.expectedReleaseDate,
     // The landing entry, so time-in-stage has a start for `pending` without
     // special-casing "the first stage has no history row".
     stageHistory: [{ to: 'pending', by: actor._id, at: now }],
@@ -148,8 +148,9 @@ export async function listTickets(actor, query = {}) {
 }
 
 const EDITABLE_FIELDS = [
-  'title', 'description', 'module', 'page', 'category', 'labels',
-  'severity', 'priority', 'testedBy', 'estimatedResolutionAt', 'expectedReleaseDate',
+  'title', 'description', 'stepsToReproduce', 'module', 'page', 'environment',
+  'category', 'labels', 'severity', 'priority', 'testedBy',
+  'estimatedResolutionAt', 'expectedReleaseDate',
 ];
 
 const sameId = (a, b) => !!a && !!b && String(a._id ?? a) === String(b._id ?? b);

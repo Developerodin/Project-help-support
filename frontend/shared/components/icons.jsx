@@ -47,13 +47,13 @@ export function initials(name = '') {
 }
 
 export function priorityChipClass(priority) {
-  if (priority === 'urgent') return 'chip chip-p1';
+  if (priority === 'Urgent') return 'chip chip-p1';
   if (priority === 'high') return 'chip chip-p2';
   return 'chip chip-p3';
 }
 
 export function priorityLabel(priority) {
-  if (priority === 'urgent') return 'P1';
+  if (priority === 'Urgent') return 'P1';
   if (priority === 'high') return 'P2';
   if (priority === 'medium') return 'P3';
   if (priority === 'low') return 'P4';
