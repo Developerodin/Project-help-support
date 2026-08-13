@@ -33,7 +33,8 @@ async function readError(response) {
   return new ApiClientError({
     status: response.status,
     code: payload.error?.code ?? 'UNKNOWN',
-    message: payload.error?.message ?? response.statusText,
+    message: payload.error?.message
+    ?? (response.statusText?.trim() || `Request failed (${response.status})`),
     fields: payload.error?.fields,
     requestId: payload.requestId,
   });

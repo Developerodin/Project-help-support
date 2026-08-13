@@ -130,3 +130,33 @@ test('POST /v1/tickets/bulk returns per-item results, not blanket success', asyn
   assert.equal(res.body.succeeded, 1);
   assert.equal(res.body.failed, 1);
 });
+
+test('POST /v1/tickets/:id/comments creates a comment', async () => {
+  const { user, project } = await actorAndProject();
+  await request(app()).post('/v1/tickets').set('Authorization', bearer(user))
+    .send(createBody(project._id));
+
+  const res = await request(app())
+    .post('/v1/tickets/WEB-1/comments')
+    .set('Authorization', bearer(user))
+    .send({ content: 'Reproduced on Safari', clientRef: 'client-ref-1' })
+    .expect(201);
+
+  assert.equal(res.body.content, 'Reproduced on Safari');
+  assert.ok(res.body.id || res.body._id);
+});
+
+test('POST /v1/tickets/:id/comments rejects empty content', async () => {
+  const { user, project } = await actorAndProject();
+  await request(app()).post('/v1/tickets').set('Authorization', bearer(user))
+    .send(createBody(project._id));
+
+  const res = await request(app())
+    .post('/v1/tickets/WEB-1/comments')
+    .set('Authorization', bearer(user))
+    .send({ content: '   ', clientRef: 'client-ref-2' })
+    .expect(400);
+
+  assert.equal(res.body.error.code, 'VALIDATION_ERROR');
+  assert.ok(res.body.requestId);
+});

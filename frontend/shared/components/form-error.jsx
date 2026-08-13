@@ -1,10 +1,11 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
-import { copyErrorId, logApiError } from '@/shared/lib/api-error.js';
+import { copyErrorId, logApiError, normalizeApiError } from '@/shared/lib/api-error.js';
 
 export default function FormError({ error }) {
   const [copied, setCopied] = useState(false);
+  const normalized = normalizeApiError(error);
 
   useEffect(() => {
     if (!error) return undefined;
@@ -13,10 +14,10 @@ export default function FormError({ error }) {
     return undefined;
   }, [error]);
 
-  if (!error) return null;
+  if (!normalized) return null;
 
   async function onCopyId() {
-    const ok = await copyErrorId(error.requestId);
+    const ok = await copyErrorId(normalized.requestId);
     if (ok) {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
@@ -26,15 +27,15 @@ export default function FormError({ error }) {
   return (
     <div className="banner" role="alert">
       <div>
-        <div>{error.message}</div>
-        {error.fields && (
+        <div>{normalized.message}</div>
+        {normalized.fields && (
           <ul className="banner-fields">
-            {Object.entries(error.fields).map(([field, message]) => (
+            {Object.entries(normalized.fields).map(([field, message]) => (
               <li key={field}>{String(message)}</li>
             ))}
           </ul>
         )}
-        {error.requestId ? (
+        {normalized.requestId ? (
           <div className="banner-support">
             <button type="button" className="btn btn-sm" onClick={onCopyId}>
               {copied ? 'Copied' : 'Copy error ID'}

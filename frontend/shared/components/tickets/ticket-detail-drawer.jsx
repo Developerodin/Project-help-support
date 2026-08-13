@@ -89,7 +89,7 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
       }
 
       if (apiError.status === 409) await load();
-      if (rethrow) throw err;
+      if (rethrow) throw apiError;
     }
   };
 
@@ -217,5 +217,6 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
     </>
   );
 }
+
 
 
