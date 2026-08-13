@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react';
 import Icon, { initials } from '../icons.jsx';
+import AttachmentUploadLoader from '../attachment-upload-loader.jsx';
 import {
   ATTACHMENT_ACCEPT,
   formatFileSize,
@@ -25,6 +26,7 @@ export default function TicketComments({ ticket, onAdd, onUpload }) {
   const [content, setContent] = useState('');
   const [pendingFiles, setPendingFiles] = useState([]);
   const [attachError, setAttachError] = useState(null);
+  const [uploading, setUploading] = useState(false);
   const inputRef = useRef(null);
 
   function addFiles(incoming) {
@@ -34,14 +36,19 @@ export default function TicketComments({ ticket, onAdd, onUpload }) {
   }
 
   async function submit() {
-    if (!content.trim()) return;
-    if (pendingFiles.length && onUpload) {
-      await onUpload(buildAttachmentFormData(pendingFiles));
-      setPendingFiles([]);
+    if (!content.trim() || uploading) return;
+    setUploading(true);
+    try {
+      if (pendingFiles.length && onUpload) {
+        await onUpload(buildAttachmentFormData(pendingFiles));
+        setPendingFiles([]);
+      }
+      await onAdd({ content, clientRef: crypto.randomUUID() });
+      setContent('');
+      setAttachError(null);
+    } finally {
+      setUploading(false);
     }
-    await onAdd({ content, clientRef: crypto.randomUUID() });
-    setContent('');
-    setAttachError(null);
   }
 
   return (
@@ -85,10 +92,16 @@ export default function TicketComments({ ticket, onAdd, onUpload }) {
           onChange={(e) => setContent(e.target.value)}
         />
         <div className="composer-foot">
+          {uploading ? (
+            <div className="attach-upload-inline attach-upload-inline--composer">
+              <AttachmentUploadLoader variant="compact" />
+            </div>
+          ) : null}
           <button
             type="button"
             className="btn btn-ghost btn-sm"
             onClick={() => inputRef.current?.click()}
+            disabled={uploading}
           >
             <Icon name="clip" size={13} />
             Attach
@@ -114,7 +127,7 @@ export default function TicketComments({ ticket, onAdd, onUpload }) {
             }}
           />
           <span className="spacer" />
-          <button type="button" className="btn btn-primary btn-sm" onClick={submit}>
+          <button type="button" className="btn btn-primary btn-sm" onClick={submit} disabled={uploading}>
             Comment
           </button>
         </div>

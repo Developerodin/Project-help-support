@@ -5,13 +5,14 @@ import TicketDetailDrawer from '../ticket-detail-drawer.jsx';
 
 const getTicket = vi.fn();
 const transitionTicket = vi.fn();
+const uploadAttachments = vi.fn();
 
 vi.mock('@/shared/api/tickets.js', () => ({
   getTicket: (...args) => getTicket(...args),
   transitionTicket: (...args) => transitionTicket(...args),
   patchTicket: vi.fn(),
   addComment: vi.fn(),
-  uploadAttachments: vi.fn(),
+  uploadAttachments: (...args) => uploadAttachments(...args),
   attachmentDownloadUrl: () => '/x',
   watchTicket: vi.fn(),
   unwatchTicket: vi.fn(),
@@ -34,6 +35,7 @@ describe('TicketDetailDrawer', () => {
     getTicket.mockReset().mockResolvedValue(ticket);
     transitionTicket.mockReset()
       .mockResolvedValue({ ...ticket, status: 'under_review', revision: 4 });
+    uploadAttachments.mockReset().mockResolvedValue([]);
   });
 
   it('loads the ticket by its human id and shows the drawer layout', async () => {
@@ -142,6 +144,28 @@ describe('TicketDetailDrawer', () => {
 
     await waitFor(() => {
       expect(document.getElementById('estimatedResolutionAt')).toHaveFocus();
+    });
+  });
+
+  it('shows upload loader while uploading files from the drawer', async () => {
+    let resolveUpload;
+    uploadAttachments.mockImplementation(() => new Promise((resolve) => {
+      resolveUpload = resolve;
+    }));
+
+    render(<TicketDetailDrawer ticketId="WEB-101" onClose={() => {}} onChanged={() => {}} />);
+    await screen.findByText('WEB-101');
+
+    const png = new File(['x'], 'shot.png', { type: 'image/png' });
+    await userEvent.upload(screen.getByLabelText(/add attachments/i), png);
+    await userEvent.click(screen.getByRole('button', { name: /^upload$/i }));
+
+    expect(screen.getByRole('status', { name: /uploading attachment/i })).toBeInTheDocument();
+
+    resolveUpload([]);
+    await waitFor(() => expect(uploadAttachments).toHaveBeenCalled());
+    await waitFor(() => {
+      expect(screen.queryByRole('status', { name: /uploading attachment/i })).not.toBeInTheDocument();
     });
   });
 });

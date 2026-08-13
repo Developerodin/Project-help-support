@@ -5,6 +5,7 @@ import { SEVERITIES, PRIORITIES } from '@pms/shared';
 import { API_URL } from '@/shared/lib/env.js';
 import { attachmentDownloadUrl } from '@/shared/api/tickets.js';
 import Icon, { initials } from '../icons.jsx';
+import AttachmentUploadLoader from '../attachment-upload-loader.jsx';
 import { formatFileSize } from '@/shared/lib/attachment-config.js';
 
 const dateValue = (iso) => (iso ? new Date(iso).toISOString().slice(0, 10) : '');
@@ -24,6 +25,7 @@ export default function TicketFields({
   fieldErrors = {}, onFieldEdit,
 }) {
   const uploadRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
   const [draft, setDraft] = useState({
     priority: ticket.priority || '',
     severity: ticket.severity || '',
@@ -39,14 +41,19 @@ export default function TicketFields({
   const estInvalid = Boolean(fieldErrors.estimatedResolutionAt);
   const releaseInvalid = Boolean(fieldErrors.expectedReleaseDate);
 
-  function submitUpload() {
+  async function submitUpload() {
     const files = uploadRef.current?.files;
-    if (!files?.length || !onUpload) return;
+    if (!files?.length || !onUpload || uploading) return;
     const form = new FormData();
     for (const file of files) form.append('files', file);
     form.append('clientRef', crypto.randomUUID());
-    onUpload(form);
-    uploadRef.current.value = '';
+    setUploading(true);
+    try {
+      await onUpload(form);
+      uploadRef.current.value = '';
+    } finally {
+      setUploading(false);
+    }
   }
 
   const attachments = ticket.attachments ?? [];
@@ -183,15 +190,22 @@ export default function TicketFields({
           <span className="v empty">Nothing attached</span>
         )}
         {onUpload && (
-          <div className="withbtn" style={{ marginTop: 8 }}>
-            <input ref={uploadRef} type="file" multiple className="sr-only" aria-label="Add attachments" />
-            <button type="button" className="btn btn-sm" onClick={() => uploadRef.current?.click()}>
-              Choose files
-            </button>
-            <button type="button" className="btn btn-sm btn-primary" onClick={submitUpload}>
-              Upload
-            </button>
-          </div>
+          <>
+            {uploading ? (
+              <div className="attach-upload-inline">
+                <AttachmentUploadLoader variant="compact" />
+              </div>
+            ) : null}
+            <div className="withbtn" style={{ marginTop: 8 }}>
+              <input ref={uploadRef} type="file" multiple className="sr-only" aria-label="Add attachments" disabled={uploading} />
+              <button type="button" className="btn btn-sm" onClick={() => uploadRef.current?.click()} disabled={uploading}>
+                Choose files
+              </button>
+              <button type="button" className="btn btn-sm btn-primary" onClick={submitUpload} disabled={uploading}>
+                Upload
+              </button>
+            </div>
+          </>
         )}
       </div>
     </aside>

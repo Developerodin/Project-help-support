@@ -13,6 +13,7 @@ import { useProject } from '@/shared/contexts/project-context.jsx';
 import FormError from '@/shared/components/form-error.jsx';
 import ValidationDialog from '@/shared/components/validation-dialog.jsx';
 import AttachmentPicker from '@/shared/components/attachment-picker.jsx';
+import AttachmentUploadLoader from '@/shared/components/attachment-upload-loader.jsx';
 import {
   defaultModulePageSelection,
   defaultPageForModule,
@@ -44,6 +45,7 @@ export default function NewTicketPage() {
   const [projects, setProjects] = useState([]);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [uploadingAttachments, setUploadingAttachments] = useState(false);
   const [showValidation, setShowValidation] = useState(false);
   const [validationDialogOpen, setValidationDialogOpen] = useState(false);
   const [validationItems, setValidationItems] = useState([]);
@@ -153,10 +155,13 @@ export default function NewTicketPage() {
       });
 
       if (attachments.length > 0) {
+        setUploadingAttachments(true);
         try {
           await uploadAttachments(ticket.ticketId, buildAttachmentFormData(attachments));
         } catch {
           // Ticket exists; attachments remain optional and can be added from the drawer.
+        } finally {
+          setUploadingAttachments(false);
         }
       }
 
@@ -338,7 +343,7 @@ export default function NewTicketPage() {
 
           <div className="form-foot new-ticket-foot">
             <button type="submit" className="btn btn-primary" disabled={busy}>
-              {busy ? 'Creating…' : 'File ticket'}
+              {uploadingAttachments ? 'Uploading…' : busy ? 'Creating…' : 'File ticket'}
             </button>
             <button type="button" className="btn" onClick={() => router.back()} disabled={busy}>
               Cancel
@@ -435,6 +440,12 @@ export default function NewTicketPage() {
         items={validationItems}
         onClose={closeValidationDialog}
       />
+
+      {uploadingAttachments ? (
+        <div className="attach-upload-overlay">
+          <AttachmentUploadLoader variant="overlay" label="Uploading…" />
+        </div>
+      ) : null}
     </>
   );
 }

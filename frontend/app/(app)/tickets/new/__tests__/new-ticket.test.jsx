@@ -216,4 +216,32 @@ describe('NewTicketPage', () => {
     await user.click(screen.getByRole('button', { name: /remove shot\.png/i }));
     expect(screen.queryByText('shot.png')).not.toBeInTheDocument();
   });
+
+  it('shows upload loader while attachments upload after create', async () => {
+    let resolveUpload;
+    uploadAttachments.mockImplementation(() => new Promise((resolve) => {
+      resolveUpload = resolve;
+    }));
+
+    const user = userEvent.setup();
+    render(<NewTicketPage />);
+    await screen.findByLabelText(/^project/i);
+
+    await user.clear(screen.getByLabelText(/^title/i));
+    await user.type(screen.getByLabelText(/^title/i), 'Export drops last row');
+    await user.type(screen.getByLabelText(/^description/i), 'Expected all rows in CSV export');
+
+    const png = new File(['x'], 'shot.png', { type: 'image/png' });
+    await user.upload(screen.getByLabelText(/add attachments/i), png);
+
+    await user.click(screen.getByRole('button', { name: /file ticket/i }));
+
+    await waitFor(() => expect(createTicket).toHaveBeenCalled());
+    expect(screen.getByRole('status', { name: /uploading attachment/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /uploading/i })).toBeDisabled();
+
+    resolveUpload([]);
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/tickets?ticket=WEB-42'));
+    expect(screen.queryByRole('status', { name: /uploading attachment/i })).not.toBeInTheDocument();
+  });
 });
