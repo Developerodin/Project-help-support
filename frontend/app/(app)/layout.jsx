@@ -3,7 +3,9 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { AuthProvider, useAuth } from '@/shared/contexts/auth-context.jsx';
+import { ProjectProvider, useProject } from '@/shared/contexts/project-context.jsx';
 import Icon, { initials } from '@/shared/components/icons.jsx';
+import ProjectSwitcher from '@/shared/components/project-switcher.jsx';
 import ThemeToggle from '@/shared/components/theme-toggle.jsx';
 
 const NAV_GROUPS = [
@@ -80,13 +82,19 @@ function RailNav() {
 
 function TopBar() {
   const { user } = useAuth();
+  const { activeProject } = useProject();
   const router = useRouter();
   if (!user) return null;
 
+  const searchHint = activeProject
+    ? `Search tickets, or type ${activeProject.key}-142`
+    : 'Search tickets';
+
   return (
     <div className="topbar">
-      <button type="button" className="search" onClick={() => router.push('/tickets')}>
-        <span className="q">Search tickets</span>
+      <ProjectSwitcher />
+      <button type="button" className="search" onClick={() => router.push('/tickets')} aria-label="Search tickets and pages">
+        <span className="q">{searchHint}</span>
         <kbd>/</kbd>
       </button>
       <span className="spacer" />
@@ -115,15 +123,17 @@ function Guard({ children }) {
 export default function AppLayout({ children }) {
   return (
     <AuthProvider>
-      <div className="app">
-        <RailNav />
-        <main>
-          <TopBar />
-          <Guard>
-            <div className="page">{children}</div>
-          </Guard>
-        </main>
-      </div>
+      <ProjectProvider>
+        <div className="app">
+          <RailNav />
+          <main>
+            <TopBar />
+            <Guard>
+              <div className="page">{children}</div>
+            </Guard>
+          </main>
+        </div>
+      </ProjectProvider>
     </AuthProvider>
   );
 }

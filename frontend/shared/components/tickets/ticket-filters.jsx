@@ -2,7 +2,7 @@
 
 import { STAGES, PRIORITIES } from '@pms/shared';
 
-export default function TicketFilters({ value, projects, onChange }) {
+export default function TicketFilters({ value, onChange }) {
   const set = (key) => (event) => onChange({ ...value, [key]: event.target.value, page: 1 });
   const toggle = (key) => {
     const next = value[key] ? undefined : true;
@@ -20,12 +20,7 @@ export default function TicketFilters({ value, projects, onChange }) {
         onChange={set('q')}
       />
 
-      <select aria-label="Project" value={value.project || ''} onChange={set('project')}>
-        <option value="">All projects</option>
-        {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-      </select>
-
-      <select aria-label="Stage" value={value.status || ''} onChange={set('status')}>
+<select aria-label="Stage" value={value.status || ''} onChange={set('status')}>
         <option value="">Any stage</option>
         {STAGES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
       </select>

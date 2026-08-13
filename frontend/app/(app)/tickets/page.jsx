@@ -1,9 +1,9 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { listTickets } from '@/shared/api/tickets.js';
-import { listProjects } from '@/shared/api/projects.js';
+import { useProject } from '@/shared/contexts/project-context.jsx';
 import { ticketFromSearch, withTicketParam, withoutTicketParam } from '@/shared/lib/deep-link.js';
 import TicketFilters from '@/shared/components/tickets/ticket-filters.jsx';
 import TicketTable from '@/shared/components/tickets/ticket-table.jsx';
@@ -15,7 +15,7 @@ function TicketListPage() {
 
   const [filters, setFilters] = useState({ scope: 'all', page: 1, limit: 25 });
   const [page, setPage] = useState({ results: [], totalResults: 0, page: 1, totalPages: 1 });
-  const [projects, setProjects] = useState([]);
+  const { activeProjectId } = useProject();
   const [openTicketId, setOpenTicketId] = useState(null);
 
   useEffect(() => {
@@ -23,9 +23,16 @@ function TicketListPage() {
     setOpenTicketId(ticketFromSearch(search ? `?${search}` : ''));
   }, [searchParams]);
 
-  useEffect(() => { listProjects().then((p) => setProjects(p.results)); }, []);
+  const queryFilters = useMemo(() => ({
+    ...filters,
+    project: activeProjectId || undefined,
+  }), [filters, activeProjectId]);
 
-  const reload = useCallback(() => { listTickets(filters).then(setPage); }, [filters]);
+  useEffect(() => {
+    setFilters((current) => (current.page === 1 ? current : { ...current, page: 1 }));
+  }, [activeProjectId]);
+
+  const reload = useCallback(() => { listTickets(queryFilters).then(setPage); }, [queryFilters]);
   useEffect(() => { reload(); }, [reload]);
 
   const open = (ticketId) => {
@@ -49,7 +56,7 @@ function TicketListPage() {
         </div>
       </div>
 
-      <TicketFilters value={filters} projects={projects} onChange={setFilters} />
+      <TicketFilters value={filters} onChange={setFilters} />
       <TicketTable tickets={page.results} onOpen={open} />
 
       <div className="pager">

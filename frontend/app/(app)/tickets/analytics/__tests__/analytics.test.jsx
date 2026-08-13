@@ -6,16 +6,21 @@ const getOverview = vi.fn();
 const getTrend = vi.fn();
 const getTimeInStage = vi.fn();
 const getDrill = vi.fn();
-const listProjects = vi.fn();
 
+vi.mock('@/shared/contexts/project-context.jsx', () => ({
+  useProject: () => ({
+    activeProjectId: null,
+    activeProject: null,
+    projects: [],
+    loading: false,
+    setActiveProjectId: vi.fn(),
+  }),
+}));
 vi.mock('@/shared/api/analytics.js', () => ({
   getOverview: (...args) => getOverview(...args),
   getTrend: (...args) => getTrend(...args),
   getTimeInStage: (...args) => getTimeInStage(...args),
   getDrill: (...args) => getDrill(...args),
-}));
-vi.mock('@/shared/api/projects.js', () => ({
-  listProjects: (...args) => listProjects(...args),
 }));
 vi.mock('react-apexcharts', () => ({
   default: () => <div data-testid="chart" />,
@@ -41,7 +46,6 @@ describe('AnalyticsPage lane stat tiles', () => {
       ),
     });
     getDrill.mockResolvedValue({ rows: [{ key: 'P1', count: 3 }] });
-    listProjects.mockResolvedValue({ results: [] });
   });
 
   it('renders lane labels and counts in stat tiles, not clipped measure bars', async () => {

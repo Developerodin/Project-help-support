@@ -8,6 +8,7 @@ import {
 } from '@pms/shared';
 import { createTicket } from '@/shared/api/tickets.js';
 import { listProjects } from '@/shared/api/projects.js';
+import { useProject } from '@/shared/contexts/project-context.jsx';
 import FormError from '@/shared/components/form-error.jsx';
 
 const INITIAL_DRAFT = {
@@ -26,6 +27,7 @@ const INITIAL_DRAFT = {
 
 export default function NewTicketPage() {
   const router = useRouter();
+  const { activeProjectId } = useProject();
   const [projects, setProjects] = useState([]);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -37,11 +39,13 @@ export default function NewTicketPage() {
       .then((p) => {
         const active = p.results.filter((proj) => proj.status === 'active');
         setProjects(active);
-        const defaultProject = active.find((proj) => proj.key === 'WEB') ?? active[0];
-        if (defaultProject) setDraft((d) => ({ ...d, project: defaultProject.id }));
+        const preferred = activeProjectId && active.some((proj) => proj.id === activeProjectId)
+          ? activeProjectId
+          : (active.find((proj) => proj.key === 'WEB') ?? active[0])?.id;
+        if (preferred) setDraft((d) => ({ ...d, project: preferred }));
       })
       .catch(setError);
-  }, []);
+  }, [activeProjectId]);
 
   const selected = useMemo(
     () => projects.find((p) => p.id === draft.project),

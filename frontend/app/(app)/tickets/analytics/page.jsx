@@ -1,25 +1,26 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { LANES, STAGES, stageLabel } from '@pms/shared';
 import { getOverview, getTrend, getTimeInStage, getDrill } from '@/shared/api/analytics.js';
-import { listProjects } from '@/shared/api/projects.js';
+import { useProject } from '@/shared/contexts/project-context.jsx';
 import FormError from '@/shared/components/form-error.jsx';
 
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
 
 export default function AnalyticsPage() {
-  const [filters, setFilters] = useState({});
-  const [projects, setProjects] = useState([]);
+  const { activeProjectId, activeProject } = useProject();
+  const filters = useMemo(
+    () => ({ project: activeProjectId || undefined }),
+    [activeProjectId],
+  );
   const [overview, setOverview] = useState(null);
   const [trend, setTrend] = useState(null);
   const [stages, setStages] = useState(null);
   const [drill, setDrill] = useState(null);
   const [dimension, setDimension] = useState('severity');
   const [error, setError] = useState(null);
-
-  useEffect(() => { listProjects().then((p) => setProjects(p.results)).catch(() => {}); }, []);
 
   const reload = useCallback(() => {
     setError(null);
@@ -43,17 +44,8 @@ export default function AnalyticsPage() {
       <div className="page-head">
         <div>
           <h1>Analytics</h1>
-          <p className="sub">Lane counts, time-in-stage, estimate accuracy and reopen rate — derived from stageHistory.</p>
+          <p className="sub">Lane counts, time-in-stage, estimate accuracy and reopen rate — derived from stageHistory{activeProject ? ` · ${activeProject.name}` : ''}.</p>
         </div>
-        <span className="spacer" />
-        <select
-          aria-label="Project"
-          value={filters.project || ''}
-          onChange={(e) => setFilters({ ...filters, project: e.target.value || undefined })}
-        >
-          <option value="">All projects</option>
-          {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
       </div>
 
       <div className="stat-grid">
