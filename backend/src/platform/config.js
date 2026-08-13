@@ -23,6 +23,15 @@ const MIN_SECRET_LENGTH = 32;
 
 const present = (v) => typeof v === 'string' && v.trim().length > 0;
 
+/** Mirror Dharwin backend naming so copied .env files enable attachments. */
+function normalizeEnv(env) {
+  const normalized = { ...env };
+  if (!present(normalized.S3_BUCKET) && present(normalized.AWS_S3_BUCKET_NAME)) {
+    normalized.S3_BUCKET = normalized.AWS_S3_BUCKET_NAME.trim();
+  }
+  return normalized;
+}
+
 function readGroup(env, name) {
   const keys = CAPABILITY_GROUPS[name];
   const found = keys.filter((k) => present(env[k]));
@@ -56,6 +65,7 @@ function assertProductionSecrets(env, isProduction) {
 }
 
 export function loadConfig(env = process.env) {
+  env = normalizeEnv(env);
   const missing = REQUIRED.filter((k) => !present(env[k]));
   if (missing.length) {
     throw new Error(`Config error: missing required environment variables: ${missing.join(', ')}`);

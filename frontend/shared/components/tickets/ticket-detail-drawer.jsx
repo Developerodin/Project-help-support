@@ -14,6 +14,7 @@ import {
   getValidationDialogForTransitionError,
   isTransitionValidationError,
   logApiError,
+  normalizeApiError,
 } from '@/shared/lib/api-error.js';
 import TicketHeader from './ticket-header.jsx';
 import TicketFields from './ticket-fields.jsx';
@@ -68,7 +69,7 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
     }
   }, [validationDialog]);
 
-  const run = (operation) => async (...args) => {
+  const run = (operation, { rethrow = false } = {}) => async (...args) => {
     setError(null);
     setFieldErrors({});
     setValidationDialog(null);
@@ -77,16 +78,18 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
       await load();
       onChanged?.();
     } catch (err) {
-      logApiError(err, { ticketId, operation: operation.name || 'ticketAction' });
+      const apiError = normalizeApiError(err);
+      logApiError(apiError, { ticketId, operation: operation.name || 'ticketAction' });
 
-      if (isTransitionValidationError(err)) {
-        setFieldErrors(getTransitionFieldErrors(err, ticket) || {});
-        setValidationDialog(getValidationDialogForTransitionError(err, ticket));
+      if (isTransitionValidationError(apiError)) {
+        setFieldErrors(getTransitionFieldErrors(apiError, ticket) || {});
+        setValidationDialog(getValidationDialogForTransitionError(apiError, ticket));
       } else {
-        setError(err);
+        setError(apiError);
       }
 
-      if (err.status === 409) await load();
+      if (apiError.status === 409) await load();
+      if (rethrow) throw err;
     }
   };
 
@@ -163,8 +166,8 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
                   >
                     <TicketComments
                       ticket={ticket}
-                      onAdd={run((body) => addComment(ticket.ticketId, body))}
-                      onUpload={run((form) => uploadAttachments(ticket.ticketId, form))}
+                      onAdd={run((body) => addComment(ticket.ticketId, body), { rethrow: true })}
+                      onUpload={run((form) => uploadAttachments(ticket.ticketId, form), { rethrow: true })}
                     />
                   </div>
                   <div
@@ -183,7 +186,7 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
                   fieldErrors={fieldErrors}
                   onFieldEdit={clearFieldError}
                   onSave={run((body) => patchTicket(ticket.ticketId, body))}
-                  onUpload={run((form) => uploadAttachments(ticket.ticketId, form))}
+                  onUpload={run((form) => uploadAttachments(ticket.ticketId, form), { rethrow: true })}
                   onBlock={async () => {
                     if (!blockReason.trim()) return;
                     await run(() => setBlocked(ticket.ticketId, {
@@ -214,3 +217,5 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
     </>
   );
 }
+
+

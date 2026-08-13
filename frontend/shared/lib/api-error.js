@@ -1,20 +1,58 @@
 ﻿/** Normalize API/client errors for display — keep support IDs out of primary UI. */
 
-export function logApiError(error, context) {
-  if (!error) return;
-  const payload = {
-    code: error.code,
-    status: error.status,
-    message: error.message,
-    requestId: error.requestId,
-    fields: error.fields,
-    context,
-  };
-  if (error.requestId) {
-    console.error('[PMS]', payload);
-  } else if (error.message) {
-    console.error('[PMS]', payload);
+function readMessage(error) {
+  if (typeof error?.message === 'string' && error.message.trim()) return error.message.trim();
+  if (typeof error === 'string' && error.trim()) return error.trim();
+  return null;
+}
+
+/** Flatten ApiClientError, Error, API JSON bodies, and partial mocks into one shape. */
+export function normalizeApiError(error) {
+  if (!error) return null;
+
+  if (typeof error === 'string') {
+    return { message: error.trim() || 'Request failed' };
   }
+
+  const nested = error.error && typeof error.error === 'object' ? error.error : null;
+  const status = error.status ?? error.statusCode ?? nested?.status ?? nested?.statusCode;
+  const code = error.code ?? nested?.code ?? error.name;
+  const fields = error.fields ?? nested?.fields;
+  const requestId = error.requestId ?? nested?.requestId;
+  const message = readMessage(error)
+    ?? readMessage(nested)
+    ?? (code && code !== 'Error' ? String(code) : null);
+
+  return {
+    status,
+    code,
+    message: message || (status ? `Request failed (${status})` : 'Request failed'),
+    requestId,
+    fields,
+  };
+}
+
+export function logApiError(error, context) {
+  const normalized = normalizeApiError(error);
+  if (!normalized) return;
+
+  console.error('[PMS]', {
+    code: normalized.code ?? null,
+    status: normalized.status ?? null,
+    message: normalized.message,
+    requestId: normalized.requestId ?? null,
+    fields: normalized.fields ?? null,
+    context: context ?? null,
+  });
+}
+
+export function attachmentErrorMessage(error) {
+  const normalized = normalizeApiError(error);
+  if (!normalized) return 'Request failed';
+  if (normalized.code === 'CAPABILITY_DISABLED') {
+    return normalized.message || 'File storage is not configured on this server';
+  }
+  return normalized.message || 'Request failed';
 }
 
 export function getTransitionFieldErrors(error, ticket) {

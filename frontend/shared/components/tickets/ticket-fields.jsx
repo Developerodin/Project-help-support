@@ -26,6 +26,7 @@ export default function TicketFields({
 }) {
   const uploadRef = useRef(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState(null);
   const [draft, setDraft] = useState({
     priority: ticket.priority || '',
     severity: ticket.severity || '',
@@ -48,9 +49,12 @@ export default function TicketFields({
     for (const file of files) form.append('files', file);
     form.append('clientRef', crypto.randomUUID());
     setUploading(true);
+    setUploadError(null);
     try {
       await onUpload(form);
       uploadRef.current.value = '';
+    } catch (err) {
+      setUploadError(err?.message || 'Upload failed');
     } finally {
       setUploading(false);
     }
@@ -205,6 +209,9 @@ export default function TicketFields({
                 Upload
               </button>
             </div>
+            {uploadError ? (
+              <p className="field-hint invalid" role="alert">{uploadError}</p>
+            ) : null}
           </>
         )}
       </div>

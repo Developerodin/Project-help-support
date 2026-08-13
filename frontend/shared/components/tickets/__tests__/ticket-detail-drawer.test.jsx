@@ -168,4 +168,26 @@ describe('TicketDetailDrawer', () => {
       expect(screen.queryByRole('status', { name: /uploading attachment/i })).not.toBeInTheDocument();
     });
   });
+
+  it('refetches ticket after sidebar upload succeeds', async () => {
+    const withFile = {
+      ...ticket,
+      attachments: [{ id: 'a1', _id: 'a1', name: 'shot.png', size: 1 }],
+    };
+    uploadAttachments.mockResolvedValue([{ id: 'a1', name: 'shot.png' }]);
+    getTicket
+      .mockResolvedValueOnce(ticket)
+      .mockResolvedValueOnce(withFile);
+
+    render(<TicketDetailDrawer ticketId="WEB-101" onClose={() => {}} onChanged={() => {}} />);
+    await screen.findByText('WEB-101');
+
+    const png = new File(['x'], 'shot.png', { type: 'image/png' });
+    await userEvent.upload(screen.getByLabelText(/add attachments/i), png);
+    await userEvent.click(screen.getByRole('button', { name: /^upload$/i }));
+
+    await waitFor(() => expect(uploadAttachments).toHaveBeenCalled());
+    await waitFor(() => expect(getTicket).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('shot.png')).toBeInTheDocument();
+  });
 });

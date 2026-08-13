@@ -43,6 +43,18 @@ test('a fully present capability group enables the feature', () => {
   assert.equal(cfg.storage.bucket, 'pms-attachments');
 });
 
+test('AWS_S3_BUCKET_NAME is accepted as an alias for S3_BUCKET', () => {
+  const cfg = loadConfig({
+    ...base,
+    AWS_REGION: 'ap-south-1',
+    AWS_ACCESS_KEY_ID: 'AKIAEXAMPLE',
+    AWS_SECRET_ACCESS_KEY: 'secretexamplevalue',
+    AWS_S3_BUCKET_NAME: 'vsc-files-storage',
+  });
+  assert.equal(cfg.features.attachments, true);
+  assert.equal(cfg.storage.bucket, 'vsc-files-storage');
+});
+
 test('a partially present capability group is a boot error naming what is missing', () => {
   assert.throws(
     () => loadConfig({ ...base, AWS_REGION: 'ap-south-1', S3_BUCKET: 'pms-attachments' }),
