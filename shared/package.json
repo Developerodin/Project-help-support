@@ -6,9 +6,10 @@
   "exports": {
     ".": "./index.js",
     "./enums": "./enums.js",
-    "./notification-events": "./notification-events.js"
+    "./notification-events": "./notification-events.js",
+    "./stages": "./stages.js"
   },
   "scripts": {
-    "test": "node --test ."
+    "test": "node --test \"**/*.test.js\""
   }
 }

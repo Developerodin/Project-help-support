@@ -2,7 +2,7 @@
   "name": "project-management-system",
   "private": true,
   "version": "1.0.0",
-  "workspaces": ["shared", "backend"],
+  "workspaces": ["shared", "backend", "frontend"],
   "engines": { "node": ">=20.0.0" },
   "scripts": {
     "test": "npm test --workspaces --if-present",

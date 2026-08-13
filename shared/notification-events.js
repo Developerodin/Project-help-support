@@ -9,6 +9,14 @@ export const NOTIFICATION_EVENTS = Object.freeze([
   'TICKET_ESTIMATE_SET',
 ]);
 
+/**
+ * An unset user preference resolves through this table — never to `true`.
+ * Dharwin's tracker has no pref key at all, so `isChannelAllowed` returns true
+ * unconditionally and opt-outs are silently ignored. This is the fix.
+ *
+ * TICKET_COMMENTED and TICKET_ESTIMATE_SET default email OFF because they are
+ * the two high-volume events; everything else is worth an inbox interruption.
+ */
 export const DEFAULT_NOTIFICATION_PREFS = Object.freeze({
   email: Object.freeze({
     TICKET_CREATED: true,

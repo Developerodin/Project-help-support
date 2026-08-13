@@ -1,0 +1,33 @@
+import express from 'express';
+import { validate } from '../../platform/validate.js';
+import { auth } from '../../platform/auth.js';
+import { sameOrigin } from '../../platform/sameOrigin.js';
+import {
+  loginLimiter, passwordResetLimiter, inviteAcceptLimiter, refreshLimiter,
+} from '../../platform/rateLimit.js';
+import * as controller from './auth.controller.js';
+import {
+  loginSchema, acceptInviteSchema, forgotPasswordSchema, resetPasswordSchema,
+} from './auth.validation.js';
+
+/**
+ * @param {object} config
+ * @param {(result: { user: object, resetToken: string }) => Promise<void>} [deliverReset]
+ *        Injected so these routes work before the email module exists (Plan 4).
+ */
+export default function authRoutes(config, deliverReset) {
+  const router = express.Router();
+  const origin = sameOrigin(config);
+
+  router.post('/login', loginLimiter, validate(loginSchema), controller.login(config));
+  router.post('/refresh', refreshLimiter, origin, controller.refresh(config));
+  router.post('/logout', origin, controller.logout(config));
+  router.get('/me', auth(config), controller.me);
+
+  router.post('/invite/accept', inviteAcceptLimiter, validate(acceptInviteSchema), controller.acceptInvite);
+  router.post('/forgot-password', passwordResetLimiter, validate(forgotPasswordSchema),
+    controller.forgotPassword(deliverReset));
+  router.post('/reset-password', passwordResetLimiter, validate(resetPasswordSchema), controller.resetPassword);
+
+  return router;
+}
