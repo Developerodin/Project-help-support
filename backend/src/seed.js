@@ -35,7 +35,7 @@ export async function seedAdmin(config) {
   await Notification.create({
     user: admin._id,
     event: 'TICKET_CREATED',
-    title: 'Welcome to Help & Support',
+    title: 'Welcome to Dharwin Project Management Portal',
     body: 'Your inbox will show ticket updates here. Assign a ticket to yourself to test notifications.',
     link: `${config.frontendBaseUrl}/tickets`,
   });

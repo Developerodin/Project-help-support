@@ -1,3 +1,5 @@
+import { BRAND_FULL } from '@/shared/lib/brand.js';
+
 const ASIDE = {
   signin: [
     [
@@ -57,7 +59,7 @@ export function AuthBrand() {
       <span className="mark" aria-hidden="true">
         <span /><span /><span />
       </span>
-      <b>Help &amp; Support</b>
+      <b>{BRAND_FULL}</b>
     </div>
   );
 }

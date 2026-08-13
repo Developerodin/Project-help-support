@@ -73,8 +73,8 @@ export function buildInviteDeliverer(config, deps = {}) {
     const link = `${config.frontendBaseUrl}/invite/accept?token=${inviteToken}`;
     await sendPlain(config, deps, {
       to: user.email,
-      subject: 'You have been invited',
-      text: `You have been invited.\n\nSet your password: ${link}\n\nThis link expires in 72 hours.`,
+      subject: 'You have been invited to Dharwin Project Management Portal',
+      text: `You have been invited to Dharwin Project Management Portal.\n\nSet your password: ${link}\n\nThis link expires in 72 hours.`,
     });
   };
 }
@@ -84,8 +84,8 @@ export function buildResetDeliverer(config, deps = {}) {
     const link = `${config.frontendBaseUrl}/reset-password?token=${resetToken}`;
     await sendPlain(config, deps, {
       to: user.email,
-      subject: 'Reset your password',
-      text: `Reset your password: ${link}\n\nThis link expires in 2 hours.`,
+      subject: 'Reset your Dharwin Project Management Portal password',
+      text: `Reset your Dharwin Project Management Portal password: ${link}\n\nThis link expires in 2 hours.`,
     });
   };
 }

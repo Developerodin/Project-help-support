@@ -9,6 +9,7 @@ import Icon, { initials } from '@/shared/components/icons.jsx';
 import ProjectSwitcher from '@/shared/components/project-switcher.jsx';
 import NotificationBell from '@/shared/components/notification-bell.jsx';
 import ThemeToggle from '@/shared/components/theme-toggle.jsx';
+import { BRAND_SHORT } from '@/shared/lib/brand.js';
 import { FOCUS_TICKET_SEARCH_KEY, focusTicketSearch } from '@/shared/lib/ticket-search-focus.js';
 
 const NAV_GROUPS = [
@@ -50,7 +51,7 @@ function RailNav() {
     <nav className="rail-nav" aria-label="Primary">
       <div className="brand">
         <span className="mark" aria-hidden="true"><span /><span /><span /></span>
-        <b>Help &amp; Support</b>
+        <b>{BRAND_SHORT}</b>
       </div>
       <div className="navscroll">
         {NAV_GROUPS.map((group) => {
