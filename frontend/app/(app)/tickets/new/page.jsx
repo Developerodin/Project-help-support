@@ -104,43 +104,53 @@ export default function NewTicketPage() {
       <div className="page-head">
         <div>
           <h1>New ticket</h1>
-          <p className="sub">Report a bug or request. Required fields are marked. Estimates and assignment are set later.</p>
+          <p className="sub">It lands in Pending. A lead or an admin picks it up from there.</p>
         </div>
       </div>
 
       <FormError error={error} />
 
-      <form className="form" id="newTicket" onSubmit={onSubmit}>
-        <div className="form-cols">
-          <div>
-            <h2 className="form-section">Issue</h2>
+      <div className="formgrid new-ticket-grid">
+        <form className="form new-ticket-form" id="newTicket" onSubmit={onSubmit} noValidate>
+
+          <section className="new-ticket-block" aria-labelledby="issue-heading">
+            <h2 id="issue-heading" className="form-section">Issue</h2>
             <p className="form-hint">What broke, and how to reproduce it.</p>
 
             <div className="form-row">
-              <label htmlFor="np">Project <span className="req">*</span></label>
-              <select id="np" required value={draft.project} onChange={(e) => setDraft({ ...draft, project: e.target.value, module: '', page: '' })}>
+              <label htmlFor="np">Project <span className="req" aria-hidden="true">*</span></label>
+              <select
+                id="np"
+                required
+                value={draft.project}
+                onChange={(e) => setDraft({ ...draft, project: e.target.value, module: '', page: '' })}
+              >
                 {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </div>
 
-            <div className="form-row">
-              <label htmlFor="nt">Title <span className="req">*</span></label>
+            <div className={`form-row${titleInvalid ? ' bad' : ''}`}>
+              <label htmlFor="nt">Title <span className="req" aria-hidden="true">*</span></label>
               <input
                 id="nt"
                 required
                 maxLength={200}
-                placeholder="Short summary of the issue"
+                placeholder="What goes wrong, in one line"
                 value={draft.title}
                 onChange={set('title')}
                 aria-invalid={titleInvalid}
+                aria-describedby="nt-hint"
               />
-              <p className={`field-hint${titleInvalid ? ' invalid' : ''}`}>
-                {titleInvalid ? 'At least 5 characters required.' : `${titleLen}/200 · min 5 characters`}
+              <p id="nt-hint" className={`field-hint${titleInvalid ? ' invalid' : ''}`}>
+                {titleInvalid
+                  ? 'At least 5 characters required.'
+                  : `${titleLen}/200 · min 5 characters`}
               </p>
+              <span className="help">Write what happens, not what you expected.</span>
             </div>
 
-            <div className="form-row">
-              <label htmlFor="nd">Description <span className="req">*</span></label>
+            <div className={`form-row${descInvalid ? ' bad' : ''}`}>
+              <label htmlFor="nd">Description <span className="req" aria-hidden="true">*</span></label>
               <textarea
                 id="nd"
                 rows={4}
@@ -149,9 +159,12 @@ export default function NewTicketPage() {
                 value={draft.description}
                 onChange={set('description')}
                 aria-invalid={descInvalid}
+                aria-describedby="nd-hint"
               />
-              <p className={`field-hint${descInvalid ? ' invalid' : ''}`}>
-                {descInvalid ? 'At least 10 characters required.' : `${descLen} characters · min 10`}
+              <p id="nd-hint" className={`field-hint${descInvalid ? ' invalid' : ''}`}>
+                {descInvalid
+                  ? 'At least 10 characters required.'
+                  : `${descLen} characters · min 10`}
               </p>
             </div>
 
@@ -160,93 +173,131 @@ export default function NewTicketPage() {
               <textarea
                 id="ns"
                 rows={3}
-                placeholder="1. Go to…&#10;2. Click…&#10;3. See error"
+                placeholder={'1. Go to…\n2. Click…\n3. See error'}
                 value={draft.stepsToReproduce}
                 onChange={set('stepsToReproduce')}
               />
             </div>
+          </section>
 
-            <h2 className="form-section">Location</h2>
+          <section className="new-ticket-block" aria-labelledby="location-heading">
+            <h2 id="location-heading" className="form-section">Location</h2>
             <p className="form-hint">Where in the product this occurred.</p>
 
-            <div className="form-row">
-              <label htmlFor="nm">Module</label>
-              <select id="nm" value={draft.module} onChange={(e) => setDraft({ ...draft, module: e.target.value, page: '' })}>
-                <option value="">—</option>
-                {modules.map((m) => <option key={m.label} value={m.label}>{m.label}</option>)}
-              </select>
-            </div>
+            <div className="form-cols">
+              <div className="form-row">
+                <label htmlFor="nm">Module</label>
+                <select
+                  id="nm"
+                  className="new-ticket-select"
+                  value={draft.module}
+                  onChange={(e) => setDraft({ ...draft, module: e.target.value, page: '' })}
+                >
+                  <option value="">—</option>
+                  {modules.map((m) => <option key={m.label} value={m.label}>{m.label}</option>)}
+                </select>
+              </div>
 
-            <div className="form-row">
-              <label htmlFor="npage">Page</label>
-              <select id="npage" value={draft.page} onChange={set('page')} disabled={!draft.module}>
-                <option value="">—</option>
-                {pages.map((p) => <option key={p.path || p.label} value={p.label}>{p.label}</option>)}
-              </select>
+              <div className="form-row">
+                <label htmlFor="npage">Page</label>
+                <select
+                  id="npage"
+                  className="new-ticket-select"
+                  value={draft.page}
+                  onChange={set('page')}
+                  disabled={!draft.module}
+                  aria-describedby={!draft.module ? 'npage-hint' : undefined}
+                >
+                  <option value="">—</option>
+                  {pages.map((p) => <option key={p.path || p.label} value={p.label}>{p.label}</option>)}
+                </select>
+                {!draft.module ? (
+                  <span id="npage-hint" className="help">Choose a module first.</span>
+                ) : null}
+              </div>
             </div>
+          </section>
+
+          <div className="form-foot new-ticket-foot">
+            <button type="submit" className="btn btn-primary" disabled={busy}>
+              {busy ? 'Creating…' : 'File ticket'}
+            </button>
+            <button type="button" className="btn" onClick={() => router.back()} disabled={busy}>
+              Cancel
+            </button>
           </div>
+        </form>
 
-          <div className="formside">
-            <h2 className="form-section">Classification</h2>
+        <aside className="formside" aria-label="Classification and routing">
+          <div className="panel">
+            <header><h3>Classification</h3></header>
+            <p className="note-line">How severe it is and how soon it should be looked at.</p>
 
-            <div className="form-row">
-              <label htmlFor="ncat">Category</label>
-              <select id="ncat" value={draft.category} onChange={set('category')}>
-                {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
+            <div className="formside-stack">
+              <div className="form-row">
+                <label htmlFor="ncat">Category</label>
+                <select id="ncat" form="newTicket" value={draft.category} onChange={set('category')}>
+                  {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
 
-            <div className="form-row">
-              <label htmlFor="nsev">Severity</label>
-              <select id="nsev" value={draft.severity} onChange={set('severity')}>
-                {SEVERITIES.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
+              <div className="form-cols">
+                <div className="form-row">
+                  <label htmlFor="nsev">Severity</label>
+                  <select id="nsev" form="newTicket" value={draft.severity} onChange={set('severity')}>
+                    {SEVERITIES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <span className="help">How badly it breaks the product.</span>
+                </div>
 
-            <div className="form-row">
-              <label htmlFor="npri">Priority</label>
-              <select id="npri" value={draft.priority} onChange={set('priority')}>
-                {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </div>
+                <div className="form-row">
+                  <label htmlFor="npri">Priority</label>
+                  <select id="npri" form="newTicket" value={draft.priority} onChange={set('priority')}>
+                    {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                  <span className="help">How soon it should be looked at.</span>
+                </div>
+              </div>
 
-            <div className="form-row">
-              <label htmlFor="nenv">Environment</label>
-              <select id="nenv" value={draft.environment} onChange={set('environment')}>
-                {ENVIRONMENTS.map((e) => <option key={e} value={e}>{e}</option>)}
-              </select>
-            </div>
+              <div className="form-row">
+                <label htmlFor="nenv">Environment</label>
+                <select id="nenv" form="newTicket" value={draft.environment} onChange={set('environment')}>
+                  {ENVIRONMENTS.map((e) => <option key={e} value={e}>{e}</option>)}
+                </select>
+              </div>
 
-            <div className="form-row">
-              <span className="lbl">Labels</span>
-              <div className="label-chips" role="group" aria-label="Ticket labels">
-                {LABELS.map((lbl) => {
-                  const sel = draft.labels.includes(lbl);
-                  return (
-                    <button
-                      key={lbl}
-                      type="button"
-                      aria-pressed={sel}
-                      className={`chip${sel ? ' chip-on' : ''}`}
-                      onClick={() => toggleLabel(lbl)}
-                    >
-                      {lbl}
-                    </button>
-                  );
-                })}
+              <div className="form-row">
+                <span className="lbl" id="labels-label">Labels</span>
+                <div className="label-chips" role="group" aria-labelledby="labels-label">
+                  {LABELS.map((lbl) => {
+                    const sel = draft.labels.includes(lbl);
+                    return (
+                      <button
+                        key={lbl}
+                        type="button"
+                        aria-pressed={sel}
+                        className={`chip${sel ? ' chip-on' : ''}`}
+                        onClick={() => toggleLabel(lbl)}
+                      >
+                        {lbl}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <div className="form-foot">
-          <button type="button" className="btn" onClick={() => router.back()}>Cancel</button>
-          <span className="spacer" />
-          <button type="submit" className="btn btn-primary" disabled={busy || titleLen < 5 || descLen < 10}>
-            {busy ? 'Creating…' : 'Create ticket'}
-          </button>
-        </div>
-      </form>
+          <div className="panel">
+            <header><h3>Where it lands</h3></header>
+            <p className="note-line">
+              Every new ticket starts in Pending. A lead moves it on from there, and the rest of the
+              pipeline unlocks as the ticket earns it.
+            </p>
+            <p className="meta">Estimates and assignment are set later.</p>
+          </div>
+        </aside>
+      </div>
     </>
   );
 }

@@ -1,4 +1,4 @@
-
+﻿
 /* ============================================================
    Tokens. Light is the ground (DESIGN.md section 1: the scene).
    Every colour is defined on bare :root and only redefined in the
@@ -238,7 +238,7 @@ main{ min-width:0; display:flex; flex-direction:column; }
   background:var(--panel); font-size:0.75rem; font-weight:500; color:var(--ink);
 }
 
-/* Theme toggle — compact top-bar switch aligned with .btn / .search */
+/* Theme toggle â€” compact top-bar switch aligned with .btn / .search */
 .theme-toggle{
   flex:none; position:relative; display:inline-flex; align-items:center;
   cursor:pointer; user-select:none;
@@ -727,21 +727,62 @@ input[type="checkbox"]{ accent-color:var(--sig); width:14px; height:14px; cursor
    fields keep a readable measure, and the width carries the side panel. */
 .formgrid{ display:grid; grid-template-columns:minmax(0,1fr) minmax(320px,380px); gap:24px; align-items:start; }
 .formgrid > .form{ max-width:none; }
-.form-section{ margin:0 0 4px; font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
-.form-hint{ margin:0 0 14px; font-size:12px; color:var(--muted); }
-.field-hint{ margin:4px 0 0; font-size:11px; color:var(--muted); }
-.field-hint.invalid{ color:var(--danger); }
-.req{ color:var(--danger); }
+.form-section{
+  margin:0 0 4px; font-size:0.6875rem; font-weight:600; text-transform:uppercase;
+  letter-spacing:0.055em; color:var(--ink-3);
+}
+.form-hint{ margin:0 0 14px; font-size:0.75rem; color:var(--ink-3); line-height:1.5; }
+.field-hint{ margin:4px 0 0; font-size:0.6875rem; color:var(--ink-3); }
+.field-hint.invalid{ color:var(--alarm); font-weight:500; }
+.req{ color:var(--alarm); }
 .label-chips{ display:flex; flex-wrap:wrap; gap:6px; }
-.chip{ border:1px solid var(--border); background:var(--panel); border-radius:999px; padding:4px 10px; font-size:11px; cursor:pointer; }
-.chip-on{ background:var(--primary-soft); border-color:var(--primary); color:var(--primary); }
+.chip{
+  border:1px solid var(--rule); background:var(--panel); border-radius:999px;
+  padding:4px 10px; font-size:0.6875rem; cursor:pointer; color:var(--ink-2);
+  transition:background 120ms ease-out, border-color 120ms ease-out, color 120ms ease-out;
+}
+.chip:hover{ border-color:var(--ink-3); background:var(--panel-2); }
+.chip:focus-visible{ outline:2px solid var(--sig); outline-offset:2px; }
+.chip-on{ color:var(--sig); border-color:var(--sig-line); background:var(--sig-wash); }
 
+.formside{
+  display:flex; flex-direction:column; gap:14px;
+  position:sticky; top:calc(var(--bar-h) + 20px);
+}
 .formside .panel{ background:var(--panel); }
+.formside .panel > header{ margin-bottom:8px; }
 .formside .panel .note-line{ margin-bottom:12px; }
+.formside-stack{ display:flex; flex-direction:column; gap:12px; }
 @media (max-width:1160px){
   .formgrid{ grid-template-columns:1fr; }
   .formside{ position:static; }
 }
+
+/* New ticket — single-column prose + sticky classification rail */
+.new-ticket-grid{ max-width:980px; }
+.new-ticket-form{ gap:20px; }
+.new-ticket-block{
+  display:flex; flex-direction:column; gap:12px;
+  padding-bottom:4px; border-bottom:1px solid var(--rule-soft);
+}
+.new-ticket-block:last-of-type{ border-bottom:none; padding-bottom:0; }
+.new-ticket-form select:not([multiple]){
+  appearance:auto; height:34px; min-height:34px; max-height:34px; overflow:hidden;
+}
+.new-ticket-form select:not([multiple]) option{ padding:0; }
+.new-ticket-foot{
+  position:sticky; bottom:0; z-index:5;
+  margin-top:4px; padding:14px 0 0;
+  background:linear-gradient(to top, var(--paper) 78%, oklch(from var(--paper) l c h / 0));
+}
+.new-ticket-foot .btn-primary{
+  min-width:7.5rem; height:34px; font-weight:600;
+  box-shadow:0 1px 0 oklch(from var(--sig-hi) l c h / 0.35);
+}
+.new-ticket-foot .btn-primary:not([disabled]):hover{
+  background:var(--sig-hi); border-color:var(--sig-hi);
+}
+.new-ticket-foot .btn-primary[disabled]{ opacity:0.55; }
 .form-row{ display:flex; flex-direction:column; gap:5px; }
 .form-row > label{ font-size:0.8125rem; font-weight:600; }
 .form-row .help{ font-size:0.75rem; color:var(--ink-3); line-height:1.5; max-width:64ch; }
