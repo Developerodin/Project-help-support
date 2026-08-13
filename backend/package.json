@@ -1,0 +1,14 @@
+{
+  "name": "@pms/backend",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test src",
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@pms/shared": "*"
+  }
+}

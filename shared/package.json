@@ -1,0 +1,14 @@
+{
+  "name": "@pms/shared",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./enums": "./enums.js",
+    "./notification-events": "./notification-events.js"
+  },
+  "scripts": {
+    "test": "node --test ."
+  }
+}

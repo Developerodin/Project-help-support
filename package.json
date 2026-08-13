@@ -1,0 +1,14 @@
+{
+  "name": "project-management-system",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": ["shared", "backend"],
+  "engines": { "node": ">=20.0.0" },
+  "scripts": {
+    "test": "npm test --workspaces --if-present",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "eslint": "^9.17.0"
+  }
+}
