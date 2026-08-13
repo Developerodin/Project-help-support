@@ -1,7 +1,42 @@
 'use client';
 
 import { useState } from 'react';
-import { STAGES, stageIndex, stageLabel, legalDestinations, canTransition } from '@pms/shared';
+import {
+  STAGES, LANES, stageIndex, stageLabel, laneOf, legalDestinations, canTransition,
+} from '@pms/shared';
+
+const STAGE_SHORT = {
+  pending: 'Pending',
+  under_review: 'Review',
+  in_progress: 'In Progress',
+  ready_local: 'Local',
+  ready_qa: 'Ready QA',
+  deployed_staging: 'Staging',
+  qa_approved: 'QA Approved',
+  ready_production: 'Ready Prod',
+  live: 'Live',
+  closed: 'Closed',
+};
+
+function capRole(role) {
+  if (!role) return 'Member';
+  return role.charAt(0).toUpperCase() + role.slice(1);
+}
+
+function ticketRelationships(actor, ticket) {
+  const actorId = String(actor?.id || actor?._id || '');
+  if (!actorId) return [];
+  const rels = [];
+  if (actorId === String(ticket.assignedTo?.id || ticket.assignedTo?._id || '')) rels.push('assignee');
+  if (actorId === String(ticket.createdBy?.id || ticket.createdBy?._id || '')) rels.push('reporter');
+  return rels;
+}
+
+function listRelationships(rels) {
+  if (rels.length === 0) return '';
+  if (rels.length === 1) return `the ${rels[0]}`;
+  return `the ${rels.slice(0, -1).join(', ')} and the ${rels.at(-1)}`;
+}
 
 export default function TicketStageBar({ ticket, actor, onTransition }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -10,6 +45,7 @@ export default function TicketStageBar({ ticket, actor, onTransition }) {
 
   const currentIndex = stageIndex(ticket.status);
   const destinations = legalDestinations(ticket.status, actor, ticket);
+  const rels = ticketRelationships(actor, ticket);
 
   function choose(to) {
     setMenuOpen(false);
@@ -29,31 +65,59 @@ export default function TicketStageBar({ ticket, actor, onTransition }) {
 
   return (
     <>
+      <p className="stagenow">
+        Stage {currentIndex + 1} of {STAGES.length}
+        {' · '}
+        <b>{stageLabel(ticket.status)}</b>
+        {ticket.blocked && (
+          <>
+            {', '}
+            <span style={{ color: 'var(--alarm)' }}>blocked</span>
+          </>
+        )}
+      </p>
+
+      <div className="lanebar" aria-hidden="true">
+        {LANES.map((lane, li) => (
+          <span
+            key={lane.key}
+            className={li ? 'lane-start' : ''}
+            style={{ flex: `${lane.stages.length} 1 0` }}
+          >
+            {lane.label}
+          </span>
+        ))}
+      </div>
+
       <div className="railboard" role="list" aria-label="Stage pipeline">
-        {STAGES.map((stage) => {
+        {STAGES.map((stage, i) => {
           const isCurrent = stage.key === ticket.status;
           const canSet = destinations.includes(stage.key);
+          const prevLane = i > 0 ? laneOf(STAGES[i - 1].key) : null;
           const cls = [
             'railseg',
+            i > 0 && laneOf(stage.key) !== prevLane ? 'lane-start' : '',
+            i < currentIndex ? 'done' : '',
             isCurrent ? 'now' : '',
-            stage.index < currentIndex ? 'done' : '',
-            canSet ? 'open' : '',
-            !canSet && !isCurrent ? 'locked' : '',
+            i > currentIndex && canSet ? 'open' : '',
+            i > currentIndex && !canSet ? 'locked' : '',
+            i < currentIndex && canSet ? 'open' : '',
           ].filter(Boolean).join(' ');
+
           return (
             <button
               key={stage.key}
               type="button"
               role="listitem"
               className={cls}
-              disabled={!canSet}
-              title={stage.label}
-              aria-label={isCurrent ? 'Current stage' : stage.label}
+              disabled={!canSet || isCurrent}
+              title={stageLabel(stage.key)}
+              aria-label={isCurrent ? 'Current stage' : stageLabel(stage.key)}
               aria-current={isCurrent ? 'step' : undefined}
               onClick={() => choose(stage.key)}
             >
               <span className="bar" />
-              <span className="nm">{stage.label}</span>
+              <span className="nm">{STAGE_SHORT[stage.key] || stage.label}</span>
             </button>
           );
         })}
@@ -62,24 +126,48 @@ export default function TicketStageBar({ ticket, actor, onTransition }) {
       <div className="railkey">
         <span><i style={{ background: 'var(--sig-line)' }} />Passed</span>
         <span><i style={{ background: 'var(--sig)' }} />Now</span>
+        <span>
+          <i
+            style={{
+              background: 'repeating-linear-gradient(135deg, var(--rule) 0 2px, transparent 2px 4px)',
+              boxShadow: 'inset 0 0 0 1px var(--rule)',
+            }}
+          />
+          You can&apos;t set this
+        </span>
         <span style={{ marginLeft: 'auto' }}>
-          You are {actor?.role}
+          You are {capRole(actor?.role)}
+          {rels.length > 0 && ` and ${listRelationships(rels)}`} on this ticket
           {' · '}
-          <button type="button" className="btn btn-sm" onClick={() => setMenuOpen((v) => !v)} disabled={destinations.length === 0}>
-            Move to…
-          </button>
+          <span className="menuwrap">
+            <button
+              type="button"
+              className="btn btn-sm"
+              aria-haspopup="true"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((v) => !v)}
+              disabled={destinations.length === 0}
+            >
+              Move to…
+            </button>
+            {menuOpen && (
+              <div className="menu on" role="menu">
+                {destinations.map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    className="menuitem"
+                    role="menuitem"
+                    onClick={() => choose(key)}
+                  >
+                    {stageLabel(key)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </span>
         </span>
       </div>
-
-      {menuOpen && (
-        <div className="menu" role="menu" style={{ position: 'relative', display: 'block' }}>
-          {destinations.map((key) => (
-            <button key={key} type="button" className="menuitem" role="menuitem" onClick={() => choose(key)}>
-              {stageLabel(key)}
-            </button>
-          ))}
-        </div>
-      )}
 
       {pending && (
         <div className="dlg" style={{ position: 'relative', display: 'block', marginTop: 8 }}>

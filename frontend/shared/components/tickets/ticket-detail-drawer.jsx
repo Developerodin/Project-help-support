@@ -7,6 +7,7 @@ import {
 } from '@/shared/api/tickets.js';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import FormError from '@/shared/components/form-error.jsx';
+import Icon from '@/shared/components/icons.jsx';
 import ValidationDialog from '@/shared/components/validation-dialog.jsx';
 import {
   getTransitionFieldErrors,
@@ -19,7 +20,6 @@ import TicketFields from './ticket-fields.jsx';
 import TicketStageBar from './ticket-stage-bar.jsx';
 import TicketHistory from './ticket-history.jsx';
 import TicketComments from './ticket-comments.jsx';
-import TicketAttachments from './ticket-attachments.jsx';
 
 export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
   const { user } = useAuth();
@@ -117,6 +117,7 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
               <FormError error={error} />
               {ticket.blocked && (
                 <p className="blocknote">
+                  <Icon name="alert" size={14} />
                   <span>{ticket.blockerReason || 'Blocked'}</span>
                 </p>
               )}
@@ -135,7 +136,8 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
                   aria-controls="panel-discussion"
                   onClick={() => selectTab('discussion')}
                 >
-                  Discussion<span className="n">{ticket.comments?.length || 0}</span>
+                  Discussion
+                  <span className="n">{ticket.comments?.length || 0}</span>
                 </button>
                 <button
                   type="button" className="tab" role="tab" id="tab-history"
@@ -162,9 +164,6 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
                     <TicketComments
                       ticket={ticket}
                       onAdd={run((body) => addComment(ticket.ticketId, body))}
-                    />
-                    <TicketAttachments
-                      ticket={ticket}
                       onUpload={run((form) => uploadAttachments(ticket.ticketId, form))}
                     />
                   </div>
@@ -184,6 +183,7 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
                   fieldErrors={fieldErrors}
                   onFieldEdit={clearFieldError}
                   onSave={run((body) => patchTicket(ticket.ticketId, body))}
+                  onUpload={run((form) => uploadAttachments(ticket.ticketId, form))}
                   onBlock={async () => {
                     if (!blockReason.trim()) return;
                     await run(() => setBlocked(ticket.ticketId, {

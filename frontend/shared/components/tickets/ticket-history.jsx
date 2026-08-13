@@ -1,24 +1,50 @@
 'use client';
 
-import { stageLabel } from '@pms/shared';
+import { stageIndex, stageLabel } from '@pms/shared';
+
+function formatWhen(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
 
 export default function TicketHistory({ ticket }) {
+  const history = ticket.stageHistory ?? [];
+
+  if (history.length === 0) {
+    return (
+      <section aria-label="History">
+        <p className="meta">No stage changes recorded yet.</p>
+      </section>
+    );
+  }
+
   return (
-    <section>
-      <h2>History</h2>
+    <section aria-label="History">
       <ol className="trail">
-        {ticket.stageHistory.map((entry) => (
-          <li key={entry._id || entry.id || `${entry.to}-${entry.at}`} className="trail-item">
-            <strong>
-              {entry.from ? `${stageLabel(entry.from)} → ` : ''}{stageLabel(entry.to)}
-            </strong>
-            <span className="meta">
-              {entry.by?.name || 'Someone'} · {new Date(entry.at).toLocaleString()}
-              {entry.decision ? ` · ${entry.decision}` : ''}
-            </span>
-            {entry.note && <p className="meta">{entry.note}</p>}
-          </li>
-        ))}
+        {history.map((entry) => {
+          const isReopen = entry.from && stageIndex(entry.from) > stageIndex(entry.to);
+          const cls = ['trail-item', 'stage', isReopen ? 'reopen' : ''].filter(Boolean).join(' ');
+          return (
+            <li key={entry._id || entry.id || `${entry.to}-${entry.at}`} className={cls}>
+              <div className="h">
+                {entry.from ? `${stageLabel(entry.from)} → ` : ''}
+                <b>{stageLabel(entry.to)}</b>
+              </div>
+              <span className="when">
+                {entry.by?.name || 'Someone'}
+                {' · '}
+                {formatWhen(entry.at)}
+                {entry.decision ? ` · ${entry.decision}` : ''}
+              </span>
+              {entry.note && <p className="note">{entry.note}</p>}
+            </li>
+          );
+        })}
       </ol>
     </section>
   );

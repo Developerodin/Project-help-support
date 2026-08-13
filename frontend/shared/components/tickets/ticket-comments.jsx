@@ -1,28 +1,76 @@
 'use client';
 
-import { useState } from 'react';
-import { initials } from '../icons.jsx';
+import { useRef, useState } from 'react';
+import Icon, { initials } from '../icons.jsx';
+import {
+  ATTACHMENT_ACCEPT,
+  formatFileSize,
+  validateAttachmentBatch,
+  buildAttachmentFormData,
+} from '@/shared/lib/attachment-config.js';
 
-export default function TicketComments({ ticket, onAdd }) {
+const COMPOSER_HINT = 'PNG, JPG, PDF, TXT or LOG · 10 MB';
+
+function formatWhen(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+export default function TicketComments({ ticket, onAdd, onUpload }) {
   const [content, setContent] = useState('');
+  const [pendingFiles, setPendingFiles] = useState([]);
+  const [attachError, setAttachError] = useState(null);
+  const inputRef = useRef(null);
 
-  function submit() {
+  function addFiles(incoming) {
+    const { errors, valid } = validateAttachmentBatch(pendingFiles, incoming);
+    setAttachError(errors[0] || null);
+    if (valid.length) setPendingFiles((prev) => [...prev, ...valid]);
+  }
+
+  async function submit() {
     if (!content.trim()) return;
-    onAdd({ content, clientRef: crypto.randomUUID() });
+    if (pendingFiles.length && onUpload) {
+      await onUpload(buildAttachmentFormData(pendingFiles));
+      setPendingFiles([]);
+    }
+    await onAdd({ content, clientRef: crypto.randomUUID() });
     setContent('');
+    setAttachError(null);
   }
 
   return (
-    <section>
-      <h2>Comments</h2>
-      {ticket.comments.map((comment) => (
+    <section aria-label="Discussion">
+      {(ticket.comments?.length ?? 0) === 0 && (
+        <p className="meta">No comments yet. Say what changed or what you need.</p>
+      )}
+
+      {ticket.comments?.map((comment) => (
         <article key={comment._id || comment.id} className="comment">
-          <div className="avatar sm">{initials(comment.commentedBy?.name)}</div>
-          <div>
-            <strong>{comment.commentedBy?.name || 'Someone'}</strong>{' '}
-            <span className="meta">{new Date(comment.createdAt).toLocaleString()}
-              {comment.editedAt && ' (edited)'}</span>
+          <span className="avatar sm" title={comment.commentedBy?.name || 'Someone'}>
+            {initials(comment.commentedBy?.name)}
+          </span>
+          <div className="body">
+            <div className="who">
+              <b>{comment.commentedBy?.name || 'Someone'}</b>
+              <span className="when">
+                {formatWhen(comment.createdAt)}
+                {comment.editedAt && ' (edited)'}
+              </span>
+            </div>
             <p>{comment.content}</p>
+            {comment.attachments?.map((file) => (
+              <span key={file._id || file.id || file.name} className="attach">
+                <Icon name="clip" size={12} />
+                {file.name}
+                {file.size != null && <span className="sz">{formatFileSize(file.size)}</span>}
+              </span>
+            ))}
           </div>
         </article>
       ))}
@@ -37,8 +85,38 @@ export default function TicketComments({ ticket, onAdd }) {
           onChange={(e) => setContent(e.target.value)}
         />
         <div className="composer-foot">
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => inputRef.current?.click()}
+          >
+            <Icon name="clip" size={13} />
+            Attach
+          </button>
+          <span className="meta">{COMPOSER_HINT}</span>
+          {pendingFiles.length > 0 && (
+            <span className="meta">
+              {pendingFiles.length} file{pendingFiles.length === 1 ? '' : 's'} selected
+            </span>
+          )}
+          {attachError && <span className="field-hint invalid">{attachError}</span>}
+          <input
+            ref={inputRef}
+            type="file"
+            multiple
+            className="sr-only"
+            accept={ATTACHMENT_ACCEPT}
+            aria-hidden="true"
+            tabIndex={-1}
+            onChange={(event) => {
+              addFiles(Array.from(event.target.files ?? []));
+              event.target.value = '';
+            }}
+          />
           <span className="spacer" />
-          <button type="button" className="btn btn-primary btn-sm" onClick={submit}>Comment</button>
+          <button type="button" className="btn btn-primary btn-sm" onClick={submit}>
+            Comment
+          </button>
         </div>
       </div>
     </section>

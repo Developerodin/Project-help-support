@@ -1,14 +1,29 @@
 ﻿'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { SEVERITIES, PRIORITIES } from '@pms/shared';
+import { API_URL } from '@/shared/lib/env.js';
+import { attachmentDownloadUrl } from '@/shared/api/tickets.js';
+import Icon, { initials } from '../icons.jsx';
+import { formatFileSize } from '@/shared/lib/attachment-config.js';
 
 const dateValue = (iso) => (iso ? new Date(iso).toISOString().slice(0, 10) : '');
 
+function PersonLine({ name, empty = 'Unassigned' }) {
+  if (!name) return <span className="v empty">{empty}</span>;
+  return (
+    <span className="personline">
+      <span className="avatar sm" title={name}>{initials(name)}</span>
+      {name}
+    </span>
+  );
+}
+
 export default function TicketFields({
-  ticket, onSave, onBlock, onUnblock, blockReason, setBlockReason,
+  ticket, onSave, onBlock, onUnblock, blockReason, setBlockReason, onUpload,
   fieldErrors = {}, onFieldEdit,
 }) {
+  const uploadRef = useRef(null);
   const [draft, setDraft] = useState({
     priority: ticket.priority || '',
     severity: ticket.severity || '',
@@ -24,12 +39,24 @@ export default function TicketFields({
   const estInvalid = Boolean(fieldErrors.estimatedResolutionAt);
   const releaseInvalid = Boolean(fieldErrors.expectedReleaseDate);
 
+  function submitUpload() {
+    const files = uploadRef.current?.files;
+    if (!files?.length || !onUpload) return;
+    const form = new FormData();
+    for (const file of files) form.append('files', file);
+    form.append('clientRef', crypto.randomUUID());
+    onUpload(form);
+    uploadRef.current.value = '';
+  }
+
+  const attachments = ticket.attachments ?? [];
+
   return (
-    <aside className="sidecol">
-      <h2>Details</h2>
+    <aside className="sidecol" aria-label="Ticket details">
+      <h2 className="sr">Details</h2>
       <div className="siderow">
         <span className="lbl">Description</span>
-        <p className="meta">{ticket.description || 'No description.'}</p>
+        <p className="v">{ticket.description || 'No description.'}</p>
       </div>
 
       <div className="siderow">
@@ -119,15 +146,53 @@ export default function TicketFields({
 
       <div className="siderow">
         <span className="lbl">Reporter</span>
-        <p className="meta">{ticket.createdBy?.name || '—'}</p>
+        <PersonLine name={ticket.createdBy?.name} empty="—" />
       </div>
       <div className="siderow">
         <span className="lbl">Assignee</span>
-        <p className="meta">{ticket.assignedTo?.name || 'Unassigned'}</p>
+        <PersonLine name={ticket.assignedTo?.name} />
       </div>
       <div className="siderow">
         <span className="lbl">Team</span>
-        <p className="meta">{ticket.team?.name || '—'}</p>
+        {ticket.team?.name
+          ? <span className="v">{ticket.team.name}</span>
+          : <span className="v empty">No team</span>}
+      </div>
+
+      <div className="siderow">
+        <span className="lbl">
+          Files{attachments.length ? ` (${attachments.length})` : ''}
+        </span>
+        {attachments.length > 0 ? (
+          <div className="filelist">
+            {attachments.map((attachment) => (
+              <a
+                key={attachment._id || attachment.id}
+                className="fileitem"
+                href={`${API_URL}${attachmentDownloadUrl(ticket.ticketId, attachment._id || attachment.id)}`}
+              >
+                <Icon name="clip" size={12} />
+                <span className="n">{attachment.name}</span>
+                {attachment.size != null && (
+                  <span className="sz">{formatFileSize(attachment.size)}</span>
+                )}
+              </a>
+            ))}
+          </div>
+        ) : (
+          <span className="v empty">Nothing attached</span>
+        )}
+        {onUpload && (
+          <div className="withbtn" style={{ marginTop: 8 }}>
+            <input ref={uploadRef} type="file" multiple className="sr-only" aria-label="Add attachments" />
+            <button type="button" className="btn btn-sm" onClick={() => uploadRef.current?.click()}>
+              Choose files
+            </button>
+            <button type="button" className="btn btn-sm btn-primary" onClick={submitUpload}>
+              Upload
+            </button>
+          </div>
+        )}
       </div>
     </aside>
   );

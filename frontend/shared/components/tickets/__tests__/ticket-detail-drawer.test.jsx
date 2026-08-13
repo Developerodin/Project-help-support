@@ -36,16 +36,22 @@ describe('TicketDetailDrawer', () => {
       .mockResolvedValue({ ...ticket, status: 'under_review', revision: 4 });
   });
 
-  it('loads the ticket by its human id and shows the sections', async () => {
+  it('loads the ticket by its human id and shows the drawer layout', async () => {
     render(<TicketDetailDrawer ticketId="WEB-101" onClose={() => {}} onChanged={() => {}} />);
 
     await waitFor(() => expect(getTicket).toHaveBeenCalledWith('WEB-101'));
     expect(await screen.findByText('WEB-101')).toBeInTheDocument();
-    for (const heading of ['Stage', 'Details', 'Comments', 'Attachments']) {
-      expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument();
-    }
+    expect(screen.getByRole('heading', { name: 'Stage', hidden: true })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Details', hidden: true })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /discussion/i })).toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: /ticket details/i })).toBeInTheDocument();
+    expect(screen.getByText('Intake')).toBeInTheDocument();
+    expect(screen.getByText('Development')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /attach/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/add a comment/i)).toBeInTheDocument();
+
     await userEvent.click(screen.getByRole('tab', { name: /history/i }));
-    expect(screen.getByRole('heading', { name: 'History' })).toBeInTheDocument();
+    expect(screen.getByText(/no stage changes recorded yet/i)).toBeInTheDocument();
   });
 
   it('closing calls back — it does not navigate', async () => {

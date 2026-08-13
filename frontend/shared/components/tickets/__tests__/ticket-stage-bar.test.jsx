@@ -1,8 +1,21 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { STAGES } from '@pms/shared';
+import { STAGES, LANES } from '@pms/shared';
 import TicketStageBar from '../ticket-stage-bar.jsx';
+
+const STAGE_SHORT = {
+  pending: 'Pending',
+  under_review: 'Review',
+  in_progress: 'In Progress',
+  ready_local: 'Local',
+  ready_qa: 'Ready QA',
+  deployed_staging: 'Staging',
+  qa_approved: 'QA Approved',
+  ready_production: 'Ready Prod',
+  live: 'Live',
+  closed: 'Closed',
+};
 
 const ticket = (over = {}) => ({
   id: 't1', ticketId: 'WEB-1', status: 'pending', revision: 0,
@@ -13,14 +26,18 @@ const ticket = (over = {}) => ({
 });
 
 describe('TicketStageBar', () => {
-  it('renders all ten stops with the current one marked', () => {
+  it('renders grouped lanes and short stage labels with the current one marked', () => {
     render(
       <TicketStageBar ticket={ticket({ status: 'ready_qa' })}
         actor={{ _id: 'u-admin', role: 'admin' }} onTransition={() => {}} />,
     );
 
-    for (const stage of STAGES) expect(screen.getByText(stage.label)).toBeInTheDocument();
-    expect(screen.getByLabelText('Current stage')).toHaveTextContent('Ready for QA');
+    for (const lane of LANES) expect(screen.getByText(lane.label)).toBeInTheDocument();
+    for (const stage of STAGES) {
+      expect(screen.getByText(STAGE_SHORT[stage.key] || stage.label)).toBeInTheDocument();
+    }
+    expect(screen.getByLabelText('Current stage')).toHaveTextContent('Ready QA');
+    expect(screen.getByText(/you can't set this/i)).toBeInTheDocument();
   });
 
   it('offers only destinations canTransition allows for THIS actor', async () => {
