@@ -1,3 +1,4 @@
+import { WEB_MODULE_TAXONOMY } from '@pms/shared';
 import User from './modules/users/user.model.js';
 import Project, { RESERVED_PROJECT_KEYS } from './modules/projects/project.model.js';
 import logger from './platform/logger.js';
@@ -35,46 +36,12 @@ export async function seedAdmin(config) {
 }
 
 /**
- * WEB's taxonomy is seeded once from what Dharwin's dev-ticket-modules.ts held.
+ * WEB's taxonomy is seeded from Dharwin Help & Support dev-ticket-modules.ts.
  * MOB seeds EMPTY on purpose — no mobile taxonomy exists yet, and it is filled
  * through PUT /v1/projects/:id/modules once the screens are known.
  */
-const WEB_MODULES = [
-  { label: 'ATS', pages: [
-    { label: 'Jobs', path: '/ats/jobs' },
-    { label: 'Candidates', path: '/ats/candidates' },
-    { label: 'Applications', path: '/ats/applications' },
-    { label: 'Interviews', path: '/ats/interviews' },
-    { label: 'Offers', path: '/ats/offers' },
-  ] },
-  { label: 'Employees', pages: [
-    { label: 'Directory', path: '/employees' },
-    { label: 'Profile', path: '/employees/profile' },
-    { label: 'Onboarding', path: '/employees/onboarding' },
-    { label: 'Offboarding', path: '/employees/offboarding' },
-  ] },
-  { label: 'Attendance', pages: [
-    { label: 'Punches', path: '/attendance' },
-    { label: 'Leave', path: '/attendance/leave' },
-  ] },
-  { label: 'Payroll', pages: [{ label: 'Runs', path: '/payroll' }] },
-  { label: 'Task Board', pages: [
-    { label: 'Board', path: '/tasks' },
-    { label: 'Sprints', path: '/tasks/sprints' },
-  ] },
-  { label: 'Communication', pages: [
-    { label: 'Dialer', path: '/communication/dialer' },
-    { label: 'Meetings', path: '/communication/meetings' },
-    { label: 'Chat', path: '/communication/chat' },
-  ] },
-  { label: 'Settings', pages: [
-    { label: 'Roles', path: '/settings/roles' },
-    { label: 'Organization', path: '/settings/organization' },
-  ] },
-];
-
 const SEED_PROJECTS = [
-  { key: 'WEB', name: 'Web App', status: 'active', modules: WEB_MODULES },
+  { key: 'WEB', name: 'Web App', status: 'active', modules: WEB_MODULE_TAXONOMY },
   { key: 'MOB', name: 'Mobile App', status: 'active', modules: [] },
   // Reserved AND archived: it exists only so a later import of legacy DEV-*
   // tickets has a project to belong to. Archived keeps it out of every form.
@@ -96,6 +63,7 @@ for (const key of RESERVED_PROJECT_KEYS) {
 
 export async function seedProjects(actor) {
   const created = [];
+  const backfilled = [];
 
   for (const definition of SEED_PROJECTS) {
     if (await Project.exists({ key: definition.key })) continue;
@@ -103,6 +71,16 @@ export async function seedProjects(actor) {
     created.push(definition.key);
   }
 
+  // Existing installs may have WEB with an empty modules array (seed skipped
+  // on re-boot, or created before taxonomy was wired). Backfill once.
+  const web = await Project.findOne({ key: 'WEB' });
+  if (web && web.modules.length === 0) {
+    web.modules = WEB_MODULE_TAXONOMY;
+    await web.save();
+    backfilled.push('WEB');
+  }
+
   if (created.length) logger.info(`Seeded projects: ${created.join(', ')}`);
-  return { created };
+  if (backfilled.length) logger.info(`Backfilled project modules: ${backfilled.join(', ')}`);
+  return { created, backfilled };
 }

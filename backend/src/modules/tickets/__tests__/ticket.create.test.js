@@ -101,6 +101,21 @@ test('creating against an archived project is rejected', async () => {
   );
 });
 
+test('creating with module/page succeeds for WEB using catalog fallback', async () => {
+  const actor = await user();
+  const web = await project({ modules: [] });
+
+  const ticket = await createTicket(actor, {
+    project: web.id,
+    title: 'Broken jobs list',
+    module: 'ATS',
+    page: 'Jobs',
+  });
+
+  assert.equal(ticket.module, 'ATS');
+  assert.equal(ticket.page, 'Jobs');
+});
+
 test('creating with a module that is not in the taxonomy is rejected', async () => {
   const actor = await user();
   const web = await project({ modules: [{ label: 'ATS', pages: [] }] });

@@ -1,3 +1,4 @@
+import { resolveProjectModules } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
 import { assertActiveUsers, assertTeamUsable } from '../teams/team.service.js';
@@ -16,7 +17,8 @@ export function assertModuleAndPage(project, moduleLabel, pageLabel) {
     return;
   }
 
-  const found = project.modules.find((m) => m.label === moduleLabel);
+  const modules = resolveProjectModules(project);
+  const found = modules.find((m) => m.label === moduleLabel);
   if (!found) {
     throw new ApiError(400, 'UNKNOWN_MODULE', `"${moduleLabel}" is not a module of this project`);
   }

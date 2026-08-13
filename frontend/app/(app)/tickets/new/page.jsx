@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   CATEGORIES, ENVIRONMENTS, LABELS, PRIORITIES, SEVERITIES,
+  resolveProjectModules,
 } from '@pms/shared';
 import { createTicket } from '@/shared/api/tickets.js';
 import { listProjects } from '@/shared/api/projects.js';
@@ -36,7 +37,8 @@ export default function NewTicketPage() {
       .then((p) => {
         const active = p.results.filter((proj) => proj.status === 'active');
         setProjects(active);
-        if (active[0]) setDraft((d) => ({ ...d, project: active[0].id }));
+        const defaultProject = active.find((proj) => proj.key === 'WEB') ?? active[0];
+        if (defaultProject) setDraft((d) => ({ ...d, project: defaultProject.id }));
       })
       .catch(setError);
   }, []);
@@ -45,7 +47,7 @@ export default function NewTicketPage() {
     () => projects.find((p) => p.id === draft.project),
     [projects, draft.project],
   );
-  const modules = selected?.modules || [];
+  const modules = resolveProjectModules(selected);
   const pages = modules.find((m) => m.label === draft.module)?.pages || [];
 
   const titleLen = draft.title.trim().length;
