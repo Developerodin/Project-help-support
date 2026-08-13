@@ -76,55 +76,86 @@ export default function ProjectsPage() {
       </div>
       <FormError error={error} />
 
-      {projects.map((project) => (
-        <section key={project.id} className="panel" style={{ marginBottom: 12 }}>
-          <header>
-            <h3><span className="mono">{project.key}</span> — {project.name}</h3>
-            <span className="spacer" />
-            <span className="chip">{project.status}</span>
-          </header>
+      {projects.map((project) => {
+        const moduleRows = modulesDraft[project.id] ?? modulesToFormRows(project.modules);
+        const hasModuleDraft = Boolean(modulesDraft[project.id]);
 
-          <div className="formgrid">
-            <div className="form-row">
-              <label htmlFor={`assignee-${project.id}`}>Default assignee</label>
-              <select id={`assignee-${project.id}`} value={project.defaultAssignee?.id || ''}
-                onChange={(e) => update(project.id, { defaultAssignee: e.target.value || null })}>
-                <option value="">—</option>
-                {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
+        return (
+          <section key={project.id} className="panel project-panel">
+            <header>
+              <h3><span className="mono">{project.key}</span> — {project.name}</h3>
+              <span className="spacer" />
+              <span className="chip">{project.status}</span>
+            </header>
+
+            <div className="project-form">
+              <div className="project-form-section">
+                <div className="project-form-intro">
+                  <h4 className="project-form-heading">Defaults</h4>
+                  <p className="project-form-hint">
+                    Pre-fill assignee, tester, and team when someone files a ticket in this project.
+                  </p>
+                </div>
+
+                <div className="project-defaults-grid">
+                  <div className="form-row">
+                    <label htmlFor={`assignee-${project.id}`}>Default assignee</label>
+                    <select
+                      id={`assignee-${project.id}`}
+                      value={project.defaultAssignee?.id || ''}
+                      onChange={(e) => update(project.id, { defaultAssignee: e.target.value || null })}
+                    >
+                      <option value="">—</option>
+                      {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="form-row">
+                    <label htmlFor={`tester-${project.id}`}>Default tester</label>
+                    <select
+                      id={`tester-${project.id}`}
+                      value={project.defaultTester?.id || ''}
+                      onChange={(e) => update(project.id, { defaultTester: e.target.value || null })}
+                    >
+                      <option value="">—</option>
+                      {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="form-row">
+                    <label htmlFor={`team-${project.id}`}>Default team</label>
+                    <select
+                      id={`team-${project.id}`}
+                      value={project.defaultTeam?.id || ''}
+                      onChange={(e) => update(project.id, { defaultTeam: e.target.value || null })}
+                    >
+                      <option value="">—</option>
+                      {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="project-form-section project-form-section--catalog">
+                <div className="project-form-intro">
+                  <h4 className="project-form-heading">Module catalog</h4>
+                  <p className="project-form-hint">
+                    Group pages under module names for ticket location fields on new tickets.
+                  </p>
+                </div>
+
+                <ProjectModulesEditor
+                  projectKey={project.key}
+                  value={moduleRows}
+                  onChange={(rows) => setModulesDraft((prev) => ({ ...prev, [project.id]: rows }))}
+                  onSave={() => saveModules(project)}
+                  hasUnsavedChanges={hasModuleDraft}
+                />
+              </div>
             </div>
-
-            <div className="form-row">
-              <label htmlFor={`tester-${project.id}`}>Default tester</label>
-              <select id={`tester-${project.id}`} value={project.defaultTester?.id || ''}
-                onChange={(e) => update(project.id, { defaultTester: e.target.value || null })}>
-                <option value="">—</option>
-                {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
-            </div>
-
-            <div className="form-row">
-              <label htmlFor={`team-${project.id}`}>Default team</label>
-              <select id={`team-${project.id}`} value={project.defaultTeam?.id || ''}
-                onChange={(e) => update(project.id, { defaultTeam: e.target.value || null })}>
-                <option value="">—</option>
-                {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </select>
-            </div>
-          </div>
-
-          <div className="form-row">
-            <label>Modules</label>
-            <p className="help">Group pages under module names for ticket location fields.</p>
-            <ProjectModulesEditor
-              projectKey={project.key}
-              value={modulesDraft[project.id] ?? modulesToFormRows(project.modules)}
-              onChange={(rows) => setModulesDraft((prev) => ({ ...prev, [project.id]: rows }))}
-            />
-          </div>
-          <button type="button" className="btn btn-sm" onClick={() => saveModules(project)}>Save modules</button>
-        </section>
-      ))}
+          </section>
+        );
+      })}
     </>
   );
 }
