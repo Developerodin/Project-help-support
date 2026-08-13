@@ -3,7 +3,9 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
-import FormError from '@/shared/components/form-error.jsx';
+import AuthFrame, { AuthBrand } from '@/shared/components/auth/auth-shell.jsx';
+import AuthField from '@/shared/components/auth/auth-field.jsx';
+import AuthError from '@/shared/components/auth/auth-error.jsx';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -28,37 +30,55 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="auth">
-      <div className="auth-form">
-        <div className="brand" style={{ border: 'none', height: 'auto', padding: '0 0 16px' }}>
-          <span className="mark" aria-hidden="true"><span /><span /><span /></span>
-          <b>Help &amp; Support</b>
-        </div>
+    <AuthFrame view="signin">
+      <form className="form" onSubmit={onSubmit}>
+        <AuthBrand />
         <p id="heading">Sign in</p>
-        <p className="sub">Use the account you were invited with.</p>
+        <p className="sub">Use the address your invite was sent to.</p>
 
-        <form onSubmit={onSubmit}>
-          <label className="lbl" htmlFor="email">Email</label>
-          <input
-            className="input-field"
-            id="email" type="email" autoComplete="username" required
-            value={email} onChange={(e) => setEmail(e.target.value)}
-          />
+        <AuthField
+          icon="at"
+          id="email"
+          label="Email"
+          type="email"
+          autoComplete="username"
+          required
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+        <AuthField
+          icon="lock"
+          id="password"
+          label="Password"
+          type="password"
+          autoComplete="current-password"
+          required
+          peek
+          bad={Boolean(error)}
+          describedBy={error ? 'aperr' : undefined}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
 
-          <label className="lbl" htmlFor="password">Password</label>
-          <input
-            className="input-field"
-            id="password" type="password" autoComplete="current-password" required
-            value={password} onChange={(e) => setPassword(e.target.value)}
-          />
+        <AuthError error={error} />
 
-          <FormError error={error} />
-
-          <button type="submit" className="btn btn-primary" disabled={busy} style={{ width: '100%', marginTop: 12 }}>
+        <div className="btn-row">
+          <button className="button1" type="submit" disabled={busy}>
             {busy ? 'Signing in…' : 'Sign in'}
           </button>
-        </form>
-      </div>
-    </div>
+          <button
+            className="button2"
+            type="button"
+            disabled
+            title="There is no sign-up. An admin invites you, and accepting the invite is where you set a password."
+          >
+            Sign up
+          </button>
+        </div>
+        <button className="button3" type="button" onClick={() => router.push('/forgot-password')}>
+          Forgot password
+        </button>
+      </form>
+    </AuthFrame>
   );
 }
