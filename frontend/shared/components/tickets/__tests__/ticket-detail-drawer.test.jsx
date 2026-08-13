@@ -13,6 +13,10 @@ vi.mock('@/shared/api/tickets.js', () => ({
   addComment: vi.fn(),
   uploadAttachments: vi.fn(),
   attachmentDownloadUrl: () => '/x',
+  watchTicket: vi.fn(),
+  unwatchTicket: vi.fn(),
+  setBlocked: vi.fn(),
+  clearBlocked: vi.fn(),
 }));
 vi.mock('@/shared/contexts/auth-context.jsx', () => ({
   useAuth: () => ({ user: { _id: 'u-admin', id: 'u-admin', role: 'admin' } }),
@@ -37,9 +41,11 @@ describe('TicketDetailDrawer', () => {
 
     await waitFor(() => expect(getTicket).toHaveBeenCalledWith('WEB-101'));
     expect(await screen.findByText('WEB-101')).toBeInTheDocument();
-    for (const heading of ['Stage', 'Details', 'History', 'Comments', 'Attachments']) {
+    for (const heading of ['Stage', 'Details', 'Comments', 'Attachments']) {
       expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument();
     }
+    await userEvent.click(screen.getByRole('tab', { name: /history/i }));
+    expect(screen.getByRole('heading', { name: 'History' })).toBeInTheDocument();
   });
 
   it('closing calls back — it does not navigate', async () => {

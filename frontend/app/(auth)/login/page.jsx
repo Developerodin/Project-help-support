@@ -21,8 +21,6 @@ export default function LoginPage() {
       await login(email, password);
       router.push('/tickets');
     } catch (err) {
-      // The server returns ONE message for "no such email" and "wrong
-      // password"; showing it verbatim is what keeps that true in the UI.
       setError(err);
     } finally {
       setBusy(false);
@@ -30,28 +28,37 @@ export default function LoginPage() {
   }
 
   return (
-    <form onSubmit={onSubmit}>
-      <h1>Sign in</h1>
+    <div className="auth">
+      <div className="auth-form">
+        <div className="brand" style={{ border: 'none', height: 'auto', padding: '0 0 16px' }}>
+          <span className="mark" aria-hidden="true"><span /><span /><span /></span>
+          <b>Help &amp; Support</b>
+        </div>
+        <p id="heading">Sign in</p>
+        <p className="sub">Use the account you were invited with.</p>
 
-      <label htmlFor="email">Email</label>
-      <input
-        id="email" type="email" autoComplete="username" required
-        value={email} onChange={(e) => setEmail(e.target.value)}
-        style={{ width: '100%', padding: 8, marginBottom: 12 }}
-      />
+        <form onSubmit={onSubmit}>
+          <label className="lbl" htmlFor="email">Email</label>
+          <input
+            className="input-field"
+            id="email" type="email" autoComplete="username" required
+            value={email} onChange={(e) => setEmail(e.target.value)}
+          />
 
-      <label htmlFor="password">Password</label>
-      <input
-        id="password" type="password" autoComplete="current-password" required
-        value={password} onChange={(e) => setPassword(e.target.value)}
-        style={{ width: '100%', padding: 8, marginBottom: 12 }}
-      />
+          <label className="lbl" htmlFor="password">Password</label>
+          <input
+            className="input-field"
+            id="password" type="password" autoComplete="current-password" required
+            value={password} onChange={(e) => setPassword(e.target.value)}
+          />
 
-      <FormError error={error} />
+          <FormError error={error} />
 
-      <button type="submit" disabled={busy} style={{ width: '100%', padding: 10 }}>
-        {busy ? 'Signing in…' : 'Sign in'}
-      </button>
-    </form>
+          <button type="submit" className="btn btn-primary" disabled={busy} style={{ width: '100%', marginTop: 12 }}>
+            {busy ? 'Signing in…' : 'Sign in'}
+          </button>
+        </form>
+      </div>
+    </div>
   );
 }

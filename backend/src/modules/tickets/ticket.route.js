@@ -8,6 +8,7 @@ import {
   patchTicketSchema, assignTicketSchema, bulkSchema,
   transitionSchema, addCommentSchema, commentIdSchema,
   editCommentSchema, reactionSchema, attachmentIdSchema,
+  setBlockedSchema, clearBlockedSchema,
 } from './ticket.validation.js';
 
 export default function ticketRoutes(config) {
@@ -28,6 +29,8 @@ export default function ticketRoutes(config) {
   router.post('/:id/transition', validate(transitionSchema), controller.transition(config));
   router.post('/:id/watch', validate(ticketIdSchema), controller.watch);
   router.delete('/:id/watch', validate(ticketIdSchema), controller.unwatch);
+  router.post('/:id/block', validate(setBlockedSchema), controller.setBlocked);
+  router.delete('/:id/block', validate(clearBlockedSchema), controller.clearBlocked);
 
   router.post('/:id/comments', validate(addCommentSchema), controller.addComment(config));
   router.patch('/:id/comments/:commentId', validate(editCommentSchema), controller.editComment);

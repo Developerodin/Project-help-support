@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { LANES, laneOf } from '@pms/shared';
 import { listTickets, transitionTicket, getTicket } from '@/shared/api/tickets.js';
@@ -7,30 +8,30 @@ import { ticketFromSearch, withTicketParam, withoutTicketParam } from '@/shared/
 import BoardLane from '@/shared/components/tickets/board-lane.jsx';
 import TicketDetailDrawer from '@/shared/components/tickets/ticket-detail-drawer.jsx';
 import FormError from '@/shared/components/form-error.jsx';
+import Icon from '@/shared/components/icons.jsx';
 
 function BoardPage() {
   const [tickets, setTickets] = useState([]);
+  const [mine, setMine] = useState(false);
   const [openTicketId, setOpenTicketId] = useState(null);
   const [error, setError] = useState(null);
 
   const reload = useCallback(() => {
-    listTickets({ limit: 100 }).then((p) => setTickets(p.results));
-  }, []);
+    listTickets({ limit: 100, scope: mine ? 'assigned' : 'all' }).then((p) => setTickets(p.results));
+  }, [mine]);
 
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => { setOpenTicketId(ticketFromSearch(window.location.search)); }, []);
 
   const byLane = useMemo(() => {
     const groups = Object.fromEntries(LANES.map((l) => [l.key, []]));
-    for (const ticket of tickets) groups[laneOf(ticket.status)].push(ticket);
+    for (const ticket of tickets) groups[laneOf(ticket.status)]?.push(ticket);
     return groups;
   }, [tickets]);
 
   async function onDropTicket(ticketId, to) {
     setError(null);
     try {
-      // The revision is read fresh: the card in hand may be stale, and the
-      // server answers 409 rather than applying a stale write.
       const current = await getTicket(ticketId);
       await transitionTicket(ticketId, { to, revision: current.revision });
       reload();
@@ -54,15 +55,31 @@ function BoardPage() {
 
   return (
     <>
-      <h1>Board</h1>
+      <div className="page-head">
+        <div>
+          <h1>Board</h1>
+          <p className="sub">Ten stages, grouped into five lanes. Dropping a card into a lane moves it to that lane&apos;s first stage, or refuses and says why.</p>
+        </div>
+      </div>
+
+      <div className="toolbar">
+        <div className="seg" role="group" aria-label="Whose tickets">
+          <button type="button" aria-pressed={!mine} onClick={() => setMine(false)}>Everyone</button>
+          <button type="button" aria-pressed={mine} onClick={() => setMine(true)}>Mine</button>
+        </div>
+        <span className="resultline num">{tickets.length} tickets</span>
+        <span className="spacer" />
+        <Link href="/tickets" className="btn"><Icon name="list" size={13} /> Table view</Link>
+      </div>
+
       <FormError error={error} />
 
-      <div style={{ display: 'flex', gap: 8, overflowX: 'auto' }}>
+      <div className="board">
         {LANES.map((lane) => (
           <BoardLane
             key={lane.key}
             lane={lane}
-            tickets={byLane[lane.key]}
+            tickets={byLane[lane.key] || []}
             onOpen={open}
             onDropTicket={onDropTicket}
           />
@@ -78,7 +95,7 @@ function BoardPage() {
 
 export default function Page() {
   return (
-    <Suspense fallback={<p>Loading…</p>}>
+    <Suspense fallback={<p className="meta">Loading…</p>}>
       <BoardPage />
     </Suspense>
   );

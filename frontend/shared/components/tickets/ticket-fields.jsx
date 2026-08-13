@@ -5,7 +5,9 @@ import { SEVERITIES, PRIORITIES } from '@pms/shared';
 
 const dateValue = (iso) => (iso ? new Date(iso).toISOString().slice(0, 10) : '');
 
-export default function TicketFields({ ticket, onSave }) {
+export default function TicketFields({
+  ticket, onSave, onBlock, onUnblock, blockReason, setBlockReason,
+}) {
   const [draft, setDraft] = useState({
     priority: ticket.priority || '',
     severity: ticket.severity || '',
@@ -16,44 +18,88 @@ export default function TicketFields({ ticket, onSave }) {
   const set = (key) => (event) => setDraft({ ...draft, [key]: event.target.value });
 
   return (
-    <section>
+    <aside className="sidecol">
       <h2>Details</h2>
-      <p>{ticket.description || 'No description.'}</p>
+      <div className="siderow">
+        <span className="lbl">Description</span>
+        <p className="meta">{ticket.description || 'No description.'}</p>
+      </div>
 
-      <label htmlFor="priority">Priority</label>
-      <select id="priority" value={draft.priority} onChange={set('priority')}>
-        <option value="">—</option>
-        {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
-      </select>
+      <div className="siderow">
+        <label className="lbl" htmlFor="priority">Priority</label>
+        <select id="priority" value={draft.priority} onChange={set('priority')}>
+          <option value="">—</option>
+          {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+        </select>
+      </div>
 
-      <label htmlFor="severity">Severity</label>
-      <select id="severity" value={draft.severity} onChange={set('severity')}>
-        <option value="">—</option>
-        {SEVERITIES.map((s) => <option key={s} value={s}>{s}</option>)}
-      </select>
+      <div className="siderow">
+        <label className="lbl" htmlFor="severity">Severity</label>
+        <select id="severity" value={draft.severity} onChange={set('severity')}>
+          <option value="">—</option>
+          {SEVERITIES.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </div>
 
-      {/* Both are required to enter any stage from In Progress onward, so they
-          are first-class fields rather than something buried in a modal. */}
-      <label htmlFor="estimatedResolutionAt">Estimated resolution</label>
-      <input id="estimatedResolutionAt" type="date"
-        value={draft.estimatedResolutionAt} onChange={set('estimatedResolutionAt')} />
+      <div className="siderow">
+        <label className="lbl" htmlFor="estimatedResolutionAt">Estimated resolution</label>
+        <input id="estimatedResolutionAt" type="date"
+          value={draft.estimatedResolutionAt} onChange={set('estimatedResolutionAt')} />
+      </div>
 
-      <label htmlFor="expectedReleaseDate">Expected release</label>
-      <input id="expectedReleaseDate" type="date"
-        value={draft.expectedReleaseDate} onChange={set('expectedReleaseDate')} />
+      <div className="siderow">
+        <label className="lbl" htmlFor="expectedReleaseDate">Expected release</label>
+        <input id="expectedReleaseDate" type="date"
+          value={draft.expectedReleaseDate} onChange={set('expectedReleaseDate')} />
+      </div>
 
-      <button
-        type="button"
-        onClick={() => onSave({
-          revision: ticket.revision,
-          priority: draft.priority || undefined,
-          severity: draft.severity || undefined,
-          estimatedResolutionAt: draft.estimatedResolutionAt || null,
-          expectedReleaseDate: draft.expectedReleaseDate || null,
-        })}
-      >
-        Save
-      </button>
-    </section>
+      <div className="siderow">
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={() => onSave({
+            revision: ticket.revision,
+            priority: draft.priority || undefined,
+            severity: draft.severity || undefined,
+            estimatedResolutionAt: draft.estimatedResolutionAt || null,
+            expectedReleaseDate: draft.expectedReleaseDate || null,
+          })}
+        >
+          Save fields
+        </button>
+      </div>
+
+      <div className="siderow">
+        <span className="lbl">Blocked</span>
+        {ticket.blocked ? (
+          <button type="button" className="btn btn-sm" onClick={onUnblock}>Clear blocker</button>
+        ) : (
+          <>
+            <textarea
+              rows={2}
+              placeholder="Why is this blocked?"
+              value={blockReason}
+              onChange={(e) => setBlockReason(e.target.value)}
+            />
+            <button type="button" className="btn btn-sm" onClick={onBlock} disabled={!blockReason.trim()}>
+              Mark blocked
+            </button>
+          </>
+        )}
+      </div>
+
+      <div className="siderow">
+        <span className="lbl">Reporter</span>
+        <p className="meta">{ticket.createdBy?.name || '—'}</p>
+      </div>
+      <div className="siderow">
+        <span className="lbl">Assignee</span>
+        <p className="meta">{ticket.assignedTo?.name || 'Unassigned'}</p>
+      </div>
+      <div className="siderow">
+        <span className="lbl">Team</span>
+        <p className="meta">{ticket.team?.name || '—'}</p>
+      </div>
+    </aside>
   );
 }

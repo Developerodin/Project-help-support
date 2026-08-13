@@ -14,7 +14,9 @@ export function makeLimiter({ windowMs, limit, byEmail = false }) {
     limit,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
-    validate: { keyGeneratorIpFallback: false },
+    // Custom keyGenerator already falls back to IP; disable validate keys that
+    // vary across express-rate-limit minor versions.
+    validate: false,
     keyGenerator: (req) => {
       const ip = req.ip || 'unknown-ip';
       if (!byEmail) return ip;

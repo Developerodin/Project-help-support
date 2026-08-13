@@ -1,14 +1,13 @@
 'use client';
 
 import { useState } from 'react';
+import { initials } from '../icons.jsx';
 
 export default function TicketComments({ ticket, onAdd }) {
   const [content, setContent] = useState('');
 
   function submit() {
     if (!content.trim()) return;
-    // A fresh UUID per submission: a retried request is a no-op server-side
-    // rather than a duplicate comment.
     onAdd({ content, clientRef: crypto.randomUUID() });
     setContent('');
   }
@@ -16,22 +15,32 @@ export default function TicketComments({ ticket, onAdd }) {
   return (
     <section>
       <h2>Comments</h2>
-
       {ticket.comments.map((comment) => (
-        <article key={comment._id || comment.id} style={{ marginBottom: 8 }}>
-          <strong>{comment.commentedBy?.name || 'Someone'}</strong>{' '}
-          <small style={{ color: 'var(--muted)' }}>
-            {new Date(comment.createdAt).toLocaleString()}
-            {comment.editedAt && ' (edited)'}
-          </small>
-          <div>{comment.content}</div>
+        <article key={comment._id || comment.id} className="comment">
+          <div className="avatar sm">{initials(comment.commentedBy?.name)}</div>
+          <div>
+            <strong>{comment.commentedBy?.name || 'Someone'}</strong>{' '}
+            <span className="meta">{new Date(comment.createdAt).toLocaleString()}
+              {comment.editedAt && ' (edited)'}</span>
+            <p>{comment.content}</p>
+          </div>
         </article>
       ))}
 
-      <label htmlFor="new-comment">Add a comment</label>
-      <textarea id="new-comment" rows={3} style={{ width: '100%' }}
-        value={content} onChange={(e) => setContent(e.target.value)} />
-      <button type="button" onClick={submit}>Comment</button>
+      <div className="composer">
+        <textarea
+          id="new-comment"
+          rows={3}
+          placeholder="Add a comment. Type @ to notify someone."
+          aria-label="Add a comment"
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+        />
+        <div className="composer-foot">
+          <span className="spacer" />
+          <button type="button" className="btn btn-primary btn-sm" onClick={submit}>Comment</button>
+        </div>
+      </div>
     </section>
   );
 }

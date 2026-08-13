@@ -34,8 +34,6 @@ export default function ProjectsPage() {
   const saveModules = async (project) => {
     setError(null);
     try {
-      // The taxonomy is replaced WHOLESALE — the API has no per-module edit,
-      // and neither does this form.
       await replaceModules(project.id, JSON.parse(modulesText[project.id] ?? '[]'));
       reload();
     } catch (err) {
@@ -45,42 +43,60 @@ export default function ProjectsPage() {
 
   return (
     <>
-      <h1>Projects</h1>
+      <div className="page-head">
+        <div>
+          <h1>Projects</h1>
+          <p className="sub">Module taxonomy, default assignees and testers for each product line.</p>
+        </div>
+      </div>
       <FormError error={error} />
 
       {projects.map((project) => (
-        <section key={project.id}
-          style={{ border: '1px solid var(--border)', padding: 12, marginBottom: 12 }}>
-          <h2>{project.key} — {project.name}</h2>
+        <section key={project.id} className="panel" style={{ marginBottom: 12 }}>
+          <header>
+            <h3><span className="mono">{project.key}</span> — {project.name}</h3>
+            <span className="spacer" />
+            <span className="chip">{project.status}</span>
+          </header>
 
-          <label htmlFor={`assignee-${project.id}`}>Default assignee</label>
-          <select id={`assignee-${project.id}`} value={project.defaultAssignee?.id || ''}
-            onChange={(e) => update(project.id, { defaultAssignee: e.target.value || null })}>
-            <option value="">—</option>
-            {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-          </select>
+          <div className="formgrid">
+            <div className="form-row">
+              <label htmlFor={`assignee-${project.id}`}>Default assignee</label>
+              <select id={`assignee-${project.id}`} value={project.defaultAssignee?.id || ''}
+                onChange={(e) => update(project.id, { defaultAssignee: e.target.value || null })}>
+                <option value="">—</option>
+                {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
 
-          <label htmlFor={`tester-${project.id}`}>Default tester</label>
-          <select id={`tester-${project.id}`} value={project.defaultTester?.id || ''}
-            onChange={(e) => update(project.id, { defaultTester: e.target.value || null })}>
-            <option value="">—</option>
-            {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-          </select>
+            <div className="form-row">
+              <label htmlFor={`tester-${project.id}`}>Default tester</label>
+              <select id={`tester-${project.id}`} value={project.defaultTester?.id || ''}
+                onChange={(e) => update(project.id, { defaultTester: e.target.value || null })}>
+                <option value="">—</option>
+                {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
 
-          <label htmlFor={`team-${project.id}`}>Default team</label>
-          <select id={`team-${project.id}`} value={project.defaultTeam?.id || ''}
-            onChange={(e) => update(project.id, { defaultTeam: e.target.value || null })}>
-            <option value="">—</option>
-            {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </select>
+            <div className="form-row">
+              <label htmlFor={`team-${project.id}`}>Default team</label>
+              <select id={`team-${project.id}`} value={project.defaultTeam?.id || ''}
+                onChange={(e) => update(project.id, { defaultTeam: e.target.value || null })}>
+                <option value="">—</option>
+                {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </div>
+          </div>
 
-          <label htmlFor={`modules-${project.id}`}>Modules (JSON)</label>
-          <textarea
-            id={`modules-${project.id}`} rows={6} style={{ width: '100%' }}
-            value={modulesText[project.id] ?? JSON.stringify(project.modules, null, 2)}
-            onChange={(e) => setModulesText({ ...modulesText, [project.id]: e.target.value })}
-          />
-          <button type="button" onClick={() => saveModules(project)}>Save modules</button>
+          <div className="form-row">
+            <label htmlFor={`modules-${project.id}`}>Modules (JSON)</label>
+            <textarea
+              id={`modules-${project.id}`} rows={6}
+              value={modulesText[project.id] ?? JSON.stringify(project.modules, null, 2)}
+              onChange={(e) => setModulesText({ ...modulesText, [project.id]: e.target.value })}
+            />
+          </div>
+          <button type="button" className="btn btn-sm" onClick={() => saveModules(project)}>Save modules</button>
         </section>
       ))}
     </>

@@ -18,10 +18,26 @@ export const listTicketsSchema = {
     team: objectId,
     q: Joi.string().trim().max(200),
     scope: Joi.string().valid('all', 'assigned', 'reported', 'unassigned'),
+    blocked: Joi.boolean().truthy('true').falsy('false'),
+    overdue: Joi.boolean().truthy('true').falsy('false'),
+    reopened: Joi.boolean().truthy('true').falsy('false'),
     sortBy: Joi.string().max(80),
     page: Joi.number().integer().min(1),
     limit: Joi.number().integer().min(1).max(100),
   }),
+};
+
+export const setBlockedSchema = {
+  params: Joi.object({ id: ticketRef.required() }),
+  body: Joi.object({
+    revision,
+    reason: Joi.string().trim().min(1).max(2000).required(),
+  }),
+};
+
+export const clearBlockedSchema = {
+  params: Joi.object({ id: ticketRef.required() }),
+  body: Joi.object({ revision }),
 };
 
 export const createTicketSchema = {

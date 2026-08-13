@@ -1,35 +1,48 @@
 'use client';
 
-import { laneEntryStage } from '@pms/shared';
+import { laneEntryStage, stageLabel } from '@pms/shared';
 import TicketCard from './ticket-card.jsx';
+
+const EMPTY = {
+  intake: 'Nothing waiting for triage.',
+  development: 'No active development work.',
+  qa: 'QA is clear.',
+  release: 'Nothing ready to ship.',
+  done: 'Nothing closed yet.',
+};
 
 export default function BoardLane({ lane, tickets, onOpen, onDropTicket }) {
   function handleDrop(event) {
     event.preventDefault?.();
+    event.currentTarget.classList.remove('dropping');
     const ticketId = event.dataTransfer.getData('text/plain');
-    // Dropping into a lane transitions to that lane's FIRST stage. The server
-    // re-checks it; a refusal comes back with its reason.
     if (ticketId) onDropTicket(ticketId, laneEntryStage(lane.key));
   }
 
   return (
     <section
+      className="lane"
       data-testid={`lane-${lane.key}`}
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={handleDrop}
-      style={{
-        flex: 1, minWidth: 220, padding: 8,
-        border: '1px solid var(--border)', borderRadius: 6,
+      aria-label={lane.label}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.currentTarget.classList.add('dropping');
       }}
+      onDragLeave={(e) => e.currentTarget.classList.remove('dropping')}
+      onDrop={handleDrop}
     >
-      <header style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-        <strong>{lane.label}</strong>
-        <span>{tickets.length}</span>
-      </header>
-
-      {tickets.map((ticket) => (
-        <TicketCard key={ticket.id} ticket={ticket} onOpen={onOpen} />
-      ))}
+      <div className="lane-head">
+        <h3>{lane.label}</h3>
+        <span className="n">{tickets.length}</span>
+      </div>
+      <p className="lane-stages">{lane.stages.map(stageLabel).join(' · ')}</p>
+      <div className="lane-stack">
+        {tickets.length === 0
+          ? <p className="lane-empty">{EMPTY[lane.key] || 'Empty'}</p>
+          : tickets.map((ticket) => (
+            <TicketCard key={ticket.id || ticket.ticketId} ticket={ticket} onOpen={onOpen} />
+          ))}
+      </div>
     </section>
   );
 }

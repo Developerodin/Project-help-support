@@ -1,19 +1,84 @@
-:root {
-  --bg: #ffffff;
-  --fg: #111827;
-  --muted: #6b7280;
-  --border: #e5e7eb;
-  --accent: #4f46e5;
-  --danger: #dc2626;
+@import './design-system.css';
+
+.spacer { flex: 1; min-width: 0; }
+
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--alarm);
+  border-radius: var(--r);
+  background: var(--alarm-wash);
+  color: var(--ink);
 }
 
-* { box-sizing: border-box; }
+.banner .spacer { flex: 1; }
 
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--fg);
-  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+.page select,
+.page input[type="text"],
+.page input[type="email"],
+.page input[type="password"],
+.page input[type="date"],
+.page input[type="search"],
+.page textarea {
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  background: var(--panel);
+  color: var(--ink);
 }
 
-button { font: inherit; cursor: pointer; }
+.page textarea {
+  height: auto;
+  padding: 8px;
+  min-height: 72px;
+}
+
+.page label {
+  display: block;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin: 10px 0 4px;
+}
+
+.ticket-drawer.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(560px, 100vw);
+  z-index: 40;
+  background: var(--paper);
+  box-shadow: var(--shadow-drawer);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 160ms ease-out;
+}
+
+.ticket-drawer.drawer.on {
+  transform: translateX(0);
+}
+
+.scrim.on {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

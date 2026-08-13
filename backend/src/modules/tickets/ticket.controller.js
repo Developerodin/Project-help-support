@@ -49,6 +49,14 @@ export const unwatch = catchAsync(async (req, res) => {
   res.json(await ticketService.unwatchTicket(req.user, req.params.id));
 });
 
+export const setBlocked = catchAsync(async (req, res) => {
+  res.json(await ticketService.setBlocked(req.user, req.params.id, req.body));
+});
+
+export const clearBlocked = catchAsync(async (req, res) => {
+  res.json(await ticketService.clearBlocked(req.user, req.params.id, req.body));
+});
+
 export const remove = catchAsync(async (req, res) => {
   res.json(await ticketService.deleteTicket(req.params.id));
 });

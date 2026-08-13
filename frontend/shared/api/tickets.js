@@ -28,6 +28,12 @@ export const watchTicket = (id) =>
 export const unwatchTicket = (id) =>
   apiFetch(`/tickets/${encodeURIComponent(id)}/watch`, { method: 'DELETE' });
 
+export const setBlocked = (id, body) =>
+  apiFetch(`/tickets/${encodeURIComponent(id)}/block`, { method: 'POST', body });
+
+export const clearBlocked = (id, body) =>
+  apiFetch(`/tickets/${encodeURIComponent(id)}/block`, { method: 'DELETE', body });
+
 export const addComment = (id, body) =>
   apiFetch(`/tickets/${encodeURIComponent(id)}/comments`, { method: 'POST', body });
 

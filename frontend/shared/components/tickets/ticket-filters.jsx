@@ -1,36 +1,21 @@
 'use client';
 
-import { STAGES, SEVERITIES, PRIORITIES, LABELS } from '@pms/shared';
-
-const SCOPES = [
-  { key: 'all', label: 'All' },
-  { key: 'assigned', label: 'Assigned to me' },
-  { key: 'reported', label: 'Reported by me' },
-  { key: 'unassigned', label: 'Unassigned' },
-];
+import { STAGES, PRIORITIES } from '@pms/shared';
 
 export default function TicketFilters({ value, projects, onChange }) {
   const set = (key) => (event) => onChange({ ...value, [key]: event.target.value, page: 1 });
+  const toggle = (key) => {
+    const next = value[key] ? undefined : true;
+    onChange({ ...value, [key]: next, page: 1 });
+  };
 
   return (
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-      <div role="tablist" style={{ display: 'flex', gap: 4 }}>
-        {SCOPES.map((scope) => (
-          <button
-            key={scope.key}
-            type="button"
-            role="tab"
-            aria-selected={(value.scope || 'all') === scope.key}
-            onClick={() => onChange({ ...value, scope: scope.key, page: 1 })}
-          >
-            {scope.label}
-          </button>
-        ))}
-      </div>
-
+    <div className="toolbar">
       <input
-        aria-label="Search"
-        placeholder="Search title, description or WEB-101"
+        className="filterin"
+        type="search"
+        aria-label="Filter tickets"
+        placeholder="Filter by number, title or module"
         value={value.q || ''}
         onChange={set('q')}
       />
@@ -40,10 +25,8 @@ export default function TicketFilters({ value, projects, onChange }) {
         {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
       </select>
 
-      {/* Stage options come from shared/stages.js — the filter and the pipeline
-          cannot disagree about what a stage is called. */}
       <select aria-label="Stage" value={value.status || ''} onChange={set('status')}>
-        <option value="">All stages</option>
+        <option value="">Any stage</option>
         {STAGES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
       </select>
 
@@ -52,15 +35,37 @@ export default function TicketFilters({ value, projects, onChange }) {
         {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
       </select>
 
-      <select aria-label="Severity" value={value.severity || ''} onChange={set('severity')}>
-        <option value="">Any severity</option>
-        {SEVERITIES.map((s) => <option key={s} value={s}>{s}</option>)}
+      <select aria-label="Scope" value={value.scope || 'all'} onChange={set('scope')}>
+        <option value="all">Anyone</option>
+        <option value="assigned">Assigned to me</option>
+        <option value="reported">Reported by me</option>
+        <option value="unassigned">Unassigned</option>
       </select>
 
-      <select aria-label="Label" value={value.label || ''} onChange={set('label')}>
-        <option value="">Any label</option>
-        {LABELS.map((l) => <option key={l} value={l}>{l}</option>)}
-      </select>
+      <button
+        type="button"
+        className={`btn btn-sm${value.blocked ? ' chip-on' : ''}`}
+        aria-pressed={Boolean(value.blocked)}
+        onClick={() => toggle('blocked')}
+      >
+        Blocked
+      </button>
+      <button
+        type="button"
+        className={`btn btn-sm${value.overdue ? ' chip-on' : ''}`}
+        aria-pressed={Boolean(value.overdue)}
+        onClick={() => toggle('overdue')}
+      >
+        Overdue
+      </button>
+      <button
+        type="button"
+        className={`btn btn-sm${value.reopened ? ' chip-on' : ''}`}
+        aria-pressed={Boolean(value.reopened)}
+        onClick={() => toggle('reopened')}
+      >
+        Reopened
+      </button>
     </div>
   );
 }

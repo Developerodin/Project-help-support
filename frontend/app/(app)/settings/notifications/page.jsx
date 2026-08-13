@@ -30,30 +30,41 @@ export default function NotificationSettingsPage() {
 
   return (
     <>
-      <h1>Notification preferences</h1>
+      <div className="page-head">
+        <div>
+          <h1>Notification preferences</h1>
+          <p className="sub">Choose which events reach you by email and in the app.</p>
+        </div>
+      </div>
       <FormError error={error} />
+      {saved && <p className="meta">Saved.</p>}
 
-      <table>
-        <thead><tr><th>Event</th><th>In app</th><th>Email</th></tr></thead>
-        <tbody>
-          {NOTIFICATION_EVENTS.map((event) => (
-            <tr key={event}>
-              <td>{event}</td>
-              <td>
-                <input type="checkbox" aria-label={`${event} in app`}
-                  checked={prefs.inApp[event]} onChange={toggle('inApp', event)} />
-              </td>
-              <td>
-                <input type="checkbox" aria-label={`${event} email`}
-                  checked={prefs.email[event]} onChange={toggle('email', event)} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="tablewrap">
+        <table>
+          <thead>
+            <tr><th>Event</th><th>In app</th><th>Email</th></tr>
+          </thead>
+          <tbody>
+            {NOTIFICATION_EVENTS.map((event) => (
+              <tr key={event}>
+                <td className="mono">{event}</td>
+                <td>
+                  <input type="checkbox" aria-label={`${event} in app`}
+                    checked={prefs.inApp[event]} onChange={toggle('inApp', event)} />
+                </td>
+                <td>
+                  <input type="checkbox" aria-label={`${event} email`}
+                    checked={prefs.email[event]} onChange={toggle('email', event)} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
-      <button type="button" onClick={save}>Save</button>
-      {saved && <span> Saved.</span>}
+      <button type="button" className="btn btn-primary" style={{ marginTop: 12 }} onClick={save}>
+        Save preferences
+      </button>
     </>
   );
 }

@@ -1,45 +1,127 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
 import { AuthProvider, useAuth } from '@/shared/contexts/auth-context.jsx';
+import Icon, { initials } from '@/shared/components/icons.jsx';
 
-function Nav() {
+const NAV_GROUPS = [
+  {
+    cap: 'Work',
+    items: [
+      { href: '/tickets/board', id: 'board', label: 'Board', icon: 'board', roles: '*' },
+      { href: '/tickets', id: 'tickets', label: 'Tickets', icon: 'list', roles: '*' },
+      { href: '/tickets/analytics', id: 'analytics', label: 'Analytics', icon: 'chart', roles: ['admin', 'lead', 'qa'] },
+    ],
+  },
+  {
+    cap: 'Admin',
+    items: [
+      { href: '/projects', id: 'projects', label: 'Projects', icon: 'proj', roles: ['admin'] },
+      { href: '/teams', id: 'teams', label: 'Teams', icon: 'team', roles: ['admin', 'lead'] },
+      { href: '/users', id: 'people', label: 'People', icon: 'user', roles: ['admin'] },
+      { href: '/settings/notifications', id: 'settings', label: 'Notifications', icon: 'bell', roles: '*' },
+    ],
+  },
+];
+
+function visible(item, role) {
+  return item.roles === '*' || item.roles.includes(role);
+}
+
+function isCurrent(pathname, href) {
+  if (href === '/tickets') return pathname === '/tickets' || pathname.startsWith('/tickets?');
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+function RailNav() {
   const { user, logout } = useAuth();
+  const pathname = usePathname();
   if (!user) return null;
 
-  // Role gates NAVIGATION VISIBILITY ONLY. This is not authorization — the
-  // server rejects an admin route for a member regardless of what renders here.
-  const isAdmin = user.role === 'admin';
-  const isLeadOrAdmin = isAdmin || user.role === 'lead';
+  return (
+    <nav className="rail-nav" aria-label="Primary">
+      <div className="brand">
+        <span className="mark" aria-hidden="true"><span /><span /><span /></span>
+        <b>Help &amp; Support</b>
+      </div>
+      <div className="navscroll">
+        {NAV_GROUPS.map((group) => {
+          const items = group.items.filter((item) => visible(item, user.role));
+          if (items.length === 0) return null;
+          return (
+            <div className="navgrp" key={group.cap}>
+              <span className="navcap">{group.cap}</span>
+              {items.map((item) => (
+                <Link
+                  key={item.id}
+                  href={item.href}
+                  className="navlink"
+                  aria-current={isCurrent(pathname, item.href) ? 'page' : undefined}
+                >
+                  <Icon name={item.icon} size={14} />
+                  <span className="t">{item.label}</span>
+                </Link>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+      <div className="navfoot">
+        <button type="button" className="navlink" onClick={logout}>
+          <Icon name="x" size={14} />
+          <span className="t">Sign out</span>
+        </button>
+      </div>
+    </nav>
+  );
+}
+
+function TopBar() {
+  const { user } = useAuth();
+  const router = useRouter();
+  if (!user) return null;
 
   return (
-    <nav style={{ display: 'flex', gap: 16, padding: 12, borderBottom: '1px solid var(--border)' }}>
-      <Link href="/tickets">Tickets</Link>
-      <Link href="/tickets/board">Board</Link>
-      <Link href="/tickets/analytics">Analytics</Link>
-      {isLeadOrAdmin && <Link href="/teams">Teams</Link>}
-      {isAdmin && <Link href="/projects">Projects</Link>}
-      {isAdmin && <Link href="/users">Users</Link>}
-      <Link href="/settings/notifications">Settings</Link>
-      <span style={{ marginLeft: 'auto' }}>
-        {user.name} · <button type="button" onClick={logout}>Sign out</button>
-      </span>
-    </nav>
+    <div className="topbar">
+      <button type="button" className="search" onClick={() => router.push('/tickets')}>
+        <span className="q">Search tickets</span>
+        <kbd>/</kbd>
+      </button>
+      <span className="spacer" />
+      <Link href="/tickets/new" className="btn btn-primary">
+        <Icon name="plus" size={12} /> New ticket
+      </Link>
+      <div className="avatar" title={user.name}>{initials(user.name)}</div>
+    </div>
   );
 }
 
 function Guard({ children }) {
   const { user, loading } = useAuth();
-  if (loading) return <p style={{ padding: 24 }}>Loading…</p>;
-  if (!user) return <p style={{ padding: 24 }}>Please <Link href="/login">sign in</Link>.</p>;
+  if (loading) return <div className="page"><p className="meta">Loading…</p></div>;
+  if (!user) {
+    return (
+      <div className="page">
+        <p>Please <Link href="/login">sign in</Link>.</p>
+      </div>
+    );
+  }
   return children;
 }
 
 export default function AppLayout({ children }) {
   return (
     <AuthProvider>
-      <Nav />
-      <main style={{ padding: 16 }}><Guard>{children}</Guard></main>
+      <div className="app">
+        <RailNav />
+        <main>
+          <TopBar />
+          <Guard>
+            <div className="page">{children}</div>
+          </Guard>
+        </main>
+      </div>
     </AuthProvider>
   );
 }

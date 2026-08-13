@@ -107,6 +107,12 @@ export function buildTicketFilter(actor, query = {}) {
   if (query.module) filter.module = query.module;
   if (query.assignedTo) filter.assignedTo = query.assignedTo;
   if (query.team) filter.team = query.team;
+  if (query.blocked === 'true' || query.blocked === true) filter.blocked = true;
+  if (query.reopened === 'true' || query.reopened === true) filter.reopenCount = { $gt: 0 };
+  if (query.overdue === 'true' || query.overdue === true) {
+    filter.estimatedResolutionAt = { $lt: new Date() };
+    if (!filter.status) filter.status = { $ne: 'closed' };
+  }
 
   // Scope resolves against req.user, never against an id in the query string.
   const scope = scopeFilter(query.scope, actor._id);
@@ -266,6 +272,72 @@ export async function unwatchTicket(actor, idOrKey) {
   const ticket = await resolveTicketDoc(idOrKey);
   await Ticket.updateOne({ _id: ticket._id }, { $pull: { watchers: actor._id } });
   return getTicket(String(ticket._id));
+}
+
+/**
+ * Blocked is orthogonal to stage. Set/clear are revisioned so two people
+ * cannot silently overwrite each other's triage note.
+ */
+export async function setBlocked(actor, idOrKey, { revision, reason }) {
+  const ticket = await resolveTicketDoc(idOrKey);
+  assertCanEditTicket(actor, ticket);
+
+  const note = String(reason || '').trim();
+  if (!note) {
+    throw new ApiError(400, 'BLOCKER_REASON_REQUIRED', 'A blocker reason is required');
+  }
+
+  const now = new Date();
+  const written = await applyConditionalUpdate(ticket, revision, {
+    $set: {
+      blocked: true,
+      blockerReason: note,
+      blockedAt: now,
+      blockedBy: actor._id,
+      revision: revision + 1,
+    },
+    $push: {
+      activityLog: {
+        action: 'blocked',
+        performedBy: actor._id,
+        at: now,
+        changes: [
+          { field: 'blocked', from: ticket.blocked, to: true },
+          { field: 'blockerReason', from: ticket.blockerReason, to: note },
+        ],
+      },
+    },
+  });
+
+  return written.toJSON();
+}
+
+export async function clearBlocked(actor, idOrKey, { revision }) {
+  const ticket = await resolveTicketDoc(idOrKey);
+  assertCanEditTicket(actor, ticket);
+
+  if (!ticket.blocked) {
+    throw new ApiError(400, 'NOT_BLOCKED', 'This ticket is not blocked');
+  }
+
+  const now = new Date();
+  const written = await applyConditionalUpdate(ticket, revision, {
+    $set: {
+      blocked: false,
+      revision: revision + 1,
+    },
+    $unset: { blockerReason: 1, blockedAt: 1, blockedBy: 1 },
+    $push: {
+      activityLog: {
+        action: 'unblocked',
+        performedBy: actor._id,
+        at: now,
+        changes: [{ field: 'blocked', from: true, to: false }],
+      },
+    },
+  });
+
+  return written.toJSON();
 }
 
 export async function deleteTicket(idOrKey) {

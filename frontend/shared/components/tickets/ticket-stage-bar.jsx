@@ -1,13 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { STAGES, stageIndex, stageLabel, legalDestinations } from '@pms/shared';
+import { STAGES, stageIndex, stageLabel, legalDestinations, canTransition } from '@pms/shared';
 
-/**
- * The menu is rendered from shared/stages.js, so it can only ever offer what
- * the server would accept. It is a UX affordance, never a gate — the server
- * re-runs canTransition on every one of these.
- */
 export default function TicketStageBar({ ticket, actor, onTransition }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [pending, setPending] = useState(null);
@@ -18,13 +13,9 @@ export default function TicketStageBar({ ticket, actor, onTransition }) {
 
   function choose(to) {
     setMenuOpen(false);
-    const isReopen = stageIndex(to) < currentIndex;
-    const isClose = to === 'closed';
-
-    // Which field is required derives from (from, to) — the same rule the
-    // server applies, so the form never asks for the wrong one.
-    if (isReopen || isClose) {
-      setPending({ to, kind: isReopen ? 'note' : 'reason' });
+    const verdict = canTransition(ticket.status, to, actor, ticket);
+    if (verdict.isReopen || verdict.isClose) {
+      setPending({ to, kind: verdict.isReopen ? 'note' : 'reason' });
       setText('');
       return;
     }
@@ -37,65 +28,82 @@ export default function TicketStageBar({ ticket, actor, onTransition }) {
   }
 
   return (
-    <section>
-      <h2>Stage</h2>
-
-      <ol style={{ display: 'flex', gap: 4, listStyle: 'none', padding: 0, flexWrap: 'wrap' }}>
+    <>
+      <div className="railboard" role="list" aria-label="Stage pipeline">
         {STAGES.map((stage) => {
           const isCurrent = stage.key === ticket.status;
+          const canSet = destinations.includes(stage.key);
+          const cls = [
+            'railseg',
+            isCurrent ? 'now' : '',
+            stage.index < currentIndex ? 'done' : '',
+            canSet ? 'open' : '',
+            !canSet && !isCurrent ? 'locked' : '',
+          ].filter(Boolean).join(' ');
           return (
-            <li
+            <button
               key={stage.key}
-              aria-label={isCurrent ? 'Current stage' : undefined}
+              type="button"
+              role="listitem"
+              className={cls}
+              disabled={!canSet}
+              title={stage.label}
+              aria-label={isCurrent ? 'Current stage' : stage.label}
               aria-current={isCurrent ? 'step' : undefined}
-              style={{
-                padding: '2px 6px',
-                borderRadius: 4,
-                background: isCurrent ? 'var(--accent)' : 'transparent',
-                color: isCurrent ? '#fff'
-                  : (stage.index < currentIndex ? 'var(--fg)' : 'var(--muted)'),
-                border: '1px solid var(--border)',
-              }}
+              onClick={() => choose(stage.key)}
             >
-              {stage.label}
-            </li>
+              <span className="bar" />
+              <span className="nm">{stage.label}</span>
+            </button>
           );
         })}
-      </ol>
+      </div>
 
-      <button
-        type="button"
-        onClick={() => setMenuOpen((v) => !v)}
-        disabled={destinations.length === 0}
-      >
-        Move to…
-      </button>
+      <div className="railkey">
+        <span><i style={{ background: 'var(--sig-line)' }} />Passed</span>
+        <span><i style={{ background: 'var(--sig)' }} />Now</span>
+        <span style={{ marginLeft: 'auto' }}>
+          You are {actor?.role}
+          {' · '}
+          <button type="button" className="btn btn-sm" onClick={() => setMenuOpen((v) => !v)} disabled={destinations.length === 0}>
+            Move to…
+          </button>
+        </span>
+      </div>
 
       {menuOpen && (
-        <ul role="menu" style={{ listStyle: 'none', padding: 4, border: '1px solid var(--border)' }}>
+        <div className="menu" role="menu" style={{ position: 'relative', display: 'block' }}>
           {destinations.map((key) => (
-            <li key={key}>
-              <button type="button" role="menuitem" onClick={() => choose(key)}>
-                {stageLabel(key)}
-              </button>
-            </li>
+            <button key={key} type="button" className="menuitem" role="menuitem" onClick={() => choose(key)}>
+              {stageLabel(key)}
+            </button>
           ))}
-        </ul>
+        </div>
       )}
 
       {pending && (
-        <div>
-          <label htmlFor="transition-text">
-            {pending.kind === 'note' ? 'Note (required to reopen)' : 'Reason (required to close)'}
-          </label>
-          <textarea
-            id="transition-text" rows={3} style={{ width: '100%' }}
-            value={text} onChange={(e) => setText(e.target.value)}
-          />
-          <button type="button" onClick={confirm} disabled={!text.trim()}>Confirm</button>
-          <button type="button" onClick={() => setPending(null)}>Cancel</button>
+        <div className="dlg" style={{ position: 'relative', display: 'block', marginTop: 8 }}>
+          <div className="dlg-head">
+            <h3>{pending.kind === 'note' ? 'Reopen' : 'Close'} {ticket.ticketId}</h3>
+          </div>
+          <div className="dlg-body">
+            <label className="lbl" htmlFor="transition-text">
+              {pending.kind === 'note' ? 'Note (required to reopen)' : 'Reason (required to close)'}
+            </label>
+            <textarea
+              id="transition-text" rows={3}
+              value={text} onChange={(e) => setText(e.target.value)}
+            />
+          </div>
+          <div className="dlg-foot">
+            <button type="button" className="btn" onClick={() => setPending(null)}>Cancel</button>
+            <span className="spacer" />
+            <button type="button" className="btn btn-primary" onClick={confirm} disabled={!text.trim()}>
+              Confirm
+            </button>
+          </div>
         </div>
       )}
-    </section>
+    </>
   );
 }
