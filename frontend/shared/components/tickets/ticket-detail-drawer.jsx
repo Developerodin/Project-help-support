@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -7,6 +7,13 @@ import {
 } from '@/shared/api/tickets.js';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import FormError from '@/shared/components/form-error.jsx';
+import ValidationDialog from '@/shared/components/validation-dialog.jsx';
+import {
+  getTransitionFieldErrors,
+  getValidationDialogForTransitionError,
+  isTransitionValidationError,
+  logApiError,
+} from '@/shared/lib/api-error.js';
 import TicketHeader from './ticket-header.jsx';
 import TicketFields from './ticket-fields.jsx';
 import TicketStageBar from './ticket-stage-bar.jsx';
@@ -18,6 +25,8 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
   const { user } = useAuth();
   const [ticket, setTicket] = useState(null);
   const [error, setError] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [validationDialog, setValidationDialog] = useState(null);
   const [tab, setTab] = useState('discussion');
   const [blockReason, setBlockReason] = useState('');
   const discussionRef = useRef(null);
@@ -42,14 +51,41 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  const clearFieldError = useCallback((key) => {
+    setFieldErrors((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  }, []);
+
+  const closeValidationDialog = useCallback(() => {
+    const firstFieldId = validationDialog?.firstFieldId;
+    setValidationDialog(null);
+    if (firstFieldId) {
+      window.setTimeout(() => document.getElementById(firstFieldId)?.focus(), 0);
+    }
+  }, [validationDialog]);
+
   const run = (operation) => async (...args) => {
     setError(null);
+    setFieldErrors({});
+    setValidationDialog(null);
     try {
       await operation(...args);
       await load();
       onChanged?.();
     } catch (err) {
-      setError(err);
+      logApiError(err, { ticketId, operation: operation.name || 'ticketAction' });
+
+      if (isTransitionValidationError(err)) {
+        setFieldErrors(getTransitionFieldErrors(err, ticket) || {});
+        setValidationDialog(getValidationDialogForTransitionError(err, ticket));
+      } else {
+        setError(err);
+      }
+
       if (err.status === 409) await load();
     }
   };
@@ -145,6 +181,8 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
                 </div>
                 <TicketFields
                   ticket={ticket}
+                  fieldErrors={fieldErrors}
+                  onFieldEdit={clearFieldError}
                   onSave={run((body) => patchTicket(ticket.ticketId, body))}
                   onBlock={async () => {
                     if (!blockReason.trim()) return;
@@ -165,6 +203,14 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
           </>
         )}
       </aside>
+
+      <ValidationDialog
+        open={Boolean(validationDialog)}
+        title={validationDialog?.title}
+        message={validationDialog?.message}
+        items={validationDialog?.items || []}
+        onClose={closeValidationDialog}
+      />
     </>
   );
 }

@@ -86,4 +86,56 @@ describe('TicketDetailDrawer', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/reload/i);
   });
+
+  it('shows validation dialog and inline date errors when estimates are missing', async () => {
+    transitionTicket.mockRejectedValueOnce({
+      status: 400,
+      code: 'ESTIMATES_REQUIRED',
+      message: 'Both an estimated resolution date and an expected release date are required to enter In Progress',
+      requestId: '771f225e-862d-4fe7-8ae1-b74ac648ce37',
+      fields: {
+        estimatedResolutionAt: 'Required',
+        expectedReleaseDate: 'Required',
+      },
+    });
+
+    render(<TicketDetailDrawer ticketId="WEB-101" onClose={() => {}} onChanged={() => {}} />);
+    await screen.findByText('WEB-101');
+
+    await userEvent.click(screen.getByRole('button', { name: /move to/i }));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'In Progress' }));
+
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /dates required/i })).toBeInTheDocument();
+    expect(screen.getByText(/estimated resolution date/i)).toBeInTheDocument();
+    expect(screen.getByText(/expected release date/i)).toBeInTheDocument();
+    expect(screen.queryByText(/reference:/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/771f225e/i)).not.toBeInTheDocument();
+    expect(document.getElementById('estimatedResolutionAt')).toHaveAttribute('aria-invalid', 'true');
+    expect(document.getElementById('expectedReleaseDate')).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('focuses the first missing date field after dismissing the validation dialog', async () => {
+    transitionTicket.mockRejectedValueOnce({
+      status: 400,
+      code: 'ESTIMATES_REQUIRED',
+      message: 'Both an estimated resolution date and an expected release date are required to enter In Progress',
+      fields: {
+        estimatedResolutionAt: 'Required',
+        expectedReleaseDate: 'Required',
+      },
+    });
+
+    render(<TicketDetailDrawer ticketId="WEB-101" onClose={() => {}} onChanged={() => {}} />);
+    await screen.findByText('WEB-101');
+
+    await userEvent.click(screen.getByRole('button', { name: /move to/i }));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'In Progress' }));
+    await screen.findByRole('alertdialog');
+    await userEvent.click(screen.getByRole('button', { name: /got it/i }));
+
+    await waitFor(() => {
+      expect(document.getElementById('estimatedResolutionAt')).toHaveFocus();
+    });
+  });
 });

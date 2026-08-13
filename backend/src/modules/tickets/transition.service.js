@@ -20,10 +20,14 @@ export function checkGuards(to, ticket) {
 
   if (toIndex >= GUARD_ESTIMATES_FROM_INDEX
       && (!ticket.estimatedResolutionAt || !ticket.expectedReleaseDate)) {
+    const fields = {};
+    if (!ticket.estimatedResolutionAt) fields.estimatedResolutionAt = 'Required';
+    if (!ticket.expectedReleaseDate) fields.expectedReleaseDate = 'Required';
     return {
       ok: false,
       code: 'ESTIMATES_REQUIRED',
       reason: `Both an estimated resolution date and an expected release date are required to enter ${stageLabel(to)}`,
+      fields,
     };
   }
 
@@ -76,7 +80,7 @@ export async function transitionTicket(actor, idOrKey, { to, revision, note, rea
   if (!verdict.ok) throw new ApiError(400, verdict.code, verdict.reason);
 
   const guard = checkGuards(to, ticket);
-  if (!guard.ok) throw new ApiError(400, guard.code, guard.reason);
+  if (!guard.ok) throw new ApiError(400, guard.code, guard.reason, guard.fields);
 
   // Which text field is mandatory derives from (from, to) â€” which is exactly
   // why Reopen and close-early are not separate endpoints with duplicated

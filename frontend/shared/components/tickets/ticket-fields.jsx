@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState } from 'react';
 import { SEVERITIES, PRIORITIES } from '@pms/shared';
@@ -7,6 +7,7 @@ const dateValue = (iso) => (iso ? new Date(iso).toISOString().slice(0, 10) : '')
 
 export default function TicketFields({
   ticket, onSave, onBlock, onUnblock, blockReason, setBlockReason,
+  fieldErrors = {}, onFieldEdit,
 }) {
   const [draft, setDraft] = useState({
     priority: ticket.priority || '',
@@ -15,7 +16,13 @@ export default function TicketFields({
     expectedReleaseDate: dateValue(ticket.expectedReleaseDate),
   });
 
-  const set = (key) => (event) => setDraft({ ...draft, [key]: event.target.value });
+  const set = (key) => (event) => {
+    onFieldEdit?.(key);
+    setDraft({ ...draft, [key]: event.target.value });
+  };
+
+  const estInvalid = Boolean(fieldErrors.estimatedResolutionAt);
+  const releaseInvalid = Boolean(fieldErrors.expectedReleaseDate);
 
   return (
     <aside className="sidecol">
@@ -41,16 +48,38 @@ export default function TicketFields({
         </select>
       </div>
 
-      <div className="siderow">
+      <div className={`siderow${estInvalid ? ' bad' : ''}`}>
         <label className="lbl" htmlFor="estimatedResolutionAt">Estimated resolution</label>
-        <input id="estimatedResolutionAt" type="date"
-          value={draft.estimatedResolutionAt} onChange={set('estimatedResolutionAt')} />
+        <input
+          id="estimatedResolutionAt"
+          type="date"
+          value={draft.estimatedResolutionAt}
+          onChange={set('estimatedResolutionAt')}
+          aria-invalid={estInvalid}
+          aria-describedby={estInvalid ? 'estimatedResolutionAt-hint' : undefined}
+        />
+        {estInvalid ? (
+          <p id="estimatedResolutionAt-hint" className="field-hint invalid">
+            {fieldErrors.estimatedResolutionAt}
+          </p>
+        ) : null}
       </div>
 
-      <div className="siderow">
+      <div className={`siderow${releaseInvalid ? ' bad' : ''}`}>
         <label className="lbl" htmlFor="expectedReleaseDate">Expected release</label>
-        <input id="expectedReleaseDate" type="date"
-          value={draft.expectedReleaseDate} onChange={set('expectedReleaseDate')} />
+        <input
+          id="expectedReleaseDate"
+          type="date"
+          value={draft.expectedReleaseDate}
+          onChange={set('expectedReleaseDate')}
+          aria-invalid={releaseInvalid}
+          aria-describedby={releaseInvalid ? 'expectedReleaseDate-hint' : undefined}
+        />
+        {releaseInvalid ? (
+          <p id="expectedReleaseDate-hint" className="field-hint invalid">
+            {fieldErrors.expectedReleaseDate}
+          </p>
+        ) : null}
       </div>
 
       <div className="siderow">
