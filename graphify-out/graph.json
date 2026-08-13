@@ -9,7 +9,7 @@
       "source_file": "eslint.config.js",
       "source_location": "L1",
       "id": "eslint_config_js",
-      "community": 52,
+      "community": 61,
       "norm_label": "eslint.config.js"
     },
     {
@@ -61,7 +61,7 @@
       "label": "seedAdmin()",
       "file_type": "code",
       "source_file": "backend\\src\\seed.js",
-      "source_location": "L11",
+      "source_location": "L12",
       "id": "seed_seedadmin",
       "community": 4,
       "norm_label": "seedadmin()"
@@ -70,7 +70,7 @@
       "label": "seedProjects()",
       "file_type": "code",
       "source_file": "backend\\src\\seed.js",
-      "source_location": "L64",
+      "source_location": "L73",
       "id": "seed_seedprojects",
       "community": 4,
       "norm_label": "seedprojects()"
@@ -81,7 +81,7 @@
       "source_file": "backend\\src\\modules\\auth\\auth.controller.js",
       "source_location": "L1",
       "id": "backend_src_modules_auth_auth_controller_js",
-      "community": 8,
+      "community": 7,
       "norm_label": "auth.controller.js"
     },
     {
@@ -90,7 +90,7 @@
       "source_file": "backend\\src\\modules\\auth\\auth.controller.js",
       "source_location": "L7",
       "id": "auth_controller_refreshcookieoptions",
-      "community": 8,
+      "community": 7,
       "norm_label": "refreshcookieoptions()"
     },
     {
@@ -99,7 +99,7 @@
       "source_file": "backend\\src\\modules\\auth\\auth.controller.js",
       "source_location": "L18",
       "id": "auth_controller_requestmeta",
-      "community": 8,
+      "community": 7,
       "norm_label": "requestmeta()"
     },
     {
@@ -108,7 +108,7 @@
       "source_file": "backend\\src\\modules\\auth\\auth.controller.js",
       "source_location": "L20",
       "id": "auth_controller_login",
-      "community": 8,
+      "community": 7,
       "norm_label": "login()"
     },
     {
@@ -117,7 +117,7 @@
       "source_file": "backend\\src\\modules\\auth\\auth.controller.js",
       "source_location": "L28",
       "id": "auth_controller_refresh",
-      "community": 8,
+      "community": 7,
       "norm_label": "refresh()"
     },
     {
@@ -126,7 +126,7 @@
       "source_file": "backend\\src\\modules\\auth\\auth.controller.js",
       "source_location": "L39",
       "id": "auth_controller_logout",
-      "community": 8,
+      "community": 7,
       "norm_label": "logout()"
     },
     {
@@ -135,7 +135,7 @@
       "source_file": "backend\\src\\modules\\auth\\auth.controller.js",
       "source_location": "L60",
       "id": "auth_controller_forgotpassword",
-      "community": 1,
+      "community": 7,
       "norm_label": "forgotpassword()"
     },
     {
@@ -144,7 +144,7 @@
       "source_file": "backend\\src\\modules\\auth\\auth.route.js",
       "source_location": "L1",
       "id": "backend_src_modules_auth_auth_route_js",
-      "community": 1,
+      "community": 8,
       "norm_label": "auth.route.js"
     },
     {
@@ -153,7 +153,7 @@
       "source_file": "backend\\src\\modules\\auth\\auth.route.js",
       "source_location": "L18",
       "id": "auth_route_authroutes",
-      "community": 1,
+      "community": 8,
       "norm_label": "authroutes()"
     },
     {
@@ -162,7 +162,7 @@
       "source_file": "backend\\src\\modules\\auth\\auth.service.js",
       "source_location": "L1",
       "id": "backend_src_modules_auth_auth_service_js",
-      "community": 1,
+      "community": 8,
       "norm_label": "auth.service.js"
     },
     {
@@ -171,7 +171,7 @@
       "source_file": "backend\\src\\modules\\auth\\auth.service.js",
       "source_location": "L20",
       "id": "auth_service_badcredentials",
-      "community": 1,
+      "community": 8,
       "norm_label": "badcredentials()"
     },
     {
@@ -180,7 +180,7 @@
       "source_file": "backend\\src\\modules\\auth\\auth.service.js",
       "source_location": "L21",
       "id": "auth_service_badinvite",
-      "community": 1,
+      "community": 8,
       "norm_label": "badinvite()"
     },
     {
@@ -189,7 +189,7 @@
       "source_file": "backend\\src\\modules\\auth\\auth.service.js",
       "source_location": "L25",
       "id": "auth_service_newrawtoken",
-      "community": 1,
+      "community": 8,
       "norm_label": "newrawtoken()"
     },
     {
@@ -198,7 +198,7 @@
       "source_file": "backend\\src\\modules\\auth\\auth.service.js",
       "source_location": "L29",
       "id": "auth_service_issuesession",
-      "community": 1,
+      "community": 8,
       "norm_label": "issuesession()"
     },
     {
@@ -207,7 +207,7 @@
       "source_file": "backend\\src\\modules\\auth\\auth.service.js",
       "source_location": "L39",
       "id": "auth_service_login",
-      "community": 1,
+      "community": 8,
       "norm_label": "login()"
     },
     {
@@ -216,7 +216,7 @@
       "source_file": "backend\\src\\modules\\auth\\auth.service.js",
       "source_location": "L57",
       "id": "auth_service_refresh",
-      "community": 1,
+      "community": 8,
       "norm_label": "refresh()"
     },
     {
@@ -225,7 +225,7 @@
       "source_file": "backend\\src\\modules\\auth\\auth.service.js",
       "source_location": "L67",
       "id": "auth_service_logout",
-      "community": 1,
+      "community": 8,
       "norm_label": "logout()"
     },
     {
@@ -234,7 +234,7 @@
       "source_file": "backend\\src\\modules\\auth\\auth.service.js",
       "source_location": "L71",
       "id": "auth_service_createinvite",
-      "community": 1,
+      "community": 8,
       "norm_label": "createinvite()"
     },
     {
@@ -243,7 +243,7 @@
       "source_file": "backend\\src\\modules\\auth\\auth.service.js",
       "source_location": "L91",
       "id": "auth_service_acceptinvite",
-      "community": 1,
+      "community": 8,
       "norm_label": "acceptinvite()"
     },
     {
@@ -252,7 +252,7 @@
       "source_file": "backend\\src\\modules\\auth\\auth.service.js",
       "source_location": "L114",
       "id": "auth_service_requestpasswordreset",
-      "community": 1,
+      "community": 8,
       "norm_label": "requestpasswordreset()"
     },
     {
@@ -261,7 +261,7 @@
       "source_file": "backend\\src\\modules\\auth\\auth.service.js",
       "source_location": "L133",
       "id": "auth_service_resetpassword",
-      "community": 1,
+      "community": 8,
       "norm_label": "resetpassword()"
     },
     {
@@ -270,7 +270,7 @@
       "source_file": "backend\\src\\modules\\auth\\auth.service.js",
       "source_location": "L157",
       "id": "auth_service_reissueinvite",
-      "community": 1,
+      "community": 8,
       "norm_label": "reissueinvite()"
     },
     {
@@ -279,7 +279,7 @@
       "source_file": "backend\\src\\modules\\auth\\auth.validation.js",
       "source_location": "L1",
       "id": "backend_src_modules_auth_auth_validation_js",
-      "community": 53,
+      "community": 62,
       "norm_label": "auth.validation.js"
     },
     {
@@ -423,7 +423,7 @@
       "source_file": "backend\\src\\modules\\notifications\\emailLog.model.js",
       "source_location": "L1",
       "id": "backend_src_modules_notifications_emaillog_model_js",
-      "community": 54,
+      "community": 63,
       "norm_label": "emaillog.model.js"
     },
     {
@@ -432,7 +432,7 @@
       "source_file": "backend\\src\\modules\\notifications\\notification.controller.js",
       "source_location": "L1",
       "id": "backend_src_modules_notifications_notification_controller_js",
-      "community": 55,
+      "community": 64,
       "norm_label": "notification.controller.js"
     },
     {
@@ -441,7 +441,7 @@
       "source_file": "backend\\src\\modules\\notifications\\notification.model.js",
       "source_location": "L1",
       "id": "backend_src_modules_notifications_notification_model_js",
-      "community": 56,
+      "community": 65,
       "norm_label": "notification.model.js"
     },
     {
@@ -468,7 +468,7 @@
       "source_file": "backend\\src\\modules\\notifications\\notification.service.js",
       "source_location": "L1",
       "id": "backend_src_modules_notifications_notification_service_js",
-      "community": 1,
+      "community": 4,
       "norm_label": "notification.service.js"
     },
     {
@@ -477,7 +477,7 @@
       "source_file": "backend\\src\\modules\\notifications\\notification.service.js",
       "source_location": "L21",
       "id": "notification_service_createinappnotifications",
-      "community": 1,
+      "community": 4,
       "norm_label": "createinappnotifications()"
     },
     {
@@ -486,7 +486,7 @@
       "source_file": "backend\\src\\modules\\notifications\\notification.service.js",
       "source_location": "L37",
       "id": "notification_service_listnotifications",
-      "community": 1,
+      "community": 4,
       "norm_label": "listnotifications()"
     },
     {
@@ -495,7 +495,7 @@
       "source_file": "backend\\src\\modules\\notifications\\notification.service.js",
       "source_location": "L47",
       "id": "notification_service_markread",
-      "community": 1,
+      "community": 4,
       "norm_label": "markread()"
     },
     {
@@ -504,7 +504,7 @@
       "source_file": "backend\\src\\modules\\notifications\\notification.service.js",
       "source_location": "L59",
       "id": "notification_service_markallread",
-      "community": 1,
+      "community": 4,
       "norm_label": "markallread()"
     },
     {
@@ -648,7 +648,7 @@
       "source_file": "backend\\src\\modules\\projects\\project.controller.js",
       "source_location": "L1",
       "id": "backend_src_modules_projects_project_controller_js",
-      "community": 57,
+      "community": 66,
       "norm_label": "project.controller.js"
     },
     {
@@ -657,7 +657,7 @@
       "source_file": "backend\\src\\modules\\projects\\project.model.js",
       "source_location": "L1",
       "id": "backend_src_modules_projects_project_model_js",
-      "community": 58,
+      "community": 67,
       "norm_label": "project.model.js"
     },
     {
@@ -693,7 +693,7 @@
       "source_file": "backend\\src\\modules\\projects\\project.service.js",
       "source_location": "L12",
       "id": "project_service_assertmoduleandpage",
-      "community": 9,
+      "community": 1,
       "norm_label": "assertmoduleandpage()"
     },
     {
@@ -756,7 +756,7 @@
       "source_file": "backend\\src\\modules\\projects\\project.validation.js",
       "source_location": "L1",
       "id": "backend_src_modules_projects_project_validation_js",
-      "community": 59,
+      "community": 68,
       "norm_label": "project.validation.js"
     },
     {
@@ -810,7 +810,7 @@
       "source_file": "backend\\src\\modules\\teams\\team.controller.js",
       "source_location": "L1",
       "id": "backend_src_modules_teams_team_controller_js",
-      "community": 60,
+      "community": 69,
       "norm_label": "team.controller.js"
     },
     {
@@ -819,7 +819,7 @@
       "source_file": "backend\\src\\modules\\teams\\team.model.js",
       "source_location": "L1",
       "id": "backend_src_modules_teams_team_model_js",
-      "community": 61,
+      "community": 70,
       "norm_label": "team.model.js"
     },
     {
@@ -936,7 +936,7 @@
       "source_file": "backend\\src\\modules\\teams\\team.validation.js",
       "source_location": "L1",
       "id": "backend_src_modules_teams_team_validation_js",
-      "community": 62,
+      "community": 71,
       "norm_label": "team.validation.js"
     },
     {
@@ -972,7 +972,7 @@
       "source_file": "backend\\src\\modules\\tickets\\analytics.controller.js",
       "source_location": "L1",
       "id": "backend_src_modules_tickets_analytics_controller_js",
-      "community": 63,
+      "community": 72,
       "norm_label": "analytics.controller.js"
     },
     {
@@ -999,7 +999,7 @@
       "source_file": "backend\\src\\modules\\tickets\\analytics.service.js",
       "source_location": "L1",
       "id": "backend_src_modules_tickets_analytics_service_js",
-      "community": 10,
+      "community": 9,
       "norm_label": "analytics.service.js"
     },
     {
@@ -1008,7 +1008,7 @@
       "source_file": "backend\\src\\modules\\tickets\\analytics.service.js",
       "source_location": "L17",
       "id": "analytics_service_emptylanes",
-      "community": 10,
+      "community": 9,
       "norm_label": "emptylanes()"
     },
     {
@@ -1017,7 +1017,7 @@
       "source_file": "backend\\src\\modules\\tickets\\analytics.service.js",
       "source_location": "L18",
       "id": "analytics_service_emptystages",
-      "community": 10,
+      "community": 9,
       "norm_label": "emptystages()"
     },
     {
@@ -1026,7 +1026,7 @@
       "source_file": "backend\\src\\modules\\tickets\\analytics.service.js",
       "source_location": "L20",
       "id": "analytics_service_overview",
-      "community": 10,
+      "community": 9,
       "norm_label": "overview()"
     },
     {
@@ -1035,7 +1035,7 @@
       "source_file": "backend\\src\\modules\\tickets\\analytics.service.js",
       "source_location": "L46",
       "id": "analytics_service_median",
-      "community": 10,
+      "community": 9,
       "norm_label": "median()"
     },
     {
@@ -1044,7 +1044,7 @@
       "source_file": "backend\\src\\modules\\tickets\\analytics.service.js",
       "source_location": "L58",
       "id": "analytics_service_percentile",
-      "community": 10,
+      "community": 9,
       "norm_label": "percentile()"
     },
     {
@@ -1053,7 +1053,7 @@
       "source_file": "backend\\src\\modules\\tickets\\analytics.service.js",
       "source_location": "L75",
       "id": "analytics_service_stagedurations",
-      "community": 10,
+      "community": 9,
       "norm_label": "stagedurations()"
     },
     {
@@ -1062,7 +1062,7 @@
       "source_file": "backend\\src\\modules\\tickets\\analytics.service.js",
       "source_location": "L87",
       "id": "analytics_service_timeinstage",
-      "community": 10,
+      "community": 9,
       "norm_label": "timeinstage()"
     },
     {
@@ -1071,7 +1071,7 @@
       "source_file": "backend\\src\\modules\\tickets\\analytics.service.js",
       "source_location": "L127",
       "id": "analytics_service_daykey",
-      "community": 10,
+      "community": 9,
       "norm_label": "daykey()"
     },
     {
@@ -1080,7 +1080,7 @@
       "source_file": "backend\\src\\modules\\tickets\\analytics.service.js",
       "source_location": "L140",
       "id": "analytics_service_estimateaccuracy",
-      "community": 10,
+      "community": 9,
       "norm_label": "estimateaccuracy()"
     },
     {
@@ -1089,7 +1089,7 @@
       "source_file": "backend\\src\\modules\\tickets\\analytics.service.js",
       "source_location": "L180",
       "id": "analytics_service_reopenafterqa",
-      "community": 10,
+      "community": 9,
       "norm_label": "reopenafterqa()"
     },
     {
@@ -1098,7 +1098,7 @@
       "source_file": "backend\\src\\modules\\tickets\\analytics.service.js",
       "source_location": "L211",
       "id": "analytics_service_aging",
-      "community": 10,
+      "community": 9,
       "norm_label": "aging()"
     },
     {
@@ -1107,7 +1107,7 @@
       "source_file": "backend\\src\\modules\\tickets\\analytics.service.js",
       "source_location": "L230",
       "id": "analytics_service_weekkey",
-      "community": 10,
+      "community": 9,
       "norm_label": "weekkey()"
     },
     {
@@ -1116,7 +1116,7 @@
       "source_file": "backend\\src\\modules\\tickets\\analytics.service.js",
       "source_location": "L238",
       "id": "analytics_service_trend",
-      "community": 10,
+      "community": 9,
       "norm_label": "trend()"
     },
     {
@@ -1125,7 +1125,7 @@
       "source_file": "backend\\src\\modules\\tickets\\analytics.service.js",
       "source_location": "L264",
       "id": "analytics_service_drill",
-      "community": 10,
+      "community": 9,
       "norm_label": "drill()"
     },
     {
@@ -1134,7 +1134,7 @@
       "source_file": "backend\\src\\modules\\tickets\\attachment.service.js",
       "source_location": "L1",
       "id": "backend_src_modules_tickets_attachment_service_js",
-      "community": 11,
+      "community": 10,
       "norm_label": "attachment.service.js"
     },
     {
@@ -1143,7 +1143,7 @@
       "source_file": "backend\\src\\modules\\tickets\\attachment.service.js",
       "source_location": "L7",
       "id": "attachment_service_sameid",
-      "community": 11,
+      "community": 10,
       "norm_label": "sameid()"
     },
     {
@@ -1152,7 +1152,7 @@
       "source_file": "backend\\src\\modules\\tickets\\attachment.service.js",
       "source_location": "L9",
       "id": "attachment_service_findattachment",
-      "community": 11,
+      "community": 10,
       "norm_label": "findattachment()"
     },
     {
@@ -1161,7 +1161,7 @@
       "source_file": "backend\\src\\modules\\tickets\\attachment.service.js",
       "source_location": "L21",
       "id": "attachment_service_addattachments",
-      "community": 11,
+      "community": 10,
       "norm_label": "addattachments()"
     },
     {
@@ -1170,7 +1170,7 @@
       "source_file": "backend\\src\\modules\\tickets\\attachment.service.js",
       "source_location": "L86",
       "id": "attachment_service_removeattachment",
-      "community": 11,
+      "community": 10,
       "norm_label": "removeattachment()"
     },
     {
@@ -1179,7 +1179,7 @@
       "source_file": "backend\\src\\modules\\tickets\\attachment.service.js",
       "source_location": "L123",
       "id": "attachment_service_downloadurl",
-      "community": 11,
+      "community": 10,
       "norm_label": "downloadurl()"
     },
     {
@@ -1188,7 +1188,7 @@
       "source_file": "backend\\src\\modules\\tickets\\comment.service.js",
       "source_location": "L1",
       "id": "backend_src_modules_tickets_comment_service_js",
-      "community": 6,
+      "community": 1,
       "norm_label": "comment.service.js"
     },
     {
@@ -1197,7 +1197,7 @@
       "source_file": "backend\\src\\modules\\tickets\\comment.service.js",
       "source_location": "L6",
       "id": "comment_service_sameid",
-      "community": 6,
+      "community": 1,
       "norm_label": "sameid()"
     },
     {
@@ -1206,7 +1206,7 @@
       "source_file": "backend\\src\\modules\\tickets\\comment.service.js",
       "source_location": "L8",
       "id": "comment_service_findcomment",
-      "community": 6,
+      "community": 1,
       "norm_label": "findcomment()"
     },
     {
@@ -1215,7 +1215,7 @@
       "source_file": "backend\\src\\modules\\tickets\\comment.service.js",
       "source_location": "L26",
       "id": "comment_service_addcomment",
-      "community": 6,
+      "community": 1,
       "norm_label": "addcomment()"
     },
     {
@@ -1224,7 +1224,7 @@
       "source_file": "backend\\src\\modules\\tickets\\comment.service.js",
       "source_location": "L63",
       "id": "comment_service_editcomment",
-      "community": 6,
+      "community": 1,
       "norm_label": "editcomment()"
     },
     {
@@ -1233,7 +1233,7 @@
       "source_file": "backend\\src\\modules\\tickets\\comment.service.js",
       "source_location": "L92",
       "id": "comment_service_deletecomment",
-      "community": 6,
+      "community": 1,
       "norm_label": "deletecomment()"
     },
     {
@@ -1242,7 +1242,7 @@
       "source_file": "backend\\src\\modules\\tickets\\comment.service.js",
       "source_location": "L124",
       "id": "comment_service_togglereaction",
-      "community": 6,
+      "community": 1,
       "norm_label": "togglereaction()"
     },
     {
@@ -1251,7 +1251,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.controller.js",
       "source_location": "L1",
       "id": "backend_src_modules_tickets_ticket_controller_js",
-      "community": 8,
+      "community": 7,
       "norm_label": "ticket.controller.js"
     },
     {
@@ -1260,7 +1260,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.controller.js",
       "source_location": "L12",
       "id": "ticket_controller_create",
-      "community": 8,
+      "community": 7,
       "norm_label": "create()"
     },
     {
@@ -1269,7 +1269,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.controller.js",
       "source_location": "L33",
       "id": "ticket_controller_assign",
-      "community": 8,
+      "community": 7,
       "norm_label": "assign()"
     },
     {
@@ -1278,7 +1278,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.controller.js",
       "source_location": "L68",
       "id": "ticket_controller_transition",
-      "community": 8,
+      "community": 7,
       "norm_label": "transition()"
     },
     {
@@ -1287,7 +1287,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.controller.js",
       "source_location": "L80",
       "id": "ticket_controller_addcomment",
-      "community": 8,
+      "community": 7,
       "norm_label": "addcomment()"
     },
     {
@@ -1296,7 +1296,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.controller.js",
       "source_location": "L109",
       "id": "ticket_controller_addattachments",
-      "community": 8,
+      "community": 7,
       "norm_label": "addattachments()"
     },
     {
@@ -1305,7 +1305,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.controller.js",
       "source_location": "L116",
       "id": "ticket_controller_removeattachment",
-      "community": 8,
+      "community": 7,
       "norm_label": "removeattachment()"
     },
     {
@@ -1314,7 +1314,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.controller.js",
       "source_location": "L122",
       "id": "ticket_controller_downloadattachment",
-      "community": 8,
+      "community": 7,
       "norm_label": "downloadattachment()"
     },
     {
@@ -1323,7 +1323,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.model.js",
       "source_location": "L1",
       "id": "backend_src_modules_tickets_ticket_model_js",
-      "community": 64,
+      "community": 73,
       "norm_label": "ticket.model.js"
     },
     {
@@ -1332,7 +1332,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.route.js",
       "source_location": "L1",
       "id": "backend_src_modules_tickets_ticket_route_js",
-      "community": 8,
+      "community": 7,
       "norm_label": "ticket.route.js"
     },
     {
@@ -1341,7 +1341,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.route.js",
       "source_location": "L14",
       "id": "ticket_route_ticketroutes",
-      "community": 8,
+      "community": 7,
       "norm_label": "ticketroutes()"
     },
     {
@@ -1350,7 +1350,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.service.js",
       "source_location": "L1",
       "id": "backend_src_modules_tickets_ticket_service_js",
-      "community": 6,
+      "community": 1,
       "norm_label": "ticket.service.js"
     },
     {
@@ -1368,7 +1368,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.service.js",
       "source_location": "L71",
       "id": "ticket_service_resolveticketdoc",
-      "community": 6,
+      "community": 1,
       "norm_label": "resolveticketdoc()"
     },
     {
@@ -1377,7 +1377,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.service.js",
       "source_location": "L85",
       "id": "ticket_service_getticket",
-      "community": 6,
+      "community": 1,
       "norm_label": "getticket()"
     },
     {
@@ -1386,7 +1386,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.service.js",
       "source_location": "L90",
       "id": "ticket_service_scopefilter",
-      "community": 10,
+      "community": 9,
       "norm_label": "scopefilter()"
     },
     {
@@ -1395,7 +1395,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.service.js",
       "source_location": "L99",
       "id": "ticket_service_buildticketfilter",
-      "community": 10,
+      "community": 9,
       "norm_label": "buildticketfilter()"
     },
     {
@@ -1413,7 +1413,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.service.js",
       "source_location": "L156",
       "id": "ticket_service_sameid",
-      "community": 6,
+      "community": 1,
       "norm_label": "sameid()"
     },
     {
@@ -1422,7 +1422,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.service.js",
       "source_location": "L164",
       "id": "ticket_service_assertcaneditticket",
-      "community": 6,
+      "community": 1,
       "norm_label": "assertcaneditticket()"
     },
     {
@@ -1431,7 +1431,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.service.js",
       "source_location": "L176",
       "id": "ticket_service_stalerevision",
-      "community": 6,
+      "community": 1,
       "norm_label": "stalerevision()"
     },
     {
@@ -1440,7 +1440,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.service.js",
       "source_location": "L189",
       "id": "ticket_service_applyconditionalupdate",
-      "community": 6,
+      "community": 1,
       "norm_label": "applyconditionalupdate()"
     },
     {
@@ -1449,7 +1449,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.service.js",
       "source_location": "L203",
       "id": "ticket_service_patchticket",
-      "community": 6,
+      "community": 1,
       "norm_label": "patchticket()"
     },
     {
@@ -1458,7 +1458,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.service.js",
       "source_location": "L234",
       "id": "ticket_service_assignticket",
-      "community": 6,
+      "community": 1,
       "norm_label": "assignticket()"
     },
     {
@@ -1467,7 +1467,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.service.js",
       "source_location": "L266",
       "id": "ticket_service_watchticket",
-      "community": 6,
+      "community": 1,
       "norm_label": "watchticket()"
     },
     {
@@ -1476,7 +1476,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.service.js",
       "source_location": "L272",
       "id": "ticket_service_unwatchticket",
-      "community": 6,
+      "community": 1,
       "norm_label": "unwatchticket()"
     },
     {
@@ -1485,7 +1485,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.service.js",
       "source_location": "L282",
       "id": "ticket_service_setblocked",
-      "community": 6,
+      "community": 1,
       "norm_label": "setblocked()"
     },
     {
@@ -1494,7 +1494,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.service.js",
       "source_location": "L316",
       "id": "ticket_service_clearblocked",
-      "community": 6,
+      "community": 1,
       "norm_label": "clearblocked()"
     },
     {
@@ -1503,7 +1503,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.service.js",
       "source_location": "L344",
       "id": "ticket_service_deleteticket",
-      "community": 6,
+      "community": 1,
       "norm_label": "deleteticket()"
     },
     {
@@ -1512,7 +1512,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.service.js",
       "source_location": "L355",
       "id": "ticket_service_bulktickets",
-      "community": 6,
+      "community": 1,
       "norm_label": "bulktickets()"
     },
     {
@@ -1521,7 +1521,7 @@
       "source_file": "backend\\src\\modules\\tickets\\ticket.validation.js",
       "source_location": "L1",
       "id": "backend_src_modules_tickets_ticket_validation_js",
-      "community": 65,
+      "community": 74,
       "norm_label": "ticket.validation.js"
     },
     {
@@ -1530,7 +1530,7 @@
       "source_file": "backend\\src\\modules\\tickets\\transition.service.js",
       "source_location": "L1",
       "id": "backend_src_modules_tickets_transition_service_js",
-      "community": 7,
+      "community": 6,
       "norm_label": "transition.service.js"
     },
     {
@@ -1539,7 +1539,7 @@
       "source_file": "backend\\src\\modules\\tickets\\transition.service.js",
       "source_location": "L18",
       "id": "transition_service_checkguards",
-      "community": 7,
+      "community": 6,
       "norm_label": "checkguards()"
     },
     {
@@ -1548,7 +1548,7 @@
       "source_file": "backend\\src\\modules\\tickets\\transition.service.js",
       "source_location": "L42",
       "id": "transition_service_assertmaytransition",
-      "community": 7,
+      "community": 6,
       "norm_label": "assertmaytransition()"
     },
     {
@@ -1557,7 +1557,7 @@
       "source_file": "backend\\src\\modules\\tickets\\transition.service.js",
       "source_location": "L46",
       "id": "transition_service_conflict",
-      "community": 7,
+      "community": 6,
       "norm_label": "conflict()"
     },
     {
@@ -1566,7 +1566,7 @@
       "source_file": "backend\\src\\modules\\tickets\\transition.service.js",
       "source_location": "L64",
       "id": "transition_service_transitionticket",
-      "community": 7,
+      "community": 6,
       "norm_label": "transitionticket()"
     },
     {
@@ -1665,7 +1665,7 @@
       "source_file": "backend\\src\\modules\\tickets\\__tests__\\analytics.time-in-stage.test.js",
       "source_location": "L1",
       "id": "backend_src_modules_tickets_tests_analytics_time_in_stage_test_js",
-      "community": 6,
+      "community": 1,
       "norm_label": "analytics.time-in-stage.test.js"
     },
     {
@@ -1674,7 +1674,7 @@
       "source_file": "backend\\src\\modules\\tickets\\__tests__\\analytics.time-in-stage.test.js",
       "source_location": "L13",
       "id": "analytics_time_in_stage_test_at",
-      "community": 6,
+      "community": 1,
       "norm_label": "at()"
     },
     {
@@ -1827,7 +1827,7 @@
       "source_file": "backend\\src\\modules\\tickets\\__tests__\\ticket.model.test.js",
       "source_location": "L1",
       "id": "backend_src_modules_tickets_tests_ticket_model_test_js",
-      "community": 24,
+      "community": 27,
       "norm_label": "ticket.model.test.js"
     },
     {
@@ -1836,7 +1836,7 @@
       "source_file": "backend\\src\\modules\\tickets\\__tests__\\ticket.model.test.js",
       "source_location": "L9",
       "id": "ticket_model_test_base",
-      "community": 24,
+      "community": 27,
       "norm_label": "base()"
     },
     {
@@ -1989,7 +1989,7 @@
       "source_file": "backend\\src\\modules\\users\\user.controller.js",
       "source_location": "L1",
       "id": "backend_src_modules_users_user_controller_js",
-      "community": 8,
+      "community": 7,
       "norm_label": "user.controller.js"
     },
     {
@@ -2007,7 +2007,7 @@
       "source_file": "backend\\src\\modules\\users\\user.controller.js",
       "source_location": "L26",
       "id": "user_controller_resendinvite",
-      "community": 8,
+      "community": 7,
       "norm_label": "resendinvite()"
     },
     {
@@ -2016,7 +2016,7 @@
       "source_file": "backend\\src\\modules\\users\\user.model.js",
       "source_location": "L1",
       "id": "backend_src_modules_users_user_model_js",
-      "community": 66,
+      "community": 75,
       "norm_label": "user.model.js"
     },
     {
@@ -2088,7 +2088,7 @@
       "source_file": "backend\\src\\modules\\users\\user.validation.js",
       "source_location": "L1",
       "id": "backend_src_modules_users_user_validation_js",
-      "community": 67,
+      "community": 76,
       "norm_label": "user.validation.js"
     },
     {
@@ -2097,7 +2097,7 @@
       "source_file": "backend\\src\\modules\\users\\__tests__\\user.model.test.js",
       "source_location": "L1",
       "id": "backend_src_modules_users_tests_user_model_test_js",
-      "community": 68,
+      "community": 77,
       "norm_label": "user.model.test.js"
     },
     {
@@ -2178,7 +2178,7 @@
       "source_file": "backend\\src\\platform\\catchAsync.js",
       "source_location": "L1",
       "id": "backend_src_platform_catchasync_js",
-      "community": 8,
+      "community": 7,
       "norm_label": "catchasync.js"
     },
     {
@@ -2187,7 +2187,7 @@
       "source_file": "backend\\src\\platform\\catchAsync.js",
       "source_location": "L2",
       "id": "catchasync_catchasync",
-      "community": 8,
+      "community": 7,
       "norm_label": "catchasync()"
     },
     {
@@ -2322,7 +2322,7 @@
       "source_file": "backend\\src\\platform\\logger.js",
       "source_location": "L1",
       "id": "backend_src_platform_logger_js",
-      "community": 69,
+      "community": 78,
       "norm_label": "logger.js"
     },
     {
@@ -2347,7 +2347,7 @@
       "label": "resetTransport()",
       "file_type": "code",
       "source_file": "backend\\src\\platform\\mailer.js",
-      "source_location": "L35",
+      "source_location": "L39",
       "id": "mailer_resettransport",
       "community": 4,
       "norm_label": "resettransport()"
@@ -2376,7 +2376,7 @@
       "source_file": "backend\\src\\platform\\rateLimit.js",
       "source_location": "L1",
       "id": "backend_src_platform_ratelimit_js",
-      "community": 25,
+      "community": 28,
       "norm_label": "ratelimit.js"
     },
     {
@@ -2385,7 +2385,7 @@
       "source_file": "backend\\src\\platform\\rateLimit.js",
       "source_location": "L11",
       "id": "ratelimit_makelimiter",
-      "community": 25,
+      "community": 28,
       "norm_label": "makelimiter()"
     },
     {
@@ -2394,7 +2394,7 @@
       "source_file": "backend\\src\\platform\\requestId.js",
       "source_location": "L1",
       "id": "backend_src_platform_requestid_js",
-      "community": 26,
+      "community": 29,
       "norm_label": "requestid.js"
     },
     {
@@ -2403,7 +2403,7 @@
       "source_file": "backend\\src\\platform\\requestId.js",
       "source_location": "L9",
       "id": "requestid_requestid",
-      "community": 26,
+      "community": 29,
       "norm_label": "requestid()"
     },
     {
@@ -2412,7 +2412,7 @@
       "source_file": "backend\\src\\platform\\s3.js",
       "source_location": "L1",
       "id": "backend_src_platform_s3_js",
-      "community": 11,
+      "community": 10,
       "norm_label": "s3.js"
     },
     {
@@ -2421,7 +2421,7 @@
       "source_file": "backend\\src\\platform\\s3.js",
       "source_location": "L12",
       "id": "s3_assertstorageenabled",
-      "community": 11,
+      "community": 10,
       "norm_label": "assertstorageenabled()"
     },
     {
@@ -2430,7 +2430,7 @@
       "source_file": "backend\\src\\platform\\s3.js",
       "source_location": "L21",
       "id": "s3_getclient",
-      "community": 11,
+      "community": 10,
       "norm_label": "getclient()"
     },
     {
@@ -2439,7 +2439,7 @@
       "source_file": "backend\\src\\platform\\s3.js",
       "source_location": "L35",
       "id": "s3_putobject",
-      "community": 11,
+      "community": 10,
       "norm_label": "putobject()"
     },
     {
@@ -2448,7 +2448,7 @@
       "source_file": "backend\\src\\platform\\s3.js",
       "source_location": "L41",
       "id": "s3_deleteobject",
-      "community": 11,
+      "community": 10,
       "norm_label": "deleteobject()"
     },
     {
@@ -2457,7 +2457,7 @@
       "source_file": "backend\\src\\platform\\s3.js",
       "source_location": "L51",
       "id": "s3_presignget",
-      "community": 11,
+      "community": 10,
       "norm_label": "presignget()"
     },
     {
@@ -2466,7 +2466,7 @@
       "source_file": "backend\\src\\platform\\sameOrigin.js",
       "source_location": "L1",
       "id": "backend_src_platform_sameorigin_js",
-      "community": 1,
+      "community": 8,
       "norm_label": "sameorigin.js"
     },
     {
@@ -2475,7 +2475,7 @@
       "source_file": "backend\\src\\platform\\sameOrigin.js",
       "source_location": "L5",
       "id": "sameorigin_blocked",
-      "community": 1,
+      "community": 8,
       "norm_label": "blocked()"
     },
     {
@@ -2484,7 +2484,7 @@
       "source_file": "backend\\src\\platform\\sameOrigin.js",
       "source_location": "L17",
       "id": "sameorigin_sameorigin",
-      "community": 1,
+      "community": 8,
       "norm_label": "sameorigin()"
     },
     {
@@ -2520,7 +2520,7 @@
       "source_file": "backend\\src\\platform\\upload.js",
       "source_location": "L1",
       "id": "backend_src_platform_upload_js",
-      "community": 14,
+      "community": 15,
       "norm_label": "upload.js"
     },
     {
@@ -2529,7 +2529,7 @@
       "source_file": "backend\\src\\platform\\upload.js",
       "source_location": "L34",
       "id": "upload_matches",
-      "community": 14,
+      "community": 15,
       "norm_label": "matches()"
     },
     {
@@ -2538,7 +2538,7 @@
       "source_file": "backend\\src\\platform\\upload.js",
       "source_location": "L36",
       "id": "upload_looksliketext",
-      "community": 14,
+      "community": 15,
       "norm_label": "looksliketext()"
     },
     {
@@ -2547,7 +2547,7 @@
       "source_file": "backend\\src\\platform\\upload.js",
       "source_location": "L46",
       "id": "upload_snifftype",
-      "community": 14,
+      "community": 15,
       "norm_label": "snifftype()"
     },
     {
@@ -2556,7 +2556,7 @@
       "source_file": "backend\\src\\platform\\upload.js",
       "source_location": "L76",
       "id": "upload_safekey",
-      "community": 14,
+      "community": 15,
       "norm_label": "safekey()"
     },
     {
@@ -2610,7 +2610,7 @@
       "source_file": "backend\\src\\platform\\__tests__\\config.test.js",
       "source_location": "L1",
       "id": "backend_src_platform_tests_config_test_js",
-      "community": 70,
+      "community": 79,
       "norm_label": "config.test.js"
     },
     {
@@ -2619,7 +2619,7 @@
       "source_file": "backend\\src\\platform\\__tests__\\errors.test.js",
       "source_location": "L1",
       "id": "backend_src_platform_tests_errors_test_js",
-      "community": 27,
+      "community": 30,
       "norm_label": "errors.test.js"
     },
     {
@@ -2628,7 +2628,7 @@
       "source_file": "backend\\src\\platform\\__tests__\\errors.test.js",
       "source_location": "L6",
       "id": "errors_test_makeres",
-      "community": 27,
+      "community": 30,
       "norm_label": "makeres()"
     },
     {
@@ -2637,7 +2637,7 @@
       "source_file": "backend\\src\\platform\\__tests__\\paginate.test.js",
       "source_location": "L1",
       "id": "backend_src_platform_tests_paginate_test_js",
-      "community": 28,
+      "community": 31,
       "norm_label": "paginate.test.js"
     },
     {
@@ -2646,7 +2646,7 @@
       "source_file": "backend\\src\\platform\\__tests__\\paginate.test.js",
       "source_location": "L13",
       "id": "paginate_test_seed",
-      "community": 28,
+      "community": 31,
       "norm_label": "seed()"
     },
     {
@@ -2655,7 +2655,7 @@
       "source_file": "backend\\src\\platform\\__tests__\\rateLimit.test.js",
       "source_location": "L1",
       "id": "backend_src_platform_tests_ratelimit_test_js",
-      "community": 29,
+      "community": 32,
       "norm_label": "ratelimit.test.js"
     },
     {
@@ -2664,7 +2664,7 @@
       "source_file": "backend\\src\\platform\\__tests__\\rateLimit.test.js",
       "source_location": "L7",
       "id": "ratelimit_test_appwith",
-      "community": 29,
+      "community": 32,
       "norm_label": "appwith()"
     },
     {
@@ -2673,7 +2673,7 @@
       "source_file": "backend\\src\\platform\\__tests__\\requestId.test.js",
       "source_location": "L1",
       "id": "backend_src_platform_tests_requestid_test_js",
-      "community": 30,
+      "community": 33,
       "norm_label": "requestid.test.js"
     },
     {
@@ -2682,7 +2682,7 @@
       "source_file": "backend\\src\\platform\\__tests__\\requestId.test.js",
       "source_location": "L5",
       "id": "requestid_test_makectx",
-      "community": 30,
+      "community": 33,
       "norm_label": "makectx()"
     },
     {
@@ -2691,7 +2691,7 @@
       "source_file": "backend\\src\\platform\\__tests__\\sameOrigin.test.js",
       "source_location": "L1",
       "id": "backend_src_platform_tests_sameorigin_test_js",
-      "community": 31,
+      "community": 34,
       "norm_label": "sameorigin.test.js"
     },
     {
@@ -2700,7 +2700,7 @@
       "source_file": "backend\\src\\platform\\__tests__\\sameOrigin.test.js",
       "source_location": "L7",
       "id": "sameorigin_test_run",
-      "community": 31,
+      "community": 34,
       "norm_label": "run()"
     },
     {
@@ -2709,7 +2709,7 @@
       "source_file": "backend\\src\\platform\\__tests__\\toJSON.test.js",
       "source_location": "L1",
       "id": "backend_src_platform_tests_tojson_test_js",
-      "community": 71,
+      "community": 80,
       "norm_label": "tojson.test.js"
     },
     {
@@ -2790,7 +2790,7 @@
       "source_file": "backend\\src\\platform\\__tests__\\workspace.test.js",
       "source_location": "L1",
       "id": "backend_src_platform_tests_workspace_test_js",
-      "community": 72,
+      "community": 81,
       "norm_label": "workspace.test.js"
     },
     {
@@ -2799,7 +2799,7 @@
       "source_file": "backend\\src\\platform\\__tests__\\helpers\\memoryDb.js",
       "source_location": "L1",
       "id": "backend_src_platform_tests_helpers_memorydb_js",
-      "community": 19,
+      "community": 20,
       "norm_label": "memorydb.js"
     },
     {
@@ -2808,7 +2808,7 @@
       "source_file": "backend\\src\\platform\\__tests__\\helpers\\memoryDb.js",
       "source_location": "L8",
       "id": "memorydb_getmemoryuri",
-      "community": 19,
+      "community": 20,
       "norm_label": "getmemoryuri()"
     },
     {
@@ -2817,7 +2817,7 @@
       "source_file": "backend\\src\\platform\\__tests__\\helpers\\memoryDb.js",
       "source_location": "L16",
       "id": "memorydb_withmemorydb",
-      "community": 19,
+      "community": 20,
       "norm_label": "withmemorydb()"
     },
     {
@@ -2871,7 +2871,7 @@
       "source_file": "backend\\src\\__tests__\\seed.test.js",
       "source_location": "L1",
       "id": "backend_src_tests_seed_test_js",
-      "community": 73,
+      "community": 82,
       "norm_label": "seed.test.js"
     },
     {
@@ -2880,7 +2880,7 @@
       "source_file": "frontend\\next.config.mjs",
       "source_location": "L1",
       "id": "frontend_next_config_mjs",
-      "community": 74,
+      "community": 83,
       "norm_label": "next.config.mjs"
     },
     {
@@ -2889,7 +2889,7 @@
       "source_file": "frontend\\vitest.config.js",
       "source_location": "L1",
       "id": "frontend_vitest_config_js",
-      "community": 75,
+      "community": 84,
       "norm_label": "vitest.config.js"
     },
     {
@@ -2898,7 +2898,7 @@
       "source_file": "frontend\\vitest.setup.js",
       "source_location": "L1",
       "id": "frontend_vitest_setup_js",
-      "community": 76,
+      "community": 85,
       "norm_label": "vitest.setup.js"
     },
     {
@@ -2907,16 +2907,16 @@
       "source_file": "frontend\\app\\layout.jsx",
       "source_location": "L1",
       "id": "frontend_app_layout_jsx",
-      "community": 32,
+      "community": 35,
       "norm_label": "layout.jsx"
     },
     {
       "label": "RootLayout()",
       "file_type": "code",
       "source_file": "frontend\\app\\layout.jsx",
-      "source_location": "L7",
+      "source_location": "L8",
       "id": "layout_rootlayout",
-      "community": 32,
+      "community": 35,
       "norm_label": "rootlayout()"
     },
     {
@@ -2932,7 +2932,7 @@
       "label": "visible()",
       "file_type": "code",
       "source_file": "frontend\\app\\(app)\\layout.jsx",
-      "source_location": "L31",
+      "source_location": "L36",
       "id": "layout_visible",
       "community": 5,
       "norm_label": "visible()"
@@ -2941,7 +2941,7 @@
       "label": "isCurrent()",
       "file_type": "code",
       "source_file": "frontend\\app\\(app)\\layout.jsx",
-      "source_location": "L35",
+      "source_location": "L40",
       "id": "layout_iscurrent",
       "community": 5,
       "norm_label": "iscurrent()"
@@ -2950,7 +2950,7 @@
       "label": "RailNav()",
       "file_type": "code",
       "source_file": "frontend\\app\\(app)\\layout.jsx",
-      "source_location": "L40",
+      "source_location": "L45",
       "id": "layout_railnav",
       "community": 5,
       "norm_label": "railnav()"
@@ -2959,7 +2959,7 @@
       "label": "TopBar()",
       "file_type": "code",
       "source_file": "frontend\\app\\(app)\\layout.jsx",
-      "source_location": "L83",
+      "source_location": "L88",
       "id": "layout_topbar",
       "community": 5,
       "norm_label": "topbar()"
@@ -2968,7 +2968,7 @@
       "label": "Guard()",
       "file_type": "code",
       "source_file": "frontend\\app\\(app)\\layout.jsx",
-      "source_location": "L110",
+      "source_location": "L139",
       "id": "layout_guard",
       "community": 5,
       "norm_label": "guard()"
@@ -2977,7 +2977,7 @@
       "label": "AppLayout()",
       "file_type": "code",
       "source_file": "frontend\\app\\(app)\\layout.jsx",
-      "source_location": "L123",
+      "source_location": "L152",
       "id": "layout_applayout",
       "community": 5,
       "norm_label": "applayout()"
@@ -2985,19 +2985,37 @@
     {
       "label": "page.jsx",
       "file_type": "code",
+      "source_file": "frontend\\app\\(app)\\notifications\\page.jsx",
+      "source_location": "L1",
+      "id": "frontend_app_app_notifications_page_jsx",
+      "community": 36,
+      "norm_label": "page.jsx"
+    },
+    {
+      "label": "NotificationsPage()",
+      "file_type": "code",
+      "source_file": "frontend\\app\\(app)\\notifications\\page.jsx",
+      "source_location": "L12",
+      "id": "page_notificationspage",
+      "community": 36,
+      "norm_label": "notificationspage()"
+    },
+    {
+      "label": "page.jsx",
+      "file_type": "code",
       "source_file": "frontend\\app\\(app)\\projects\\page.jsx",
       "source_location": "L1",
       "id": "frontend_app_app_projects_page_jsx",
-      "community": 33,
+      "community": 37,
       "norm_label": "page.jsx"
     },
     {
       "label": "ProjectsPage()",
       "file_type": "code",
       "source_file": "frontend\\app\\(app)\\projects\\page.jsx",
-      "source_location": "L9",
+      "source_location": "L12",
       "id": "page_projectspage",
-      "community": 33,
+      "community": 37,
       "norm_label": "projectspage()"
     },
     {
@@ -3013,7 +3031,7 @@
       "label": "NotificationSettingsPage()",
       "file_type": "code",
       "source_file": "frontend\\app\\(app)\\settings\\notifications\\page.jsx",
-      "source_location": "L9",
+      "source_location": "L10",
       "id": "page_notificationsettingspage",
       "community": 5,
       "norm_label": "notificationsettingspage()"
@@ -3024,7 +3042,7 @@
       "source_file": "frontend\\app\\(app)\\teams\\page.jsx",
       "source_location": "L1",
       "id": "frontend_app_app_teams_page_jsx",
-      "community": 34,
+      "community": 38,
       "norm_label": "page.jsx"
     },
     {
@@ -3033,7 +3051,7 @@
       "source_file": "frontend\\app\\(app)\\teams\\page.jsx",
       "source_location": "L9",
       "id": "page_teamspage",
-      "community": 34,
+      "community": 38,
       "norm_label": "teamspage()"
     },
     {
@@ -3042,7 +3060,7 @@
       "source_file": "frontend\\app\\(app)\\tickets\\page.jsx",
       "source_location": "L1",
       "id": "frontend_app_app_tickets_page_jsx",
-      "community": 9,
+      "community": 5,
       "norm_label": "page.jsx"
     },
     {
@@ -3051,7 +3069,7 @@
       "source_file": "frontend\\app\\(app)\\tickets\\page.jsx",
       "source_location": "L12",
       "id": "page_ticketlistpage",
-      "community": 9,
+      "community": 5,
       "norm_label": "ticketlistpage()"
     },
     {
@@ -3060,7 +3078,7 @@
       "source_file": "frontend\\app\\(app)\\tickets\\board\\page.jsx",
       "source_location": "L102",
       "id": "page_page",
-      "community": 9,
+      "community": 5,
       "norm_label": "page()"
     },
     {
@@ -3069,16 +3087,16 @@
       "source_file": "frontend\\app\\(app)\\tickets\\analytics\\page.jsx",
       "source_location": "L1",
       "id": "frontend_app_app_tickets_analytics_page_jsx",
-      "community": 9,
+      "community": 6,
       "norm_label": "page.jsx"
     },
     {
       "label": "AnalyticsPage()",
       "file_type": "code",
       "source_file": "frontend\\app\\(app)\\tickets\\analytics\\page.jsx",
-      "source_location": "L12",
+      "source_location": "L13",
       "id": "page_analyticspage",
-      "community": 9,
+      "community": 6,
       "norm_label": "analyticspage()"
     },
     {
@@ -3087,7 +3105,7 @@
       "source_file": "frontend\\app\\(app)\\tickets\\analytics\\__tests__\\analytics.test.jsx",
       "source_location": "L1",
       "id": "frontend_app_app_tickets_analytics_tests_analytics_test_jsx",
-      "community": 77,
+      "community": 86,
       "norm_label": "analytics.test.jsx"
     },
     {
@@ -3096,7 +3114,7 @@
       "source_file": "frontend\\app\\(app)\\tickets\\board\\page.jsx",
       "source_location": "L1",
       "id": "frontend_app_app_tickets_board_page_jsx",
-      "community": 9,
+      "community": 5,
       "norm_label": "page.jsx"
     },
     {
@@ -3105,7 +3123,7 @@
       "source_file": "frontend\\app\\(app)\\tickets\\board\\page.jsx",
       "source_location": "L14",
       "id": "page_boardpage",
-      "community": 9,
+      "community": 5,
       "norm_label": "boardpage()"
     },
     {
@@ -3114,17 +3132,26 @@
       "source_file": "frontend\\app\\(app)\\tickets\\new\\page.jsx",
       "source_location": "L1",
       "id": "frontend_app_app_tickets_new_page_jsx",
-      "community": 9,
+      "community": 5,
       "norm_label": "page.jsx"
     },
     {
       "label": "NewTicketPage()",
       "file_type": "code",
       "source_file": "frontend\\app\\(app)\\tickets\\new\\page.jsx",
-      "source_location": "L28",
+      "source_location": "L41",
       "id": "page_newticketpage",
-      "community": 9,
+      "community": 5,
       "norm_label": "newticketpage()"
+    },
+    {
+      "label": "new-ticket.test.jsx",
+      "file_type": "code",
+      "source_file": "frontend\\app\\(app)\\tickets\\new\\__tests__\\new-ticket.test.jsx",
+      "source_location": "L1",
+      "id": "frontend_app_app_tickets_new_tests_new_ticket_test_jsx",
+      "community": 87,
+      "norm_label": "new-ticket.test.jsx"
     },
     {
       "label": "page.jsx",
@@ -3132,7 +3159,7 @@
       "source_file": "frontend\\app\\(app)\\users\\page.jsx",
       "source_location": "L1",
       "id": "frontend_app_app_users_page_jsx",
-      "community": 35,
+      "community": 39,
       "norm_label": "page.jsx"
     },
     {
@@ -3141,7 +3168,7 @@
       "source_file": "frontend\\app\\(app)\\users\\page.jsx",
       "source_location": "L9",
       "id": "page_userspage",
-      "community": 35,
+      "community": 39,
       "norm_label": "userspage()"
     },
     {
@@ -3150,7 +3177,7 @@
       "source_file": "frontend\\app\\(app)\\users\\__tests__\\users.test.jsx",
       "source_location": "L1",
       "id": "frontend_app_app_users_tests_users_test_jsx",
-      "community": 78,
+      "community": 88,
       "norm_label": "users.test.jsx"
     },
     {
@@ -3159,7 +3186,7 @@
       "source_file": "frontend\\app\\(auth)\\layout.jsx",
       "source_location": "L1",
       "id": "frontend_app_auth_layout_jsx",
-      "community": 36,
+      "community": 40,
       "norm_label": "layout.jsx"
     },
     {
@@ -3168,7 +3195,7 @@
       "source_file": "frontend\\app\\(auth)\\layout.jsx",
       "source_location": "L5",
       "id": "layout_authlayout",
-      "community": 36,
+      "community": 40,
       "norm_label": "authlayout()"
     },
     {
@@ -3177,7 +3204,7 @@
       "source_file": "frontend\\app\\(auth)\\invite\\accept\\page.jsx",
       "source_location": "L1",
       "id": "frontend_app_auth_invite_accept_page_jsx",
-      "community": 15,
+      "community": 16,
       "norm_label": "page.jsx"
     },
     {
@@ -3186,7 +3213,7 @@
       "source_file": "frontend\\app\\(auth)\\invite\\accept\\page.jsx",
       "source_location": "L10",
       "id": "page_passwordchecks",
-      "community": 15,
+      "community": 16,
       "norm_label": "passwordchecks()"
     },
     {
@@ -3195,7 +3222,7 @@
       "source_file": "frontend\\app\\(auth)\\invite\\accept\\page.jsx",
       "source_location": "L20",
       "id": "page_acceptinviteform",
-      "community": 15,
+      "community": 16,
       "norm_label": "acceptinviteform()"
     },
     {
@@ -3204,7 +3231,7 @@
       "source_file": "frontend\\app\\(auth)\\invite\\accept\\page.jsx",
       "source_location": "L162",
       "id": "page_acceptinvitepage",
-      "community": 15,
+      "community": 16,
       "norm_label": "acceptinvitepage()"
     },
     {
@@ -3231,7 +3258,7 @@
       "source_file": "frontend\\app\\(auth)\\login\\__tests__\\login.test.jsx",
       "source_location": "L1",
       "id": "frontend_app_auth_login_tests_login_test_jsx",
-      "community": 79,
+      "community": 89,
       "norm_label": "login.test.jsx"
     },
     {
@@ -3400,7 +3427,7 @@
       "label": "markRead()",
       "file_type": "code",
       "source_file": "frontend\\shared\\api\\notifications.js",
-      "source_location": "L5",
+      "source_location": "L12",
       "id": "notifications_markread",
       "community": 2,
       "norm_label": "markread()"
@@ -3409,7 +3436,7 @@
       "label": "markAllRead()",
       "file_type": "code",
       "source_file": "frontend\\shared\\api\\notifications.js",
-      "source_location": "L6",
+      "source_location": "L13",
       "id": "notifications_markallread",
       "community": 2,
       "norm_label": "markallread()"
@@ -3708,7 +3735,7 @@
       "source_file": "frontend\\shared\\api\\__tests__\\client.test.js",
       "source_location": "L1",
       "id": "frontend_shared_api_tests_client_test_js",
-      "community": 37,
+      "community": 41,
       "norm_label": "client.test.js"
     },
     {
@@ -3717,8 +3744,26 @@
       "source_file": "frontend\\shared\\api\\__tests__\\client.test.js",
       "source_location": "L4",
       "id": "client_test_jsonresponse",
-      "community": 37,
+      "community": 41,
       "norm_label": "jsonresponse()"
+    },
+    {
+      "label": "attachment-picker.jsx",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\components\\attachment-picker.jsx",
+      "source_location": "L1",
+      "id": "frontend_shared_components_attachment_picker_jsx",
+      "community": 42,
+      "norm_label": "attachment-picker.jsx"
+    },
+    {
+      "label": "AttachmentPicker()",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\components\\attachment-picker.jsx",
+      "source_location": "L11",
+      "id": "attachment_picker_attachmentpicker",
+      "community": 42,
+      "norm_label": "attachmentpicker()"
     },
     {
       "label": "form-error.jsx",
@@ -3726,7 +3771,7 @@
       "source_file": "frontend\\shared\\components\\form-error.jsx",
       "source_location": "L1",
       "id": "frontend_shared_components_form_error_jsx",
-      "community": 38,
+      "community": 43,
       "norm_label": "form-error.jsx"
     },
     {
@@ -3735,7 +3780,7 @@
       "source_file": "frontend\\shared\\components\\form-error.jsx",
       "source_location": "L1",
       "id": "form_error_formerror",
-      "community": 38,
+      "community": 43,
       "norm_label": "formerror()"
     },
     {
@@ -3744,7 +3789,7 @@
       "source_file": "frontend\\shared\\components\\icons.jsx",
       "source_location": "L1",
       "id": "frontend_shared_components_icons_jsx",
-      "community": 5,
+      "community": 11,
       "norm_label": "icons.jsx"
     },
     {
@@ -3753,7 +3798,7 @@
       "source_file": "frontend\\shared\\components\\icons.jsx",
       "source_location": "L19",
       "id": "icons_icon",
-      "community": 5,
+      "community": 11,
       "norm_label": "icon()"
     },
     {
@@ -3762,7 +3807,7 @@
       "source_file": "frontend\\shared\\components\\icons.jsx",
       "source_location": "L40",
       "id": "icons_initials",
-      "community": 5,
+      "community": 11,
       "norm_label": "initials()"
     },
     {
@@ -3771,7 +3816,7 @@
       "source_file": "frontend\\shared\\components\\icons.jsx",
       "source_location": "L49",
       "id": "icons_prioritychipclass",
-      "community": 5,
+      "community": 11,
       "norm_label": "prioritychipclass()"
     },
     {
@@ -3780,7 +3825,7 @@
       "source_file": "frontend\\shared\\components\\icons.jsx",
       "source_location": "L55",
       "id": "icons_prioritylabel",
-      "community": 5,
+      "community": 11,
       "norm_label": "prioritylabel()"
     },
     {
@@ -3789,8 +3834,53 @@
       "source_file": "frontend\\shared\\components\\icons.jsx",
       "source_location": "L63",
       "id": "icons_isoverdue",
-      "community": 5,
+      "community": 11,
       "norm_label": "isoverdue()"
+    },
+    {
+      "label": "notification-bell.jsx",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\components\\notification-bell.jsx",
+      "source_location": "L1",
+      "id": "frontend_shared_components_notification_bell_jsx",
+      "community": 21,
+      "norm_label": "notification-bell.jsx"
+    },
+    {
+      "label": "unreadCountFrom()",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\components\\notification-bell.jsx",
+      "source_location": "L13",
+      "id": "notification_bell_unreadcountfrom",
+      "community": 21,
+      "norm_label": "unreadcountfrom()"
+    },
+    {
+      "label": "NotificationBell()",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\components\\notification-bell.jsx",
+      "source_location": "L17",
+      "id": "notification_bell_notificationbell",
+      "community": 21,
+      "norm_label": "notificationbell()"
+    },
+    {
+      "label": "project-modules-editor.jsx",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\components\\project-modules-editor.jsx",
+      "source_location": "L1",
+      "id": "frontend_shared_components_project_modules_editor_jsx",
+      "community": 12,
+      "norm_label": "project-modules-editor.jsx"
+    },
+    {
+      "label": "ProjectModulesEditor()",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\components\\project-modules-editor.jsx",
+      "source_location": "L21",
+      "id": "project_modules_editor_projectmoduleseditor",
+      "community": 12,
+      "norm_label": "projectmoduleseditor()"
     },
     {
       "label": "project-switcher.jsx",
@@ -3798,7 +3888,7 @@
       "source_file": "frontend\\shared\\components\\project-switcher.jsx",
       "source_location": "L1",
       "id": "frontend_shared_components_project_switcher_jsx",
-      "community": 9,
+      "community": 5,
       "norm_label": "project-switcher.jsx"
     },
     {
@@ -3807,7 +3897,7 @@
       "source_file": "frontend\\shared\\components\\project-switcher.jsx",
       "source_location": "L6",
       "id": "project_switcher_chevrondown",
-      "community": 9,
+      "community": 5,
       "norm_label": "chevrondown()"
     },
     {
@@ -3816,7 +3906,7 @@
       "source_file": "frontend\\shared\\components\\project-switcher.jsx",
       "source_location": "L14",
       "id": "project_switcher_projectswitcher",
-      "community": 9,
+      "community": 5,
       "norm_label": "projectswitcher()"
     },
     {
@@ -3825,7 +3915,7 @@
       "source_file": "frontend\\shared\\components\\theme-toggle.jsx",
       "source_location": "L1",
       "id": "frontend_shared_components_theme_toggle_jsx",
-      "community": 12,
+      "community": 6,
       "norm_label": "theme-toggle.jsx"
     },
     {
@@ -3834,7 +3924,7 @@
       "source_file": "frontend\\shared\\components\\theme-toggle.jsx",
       "source_location": "L5",
       "id": "theme_toggle_moonicon",
-      "community": 12,
+      "community": 6,
       "norm_label": "moonicon()"
     },
     {
@@ -3843,7 +3933,7 @@
       "source_file": "frontend\\shared\\components\\theme-toggle.jsx",
       "source_location": "L19",
       "id": "theme_toggle_sunicon",
-      "community": 12,
+      "community": 6,
       "norm_label": "sunicon()"
     },
     {
@@ -3852,8 +3942,26 @@
       "source_file": "frontend\\shared\\components\\theme-toggle.jsx",
       "source_location": "L33",
       "id": "theme_toggle_themetoggle",
-      "community": 12,
+      "community": 6,
       "norm_label": "themetoggle()"
+    },
+    {
+      "label": "validation-dialog.jsx",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\components\\validation-dialog.jsx",
+      "source_location": "L1",
+      "id": "frontend_shared_components_validation_dialog_jsx",
+      "community": 44,
+      "norm_label": "validation-dialog.jsx"
+    },
+    {
+      "label": "ValidationDialog()",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\components\\validation-dialog.jsx",
+      "source_location": "L5",
+      "id": "validation_dialog_validationdialog",
+      "community": 44,
+      "norm_label": "validationdialog()"
     },
     {
       "label": "auth-error.jsx",
@@ -3861,7 +3969,7 @@
       "source_file": "frontend\\shared\\components\\auth\\auth-error.jsx",
       "source_location": "L1",
       "id": "frontend_shared_components_auth_auth_error_jsx",
-      "community": 39,
+      "community": 45,
       "norm_label": "auth-error.jsx"
     },
     {
@@ -3870,7 +3978,7 @@
       "source_file": "frontend\\shared\\components\\auth\\auth-error.jsx",
       "source_location": "L4",
       "id": "auth_error_autherror",
-      "community": 39,
+      "community": 45,
       "norm_label": "autherror()"
     },
     {
@@ -3879,7 +3987,7 @@
       "source_file": "frontend\\shared\\components\\auth\\auth-field.jsx",
       "source_location": "L1",
       "id": "frontend_shared_components_auth_auth_field_jsx",
-      "community": 40,
+      "community": 46,
       "norm_label": "auth-field.jsx"
     },
     {
@@ -3888,7 +3996,7 @@
       "source_file": "frontend\\shared\\components\\auth\\auth-field.jsx",
       "source_location": "L6",
       "id": "auth_field_authfield",
-      "community": 40,
+      "community": 46,
       "norm_label": "authfield()"
     },
     {
@@ -3897,7 +4005,7 @@
       "source_file": "frontend\\shared\\components\\auth\\auth-icons.jsx",
       "source_location": "L1",
       "id": "frontend_shared_components_auth_auth_icons_jsx",
-      "community": 41,
+      "community": 47,
       "norm_label": "auth-icons.jsx"
     },
     {
@@ -3906,7 +4014,7 @@
       "source_file": "frontend\\shared\\components\\auth\\auth-icons.jsx",
       "source_location": "L33",
       "id": "auth_icons_authicon",
-      "community": 41,
+      "community": 47,
       "norm_label": "authicon()"
     },
     {
@@ -3915,34 +4023,34 @@
       "source_file": "frontend\\shared\\components\\auth\\auth-shell.jsx",
       "source_location": "L1",
       "id": "frontend_shared_components_auth_auth_shell_jsx",
-      "community": 16,
+      "community": 17,
       "norm_label": "auth-shell.jsx"
     },
     {
       "label": "AuthBrand()",
       "file_type": "code",
       "source_file": "frontend\\shared\\components\\auth\\auth-shell.jsx",
-      "source_location": "L54",
+      "source_location": "L56",
       "id": "auth_shell_authbrand",
-      "community": 16,
+      "community": 17,
       "norm_label": "authbrand()"
     },
     {
       "label": "AuthAside()",
       "file_type": "code",
       "source_file": "frontend\\shared\\components\\auth\\auth-shell.jsx",
-      "source_location": "L65",
+      "source_location": "L67",
       "id": "auth_shell_authaside",
-      "community": 16,
+      "community": 17,
       "norm_label": "authaside()"
     },
     {
       "label": "AuthFrame()",
       "file_type": "code",
       "source_file": "frontend\\shared\\components\\auth\\auth-shell.jsx",
-      "source_location": "L80",
+      "source_location": "L82",
       "id": "auth_shell_authframe",
-      "community": 16,
+      "community": 17,
       "norm_label": "authframe()"
     },
     {
@@ -3951,7 +4059,7 @@
       "source_file": "frontend\\shared\\components\\tickets\\board-lane.jsx",
       "source_location": "L1",
       "id": "frontend_shared_components_tickets_board_lane_jsx",
-      "community": 42,
+      "community": 48,
       "norm_label": "board-lane.jsx"
     },
     {
@@ -3960,7 +4068,7 @@
       "source_file": "frontend\\shared\\components\\tickets\\board-lane.jsx",
       "source_location": "L14",
       "id": "board_lane_boardlane",
-      "community": 42,
+      "community": 48,
       "norm_label": "boardlane()"
     },
     {
@@ -3969,7 +4077,7 @@
       "source_file": "frontend\\shared\\components\\tickets\\stats-strip.jsx",
       "source_location": "L1",
       "id": "frontend_shared_components_tickets_stats_strip_jsx",
-      "community": 43,
+      "community": 49,
       "norm_label": "stats-strip.jsx"
     },
     {
@@ -3978,7 +4086,7 @@
       "source_file": "frontend\\shared\\components\\tickets\\stats-strip.jsx",
       "source_location": "L5",
       "id": "stats_strip_statsstrip",
-      "community": 43,
+      "community": 49,
       "norm_label": "statsstrip()"
     },
     {
@@ -3987,7 +4095,7 @@
       "source_file": "frontend\\shared\\components\\tickets\\ticket-attachments.jsx",
       "source_location": "L1",
       "id": "frontend_shared_components_tickets_ticket_attachments_jsx",
-      "community": 44,
+      "community": 50,
       "norm_label": "ticket-attachments.jsx"
     },
     {
@@ -3996,7 +4104,7 @@
       "source_file": "frontend\\shared\\components\\tickets\\ticket-attachments.jsx",
       "source_location": "L7",
       "id": "ticket_attachments_ticketattachments",
-      "community": 44,
+      "community": 50,
       "norm_label": "ticketattachments()"
     },
     {
@@ -4005,7 +4113,7 @@
       "source_file": "frontend\\shared\\components\\tickets\\ticket-card.jsx",
       "source_location": "L1",
       "id": "frontend_shared_components_tickets_ticket_card_jsx",
-      "community": 5,
+      "community": 11,
       "norm_label": "ticket-card.jsx"
     },
     {
@@ -4014,7 +4122,7 @@
       "source_file": "frontend\\shared\\components\\tickets\\ticket-card.jsx",
       "source_location": "L6",
       "id": "ticket_card_ticketcard",
-      "community": 5,
+      "community": 11,
       "norm_label": "ticketcard()"
     },
     {
@@ -4023,7 +4131,7 @@
       "source_file": "frontend\\shared\\components\\tickets\\ticket-comments.jsx",
       "source_location": "L1",
       "id": "frontend_shared_components_tickets_ticket_comments_jsx",
-      "community": 45,
+      "community": 51,
       "norm_label": "ticket-comments.jsx"
     },
     {
@@ -4032,7 +4140,7 @@
       "source_file": "frontend\\shared\\components\\tickets\\ticket-comments.jsx",
       "source_location": "L6",
       "id": "ticket_comments_ticketcomments",
-      "community": 45,
+      "community": 51,
       "norm_label": "ticketcomments()"
     },
     {
@@ -4059,7 +4167,7 @@
       "source_file": "frontend\\shared\\components\\tickets\\ticket-fields.jsx",
       "source_location": "L1",
       "id": "frontend_shared_components_tickets_ticket_fields_jsx",
-      "community": 20,
+      "community": 22,
       "norm_label": "ticket-fields.jsx"
     },
     {
@@ -4068,7 +4176,7 @@
       "source_file": "frontend\\shared\\components\\tickets\\ticket-fields.jsx",
       "source_location": "L6",
       "id": "ticket_fields_datevalue",
-      "community": 20,
+      "community": 22,
       "norm_label": "datevalue()"
     },
     {
@@ -4077,7 +4185,7 @@
       "source_file": "frontend\\shared\\components\\tickets\\ticket-fields.jsx",
       "source_location": "L8",
       "id": "ticket_fields_ticketfields",
-      "community": 20,
+      "community": 22,
       "norm_label": "ticketfields()"
     },
     {
@@ -4086,16 +4194,16 @@
       "source_file": "frontend\\shared\\components\\tickets\\ticket-filters.jsx",
       "source_location": "L1",
       "id": "frontend_shared_components_tickets_ticket_filters_jsx",
-      "community": 46,
+      "community": 52,
       "norm_label": "ticket-filters.jsx"
     },
     {
       "label": "TicketFilters()",
       "file_type": "code",
       "source_file": "frontend\\shared\\components\\tickets\\ticket-filters.jsx",
-      "source_location": "L5",
+      "source_location": "L11",
       "id": "ticket_filters_ticketfilters",
-      "community": 46,
+      "community": 52,
       "norm_label": "ticketfilters()"
     },
     {
@@ -4104,7 +4212,7 @@
       "source_file": "frontend\\shared\\components\\tickets\\ticket-header.jsx",
       "source_location": "L1",
       "id": "frontend_shared_components_tickets_ticket_header_jsx",
-      "community": 5,
+      "community": 11,
       "norm_label": "ticket-header.jsx"
     },
     {
@@ -4113,7 +4221,7 @@
       "source_file": "frontend\\shared\\components\\tickets\\ticket-header.jsx",
       "source_location": "L5",
       "id": "ticket_header_ticketheader",
-      "community": 5,
+      "community": 11,
       "norm_label": "ticketheader()"
     },
     {
@@ -4122,7 +4230,7 @@
       "source_file": "frontend\\shared\\components\\tickets\\ticket-history.jsx",
       "source_location": "L1",
       "id": "frontend_shared_components_tickets_ticket_history_jsx",
-      "community": 47,
+      "community": 53,
       "norm_label": "ticket-history.jsx"
     },
     {
@@ -4131,7 +4239,7 @@
       "source_file": "frontend\\shared\\components\\tickets\\ticket-history.jsx",
       "source_location": "L5",
       "id": "ticket_history_tickethistory",
-      "community": 47,
+      "community": 53,
       "norm_label": "tickethistory()"
     },
     {
@@ -4140,7 +4248,7 @@
       "source_file": "frontend\\shared\\components\\tickets\\ticket-stage-bar.jsx",
       "source_location": "L1",
       "id": "frontend_shared_components_tickets_ticket_stage_bar_jsx",
-      "community": 7,
+      "community": 6,
       "norm_label": "ticket-stage-bar.jsx"
     },
     {
@@ -4149,7 +4257,7 @@
       "source_file": "frontend\\shared\\components\\tickets\\ticket-stage-bar.jsx",
       "source_location": "L6",
       "id": "ticket_stage_bar_ticketstagebar",
-      "community": 7,
+      "community": 6,
       "norm_label": "ticketstagebar()"
     },
     {
@@ -4158,7 +4266,7 @@
       "source_file": "frontend\\shared\\components\\tickets\\ticket-table.jsx",
       "source_location": "L1",
       "id": "frontend_shared_components_tickets_ticket_table_jsx",
-      "community": 7,
+      "community": 6,
       "norm_label": "ticket-table.jsx"
     },
     {
@@ -4167,7 +4275,7 @@
       "source_file": "frontend\\shared\\components\\tickets\\ticket-table.jsx",
       "source_location": "L6",
       "id": "ticket_table_stageagedays",
-      "community": 7,
+      "community": 6,
       "norm_label": "stageagedays()"
     },
     {
@@ -4176,7 +4284,7 @@
       "source_file": "frontend\\shared\\components\\tickets\\ticket-table.jsx",
       "source_location": "L11",
       "id": "ticket_table_rail",
-      "community": 7,
+      "community": 6,
       "norm_label": "rail()"
     },
     {
@@ -4185,7 +4293,7 @@
       "source_file": "frontend\\shared\\components\\tickets\\ticket-table.jsx",
       "source_location": "L29",
       "id": "ticket_table_tickettable",
-      "community": 7,
+      "community": 6,
       "norm_label": "tickettable()"
     },
     {
@@ -4194,7 +4302,7 @@
       "source_file": "frontend\\shared\\components\\tickets\\__tests__\\board-lane.test.jsx",
       "source_location": "L1",
       "id": "frontend_shared_components_tickets_tests_board_lane_test_jsx",
-      "community": 48,
+      "community": 54,
       "norm_label": "board-lane.test.jsx"
     },
     {
@@ -4203,7 +4311,7 @@
       "source_file": "frontend\\shared\\components\\tickets\\__tests__\\board-lane.test.jsx",
       "source_location": "L6",
       "id": "board_lane_test_ticket",
-      "community": 48,
+      "community": 54,
       "norm_label": "ticket()"
     },
     {
@@ -4212,7 +4320,7 @@
       "source_file": "frontend\\shared\\components\\tickets\\__tests__\\ticket-detail-drawer.test.jsx",
       "source_location": "L1",
       "id": "frontend_shared_components_tickets_tests_ticket_detail_drawer_test_jsx",
-      "community": 80,
+      "community": 90,
       "norm_label": "ticket-detail-drawer.test.jsx"
     },
     {
@@ -4221,7 +4329,7 @@
       "source_file": "frontend\\shared\\components\\tickets\\__tests__\\ticket-stage-bar.test.jsx",
       "source_location": "L1",
       "id": "frontend_shared_components_tickets_tests_ticket_stage_bar_test_jsx",
-      "community": 49,
+      "community": 55,
       "norm_label": "ticket-stage-bar.test.jsx"
     },
     {
@@ -4230,8 +4338,26 @@
       "source_file": "frontend\\shared\\components\\tickets\\__tests__\\ticket-stage-bar.test.jsx",
       "source_location": "L7",
       "id": "ticket_stage_bar_test_ticket",
-      "community": 49,
+      "community": 55,
       "norm_label": "ticket()"
+    },
+    {
+      "label": "notification-bell.test.jsx",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\components\\__tests__\\notification-bell.test.jsx",
+      "source_location": "L1",
+      "id": "frontend_shared_components_tests_notification_bell_test_jsx",
+      "community": 91,
+      "norm_label": "notification-bell.test.jsx"
+    },
+    {
+      "label": "project-modules-editor.test.jsx",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\components\\__tests__\\project-modules-editor.test.jsx",
+      "source_location": "L1",
+      "id": "frontend_shared_components_tests_project_modules_editor_test_jsx",
+      "community": 92,
+      "norm_label": "project-modules-editor.test.jsx"
     },
     {
       "label": "project-switcher.test.jsx",
@@ -4239,7 +4365,7 @@
       "source_file": "frontend\\shared\\components\\__tests__\\project-switcher.test.jsx",
       "source_location": "L1",
       "id": "frontend_shared_components_tests_project_switcher_test_jsx",
-      "community": 81,
+      "community": 93,
       "norm_label": "project-switcher.test.jsx"
     },
     {
@@ -4248,7 +4374,7 @@
       "source_file": "frontend\\shared\\components\\__tests__\\theme-toggle.test.jsx",
       "source_location": "L1",
       "id": "frontend_shared_components_tests_theme_toggle_test_jsx",
-      "community": 50,
+      "community": 56,
       "norm_label": "theme-toggle.test.jsx"
     },
     {
@@ -4257,7 +4383,7 @@
       "source_file": "frontend\\shared\\components\\__tests__\\theme-toggle.test.jsx",
       "source_location": "L8",
       "id": "theme_toggle_test_rendertoggle",
-      "community": 50,
+      "community": 56,
       "norm_label": "rendertoggle()"
     },
     {
@@ -4293,7 +4419,7 @@
       "source_file": "frontend\\shared\\contexts\\project-context.jsx",
       "source_location": "L1",
       "id": "frontend_shared_contexts_project_context_jsx",
-      "community": 9,
+      "community": 5,
       "norm_label": "project-context.jsx"
     },
     {
@@ -4302,7 +4428,7 @@
       "source_file": "frontend\\shared\\contexts\\project-context.jsx",
       "source_location": "L15",
       "id": "project_context_projectprovider",
-      "community": 9,
+      "community": 5,
       "norm_label": "projectprovider()"
     },
     {
@@ -4311,7 +4437,7 @@
       "source_file": "frontend\\shared\\contexts\\project-context.jsx",
       "source_location": "L72",
       "id": "project_context_useproject",
-      "community": 9,
+      "community": 5,
       "norm_label": "useproject()"
     },
     {
@@ -4320,7 +4446,7 @@
       "source_file": "frontend\\shared\\contexts\\theme-context.jsx",
       "source_location": "L1",
       "id": "frontend_shared_contexts_theme_context_jsx",
-      "community": 12,
+      "community": 6,
       "norm_label": "theme-context.jsx"
     },
     {
@@ -4329,7 +4455,7 @@
       "source_file": "frontend\\shared\\contexts\\theme-context.jsx",
       "source_location": "L8",
       "id": "theme_context_themeprovider",
-      "community": 12,
+      "community": 6,
       "norm_label": "themeprovider()"
     },
     {
@@ -4338,7 +4464,7 @@
       "source_file": "frontend\\shared\\contexts\\theme-context.jsx",
       "source_location": "L36",
       "id": "theme_context_usetheme",
-      "community": 12,
+      "community": 6,
       "norm_label": "usetheme()"
     },
     {
@@ -4347,7 +4473,7 @@
       "source_file": "frontend\\shared\\lib\\active-project.js",
       "source_location": "L1",
       "id": "frontend_shared_lib_active_project_js",
-      "community": 17,
+      "community": 18,
       "norm_label": "active-project.js"
     },
     {
@@ -4356,7 +4482,7 @@
       "source_file": "frontend\\shared\\lib\\active-project.js",
       "source_location": "L4",
       "id": "active_project_readstoredprojectid",
-      "community": 17,
+      "community": 18,
       "norm_label": "readstoredprojectid()"
     },
     {
@@ -4365,7 +4491,7 @@
       "source_file": "frontend\\shared\\lib\\active-project.js",
       "source_location": "L12",
       "id": "active_project_writestoredprojectid",
-      "community": 17,
+      "community": 18,
       "norm_label": "writestoredprojectid()"
     },
     {
@@ -4374,8 +4500,71 @@
       "source_file": "frontend\\shared\\lib\\active-project.js",
       "source_location": "L22",
       "id": "active_project_resolveinitialprojectid",
-      "community": 17,
+      "community": 18,
       "norm_label": "resolveinitialprojectid()"
+    },
+    {
+      "label": "attachment-config.js",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\attachment-config.js",
+      "source_location": "L1",
+      "id": "frontend_shared_lib_attachment_config_js",
+      "community": 14,
+      "norm_label": "attachment-config.js"
+    },
+    {
+      "label": "formatFileSize()",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\attachment-config.js",
+      "source_location": "L20",
+      "id": "attachment_config_formatfilesize",
+      "community": 14,
+      "norm_label": "formatfilesize()"
+    },
+    {
+      "label": "fileExtension()",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\attachment-config.js",
+      "source_location": "L28",
+      "id": "attachment_config_fileextension",
+      "community": 14,
+      "norm_label": "fileextension()"
+    },
+    {
+      "label": "isAllowedAttachment()",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\attachment-config.js",
+      "source_location": "L33",
+      "id": "attachment_config_isallowedattachment",
+      "community": 14,
+      "norm_label": "isallowedattachment()"
+    },
+    {
+      "label": "validateAttachmentBatch()",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\attachment-config.js",
+      "source_location": "L43",
+      "id": "attachment_config_validateattachmentbatch",
+      "community": 14,
+      "norm_label": "validateattachmentbatch()"
+    },
+    {
+      "label": "buildAttachmentFormData()",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\attachment-config.js",
+      "source_location": "L66",
+      "id": "attachment_config_buildattachmentformdata",
+      "community": 14,
+      "norm_label": "buildattachmentformdata()"
+    },
+    {
+      "label": "brand.js",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\brand.js",
+      "source_location": "L1",
+      "id": "frontend_shared_lib_brand_js",
+      "community": 94,
+      "norm_label": "brand.js"
     },
     {
       "label": "deep-link.js",
@@ -4383,7 +4572,7 @@
       "source_file": "frontend\\shared\\lib\\deep-link.js",
       "source_location": "L1",
       "id": "frontend_shared_lib_deep_link_js",
-      "community": 18,
+      "community": 19,
       "norm_label": "deep-link.js"
     },
     {
@@ -4392,7 +4581,7 @@
       "source_file": "frontend\\shared\\lib\\deep-link.js",
       "source_location": "L3",
       "id": "deep_link_ticketfromsearch",
-      "community": 18,
+      "community": 19,
       "norm_label": "ticketfromsearch()"
     },
     {
@@ -4401,7 +4590,7 @@
       "source_file": "frontend\\shared\\lib\\deep-link.js",
       "source_location": "L7",
       "id": "deep_link_withticketparam",
-      "community": 18,
+      "community": 19,
       "norm_label": "withticketparam()"
     },
     {
@@ -4410,7 +4599,7 @@
       "source_file": "frontend\\shared\\lib\\deep-link.js",
       "source_location": "L13",
       "id": "deep_link_withoutticketparam",
-      "community": 18,
+      "community": 19,
       "norm_label": "withoutticketparam()"
     },
     {
@@ -4419,7 +4608,7 @@
       "source_file": "frontend\\shared\\lib\\env.js",
       "source_location": "L1",
       "id": "frontend_shared_lib_env_js",
-      "community": 51,
+      "community": 57,
       "norm_label": "env.js"
     },
     {
@@ -4428,8 +4617,89 @@
       "source_file": "frontend\\shared\\lib\\env.js",
       "source_location": "L8",
       "id": "env_requireenv",
-      "community": 51,
+      "community": 57,
       "norm_label": "requireenv()"
+    },
+    {
+      "label": "notification-utils.js",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\notification-utils.js",
+      "source_location": "L1",
+      "id": "frontend_shared_lib_notification_utils_js",
+      "community": 23,
+      "norm_label": "notification-utils.js"
+    },
+    {
+      "label": "notificationHref()",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\notification-utils.js",
+      "source_location": "L2",
+      "id": "notification_utils_notificationhref",
+      "community": 23,
+      "norm_label": "notificationhref()"
+    },
+    {
+      "label": "formatRelativeTime()",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\notification-utils.js",
+      "source_location": "L12",
+      "id": "notification_utils_formatrelativetime",
+      "community": 23,
+      "norm_label": "formatrelativetime()"
+    },
+    {
+      "label": "project-modules.js",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\project-modules.js",
+      "source_location": "L1",
+      "id": "frontend_shared_lib_project_modules_js",
+      "community": 12,
+      "norm_label": "project-modules.js"
+    },
+    {
+      "label": "newRowId()",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\project-modules.js",
+      "source_location": "L7",
+      "id": "project_modules_newrowid",
+      "community": 12,
+      "norm_label": "newrowid()"
+    },
+    {
+      "label": "modulesToFormRows()",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\project-modules.js",
+      "source_location": "L13",
+      "id": "project_modules_modulestoformrows",
+      "community": 12,
+      "norm_label": "modulestoformrows()"
+    },
+    {
+      "label": "formRowsToModules()",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\project-modules.js",
+      "source_location": "L26",
+      "id": "project_modules_formrowstomodules",
+      "community": 12,
+      "norm_label": "formrowstomodules()"
+    },
+    {
+      "label": "cloneModules()",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\project-modules.js",
+      "source_location": "L41",
+      "id": "project_modules_clonemodules",
+      "community": 12,
+      "norm_label": "clonemodules()"
+    },
+    {
+      "label": "isModulesDraftEmpty()",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\project-modules.js",
+      "source_location": "L46",
+      "id": "project_modules_ismodulesdraftempty",
+      "community": 12,
+      "norm_label": "ismodulesdraftempty()"
     },
     {
       "label": "theme.js",
@@ -4437,7 +4707,7 @@
       "source_file": "frontend\\shared\\lib\\theme.js",
       "source_location": "L1",
       "id": "frontend_shared_lib_theme_js",
-      "community": 21,
+      "community": 24,
       "norm_label": "theme.js"
     },
     {
@@ -4446,7 +4716,7 @@
       "source_file": "frontend\\shared\\lib\\theme.js",
       "source_location": "L6",
       "id": "theme_readstoredtheme",
-      "community": 21,
+      "community": 24,
       "norm_label": "readstoredtheme()"
     },
     {
@@ -4455,8 +4725,98 @@
       "source_file": "frontend\\shared\\lib\\theme.js",
       "source_location": "L17",
       "id": "theme_applytheme",
-      "community": 21,
+      "community": 24,
       "norm_label": "applytheme()"
+    },
+    {
+      "label": "ticket-location.js",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\ticket-location.js",
+      "source_location": "L1",
+      "id": "frontend_shared_lib_ticket_location_js",
+      "community": 5,
+      "norm_label": "ticket-location.js"
+    },
+    {
+      "label": "pagesForModule()",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\ticket-location.js",
+      "source_location": "L5",
+      "id": "ticket_location_pagesformodule",
+      "community": 5,
+      "norm_label": "pagesformodule()"
+    },
+    {
+      "label": "defaultPageForModule()",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\ticket-location.js",
+      "source_location": "L10",
+      "id": "ticket_location_defaultpageformodule",
+      "community": 5,
+      "norm_label": "defaultpageformodule()"
+    },
+    {
+      "label": "defaultModulePageSelection()",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\ticket-location.js",
+      "source_location": "L15",
+      "id": "ticket_location_defaultmodulepageselection",
+      "community": 5,
+      "norm_label": "defaultmodulepageselection()"
+    },
+    {
+      "label": "ticket-search-focus.js",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\ticket-search-focus.js",
+      "source_location": "L1",
+      "id": "frontend_shared_lib_ticket_search_focus_js",
+      "community": 58,
+      "norm_label": "ticket-search-focus.js"
+    },
+    {
+      "label": "focusTicketSearch()",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\ticket-search-focus.js",
+      "source_location": "L4",
+      "id": "ticket_search_focus_focusticketsearch",
+      "community": 58,
+      "norm_label": "focusticketsearch()"
+    },
+    {
+      "label": "toast.js",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\toast.js",
+      "source_location": "L1",
+      "id": "frontend_shared_lib_toast_js",
+      "community": 59,
+      "norm_label": "toast.js"
+    },
+    {
+      "label": "showToast()",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\toast.js",
+      "source_location": "L2",
+      "id": "toast_showtoast",
+      "community": 59,
+      "norm_label": "showtoast()"
+    },
+    {
+      "label": "validate-new-ticket.js",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\validate-new-ticket.js",
+      "source_location": "L1",
+      "id": "frontend_shared_lib_validate_new_ticket_js",
+      "community": 60,
+      "norm_label": "validate-new-ticket.js"
+    },
+    {
+      "label": "validateNewTicketDraft()",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\validate-new-ticket.js",
+      "source_location": "L8",
+      "id": "validate_new_ticket_validatenewticketdraft",
+      "community": 60,
+      "norm_label": "validatenewticketdraft()"
     },
     {
       "label": "active-project.test.js",
@@ -4464,8 +4824,26 @@
       "source_file": "frontend\\shared\\lib\\__tests__\\active-project.test.js",
       "source_location": "L1",
       "id": "frontend_shared_lib_tests_active_project_test_js",
-      "community": 82,
+      "community": 95,
       "norm_label": "active-project.test.js"
+    },
+    {
+      "label": "attachment-config.test.js",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\__tests__\\attachment-config.test.js",
+      "source_location": "L1",
+      "id": "frontend_shared_lib_tests_attachment_config_test_js",
+      "community": 96,
+      "norm_label": "attachment-config.test.js"
+    },
+    {
+      "label": "brand.test.js",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\__tests__\\brand.test.js",
+      "source_location": "L1",
+      "id": "frontend_shared_lib_tests_brand_test_js",
+      "community": 97,
+      "norm_label": "brand.test.js"
     },
     {
       "label": "deep-link.test.js",
@@ -4473,7 +4851,7 @@
       "source_file": "frontend\\shared\\lib\\__tests__\\deep-link.test.js",
       "source_location": "L1",
       "id": "frontend_shared_lib_tests_deep_link_test_js",
-      "community": 83,
+      "community": 98,
       "norm_label": "deep-link.test.js"
     },
     {
@@ -4482,8 +4860,26 @@
       "source_file": "frontend\\shared\\lib\\__tests__\\env.test.js",
       "source_location": "L1",
       "id": "frontend_shared_lib_tests_env_test_js",
-      "community": 84,
+      "community": 99,
       "norm_label": "env.test.js"
+    },
+    {
+      "label": "project-modules.test.js",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\__tests__\\project-modules.test.js",
+      "source_location": "L1",
+      "id": "frontend_shared_lib_tests_project_modules_test_js",
+      "community": 100,
+      "norm_label": "project-modules.test.js"
+    },
+    {
+      "label": "validate-new-ticket.test.js",
+      "file_type": "code",
+      "source_file": "frontend\\shared\\lib\\__tests__\\validate-new-ticket.test.js",
+      "source_location": "L1",
+      "id": "frontend_shared_lib_tests_validate_new_ticket_test_js",
+      "community": 101,
+      "norm_label": "validate-new-ticket.test.js"
     },
     {
       "label": "extract-plan-files.mjs",
@@ -4491,7 +4887,7 @@
       "source_file": "scripts\\extract-plan-files.mjs",
       "source_location": "L1",
       "id": "scripts_extract_plan_files_mjs",
-      "community": 85,
+      "community": 102,
       "norm_label": "extract-plan-files.mjs"
     },
     {
@@ -4500,7 +4896,7 @@
       "source_file": "shared\\enums.js",
       "source_location": "L1",
       "id": "shared_enums_js",
-      "community": 86,
+      "community": 103,
       "norm_label": "enums.js"
     },
     {
@@ -4509,7 +4905,7 @@
       "source_file": "shared\\index.js",
       "source_location": "L1",
       "id": "shared_index_js",
-      "community": 87,
+      "community": 104,
       "norm_label": "index.js"
     },
     {
@@ -4518,7 +4914,7 @@
       "source_file": "shared\\module-catalog.js",
       "source_location": "L1",
       "id": "shared_module_catalog_js",
-      "community": 9,
+      "community": 5,
       "norm_label": "module-catalog.js"
     },
     {
@@ -4527,7 +4923,7 @@
       "source_file": "shared\\module-catalog.js",
       "source_location": "L129",
       "id": "module_catalog_getpagesformodule",
-      "community": 9,
+      "community": 5,
       "norm_label": "getpagesformodule()"
     },
     {
@@ -4536,7 +4932,7 @@
       "source_file": "shared\\module-catalog.js",
       "source_location": "L135",
       "id": "module_catalog_resolveprojectmodules",
-      "community": 9,
+      "community": 5,
       "norm_label": "resolveprojectmodules()"
     },
     {
@@ -4545,7 +4941,7 @@
       "source_file": "shared\\notification-events.js",
       "source_location": "L1",
       "id": "shared_notification_events_js",
-      "community": 88,
+      "community": 105,
       "norm_label": "notification-events.js"
     },
     {
@@ -4554,7 +4950,7 @@
       "source_file": "shared\\stages.js",
       "source_location": "L1",
       "id": "shared_stages_js",
-      "community": 7,
+      "community": 6,
       "norm_label": "stages.js"
     },
     {
@@ -4563,7 +4959,7 @@
       "source_file": "shared\\stages.js",
       "source_location": "L28",
       "id": "stages_stageindex",
-      "community": 7,
+      "community": 6,
       "norm_label": "stageindex()"
     },
     {
@@ -4572,7 +4968,7 @@
       "source_file": "shared\\stages.js",
       "source_location": "L29",
       "id": "stages_stagelabel",
-      "community": 7,
+      "community": 6,
       "norm_label": "stagelabel()"
     },
     {
@@ -4581,7 +4977,7 @@
       "source_file": "shared\\stages.js",
       "source_location": "L40",
       "id": "stages_laneof",
-      "community": 7,
+      "community": 9,
       "norm_label": "laneof()"
     },
     {
@@ -4590,7 +4986,7 @@
       "source_file": "shared\\stages.js",
       "source_location": "L43",
       "id": "stages_laneentrystage",
-      "community": 7,
+      "community": 6,
       "norm_label": "laneentrystage()"
     },
     {
@@ -4599,7 +4995,7 @@
       "source_file": "shared\\stages.js",
       "source_location": "L66",
       "id": "stages_idof",
-      "community": 7,
+      "community": 6,
       "norm_label": "idof()"
     },
     {
@@ -4608,7 +5004,7 @@
       "source_file": "shared\\stages.js",
       "source_location": "L72",
       "id": "stages_hasrelationship",
-      "community": 7,
+      "community": 6,
       "norm_label": "hasrelationship()"
     },
     {
@@ -4617,7 +5013,7 @@
       "source_file": "shared\\stages.js",
       "source_location": "L80",
       "id": "stages_passes",
-      "community": 7,
+      "community": 6,
       "norm_label": "passes()"
     },
     {
@@ -4626,7 +5022,7 @@
       "source_file": "shared\\stages.js",
       "source_location": "L85",
       "id": "stages_refuse",
-      "community": 7,
+      "community": 6,
       "norm_label": "refuse()"
     },
     {
@@ -4635,7 +5031,7 @@
       "source_file": "shared\\stages.js",
       "source_location": "L97",
       "id": "stages_cantransition",
-      "community": 7,
+      "community": 6,
       "norm_label": "cantransition()"
     },
     {
@@ -4644,7 +5040,7 @@
       "source_file": "shared\\stages.js",
       "source_location": "L149",
       "id": "stages_legaldestinations",
-      "community": 7,
+      "community": 6,
       "norm_label": "legaldestinations()"
     },
     {
@@ -4653,7 +5049,7 @@
       "source_file": "shared\\__tests__\\enums.test.js",
       "source_location": "L1",
       "id": "shared_tests_enums_test_js",
-      "community": 89,
+      "community": 106,
       "norm_label": "enums.test.js"
     },
     {
@@ -4662,7 +5058,7 @@
       "source_file": "shared\\__tests__\\module-catalog.test.js",
       "source_location": "L1",
       "id": "shared_tests_module_catalog_test_js",
-      "community": 90,
+      "community": 107,
       "norm_label": "module-catalog.test.js"
     },
     {
@@ -4671,7 +5067,7 @@
       "source_file": "shared\\__tests__\\notification-events.test.js",
       "source_location": "L1",
       "id": "shared_tests_notification_events_test_js",
-      "community": 91,
+      "community": 108,
       "norm_label": "notification-events.test.js"
     },
     {
@@ -4680,7 +5076,7 @@
       "source_file": "shared\\__tests__\\stages.test.js",
       "source_location": "L1",
       "id": "shared_tests_stages_test_js",
-      "community": 22,
+      "community": 25,
       "norm_label": "stages.test.js"
     },
     {
@@ -4689,7 +5085,7 @@
       "source_file": "shared\\__tests__\\stages.test.js",
       "source_location": "L8",
       "id": "stages_test_actor",
-      "community": 22,
+      "community": 25,
       "norm_label": "actor()"
     },
     {
@@ -4698,7 +5094,7 @@
       "source_file": "shared\\__tests__\\stages.test.js",
       "source_location": "L9",
       "id": "stages_test_ticket",
-      "community": 22,
+      "community": 25,
       "norm_label": "ticket()"
     },
     {
@@ -4707,7 +5103,7 @@
       "source_file": "shared\\__tests__\\transition-matrix.test.js",
       "source_location": "L1",
       "id": "shared_tests_transition_matrix_test_js",
-      "community": 23,
+      "community": 26,
       "norm_label": "transition-matrix.test.js"
     },
     {
@@ -4716,7 +5112,7 @@
       "source_file": "shared\\__tests__\\transition-matrix.test.js",
       "source_location": "L35",
       "id": "transition_matrix_test_gatepasses",
-      "community": 23,
+      "community": 26,
       "norm_label": "gatepasses()"
     },
     {
@@ -4725,7 +5121,7 @@
       "source_file": "shared\\__tests__\\transition-matrix.test.js",
       "source_location": "L43",
       "id": "transition_matrix_test_expectedok",
-      "community": 23,
+      "community": 26,
       "norm_label": "expectedok()"
     }
   ],
@@ -4998,7 +5394,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "backend\\src\\seed.js",
-      "source_location": "L11",
+      "source_location": "L12",
       "weight": 1.0,
       "_src": "backend_src_seed_js",
       "_tgt": "seed_seedadmin",
@@ -5010,7 +5406,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "backend\\src\\seed.js",
-      "source_location": "L64",
+      "source_location": "L73",
       "weight": 1.0,
       "_src": "backend_src_seed_js",
       "_tgt": "seed_seedprojects",
@@ -10134,7 +10530,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "backend\\src\\platform\\mailer.js",
-      "source_location": "L35",
+      "source_location": "L39",
       "weight": 1.0,
       "_src": "backend_src_platform_mailer_js",
       "_tgt": "mailer_resettransport",
@@ -10686,7 +11082,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "frontend\\app\\layout.jsx",
-      "source_location": "L7",
+      "source_location": "L8",
       "weight": 1.0,
       "_src": "frontend_app_layout_jsx",
       "_tgt": "layout_rootlayout",
@@ -10698,7 +11094,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "frontend\\app\\(app)\\layout.jsx",
-      "source_location": "L31",
+      "source_location": "L36",
       "weight": 1.0,
       "_src": "frontend_app_app_layout_jsx",
       "_tgt": "layout_visible",
@@ -10710,7 +11106,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "frontend\\app\\(app)\\layout.jsx",
-      "source_location": "L35",
+      "source_location": "L40",
       "weight": 1.0,
       "_src": "frontend_app_app_layout_jsx",
       "_tgt": "layout_iscurrent",
@@ -10722,7 +11118,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "frontend\\app\\(app)\\layout.jsx",
-      "source_location": "L40",
+      "source_location": "L45",
       "weight": 1.0,
       "_src": "frontend_app_app_layout_jsx",
       "_tgt": "layout_railnav",
@@ -10734,7 +11130,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "frontend\\app\\(app)\\layout.jsx",
-      "source_location": "L83",
+      "source_location": "L88",
       "weight": 1.0,
       "_src": "frontend_app_app_layout_jsx",
       "_tgt": "layout_topbar",
@@ -10746,7 +11142,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "frontend\\app\\(app)\\layout.jsx",
-      "source_location": "L110",
+      "source_location": "L139",
       "weight": 1.0,
       "_src": "frontend_app_app_layout_jsx",
       "_tgt": "layout_guard",
@@ -10758,7 +11154,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "frontend\\app\\(app)\\layout.jsx",
-      "source_location": "L123",
+      "source_location": "L152",
       "weight": 1.0,
       "_src": "frontend_app_app_layout_jsx",
       "_tgt": "layout_applayout",
@@ -10829,8 +11225,20 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "frontend\\app\\(app)\\notifications\\page.jsx",
+      "source_location": "L12",
+      "weight": 1.0,
+      "_src": "frontend_app_app_notifications_page_jsx",
+      "_tgt": "page_notificationspage",
+      "source": "frontend_app_app_notifications_page_jsx",
+      "target": "page_notificationspage",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "frontend\\app\\(app)\\projects\\page.jsx",
-      "source_location": "L9",
+      "source_location": "L12",
       "weight": 1.0,
       "_src": "frontend_app_app_projects_page_jsx",
       "_tgt": "page_projectspage",
@@ -10842,7 +11250,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "frontend\\app\\(app)\\settings\\notifications\\page.jsx",
-      "source_location": "L9",
+      "source_location": "L10",
       "weight": 1.0,
       "_src": "frontend_app_app_settings_notifications_page_jsx",
       "_tgt": "page_notificationsettingspage",
@@ -10890,7 +11298,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "frontend\\app\\(app)\\tickets\\page.jsx",
-      "source_location": "L86",
+      "source_location": "L98",
       "weight": 1.0,
       "_src": "frontend_app_app_tickets_page_jsx",
       "_tgt": "page_page",
@@ -10926,7 +11334,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "frontend\\app\\(app)\\tickets\\analytics\\page.jsx",
-      "source_location": "L12",
+      "source_location": "L13",
       "weight": 1.0,
       "_src": "frontend_app_app_tickets_analytics_page_jsx",
       "_tgt": "page_analyticspage",
@@ -10945,6 +11353,18 @@
       "_tgt": "project_context_useproject",
       "source": "page_analyticspage",
       "target": "project_context_useproject"
+    },
+    {
+      "relation": "calls",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "frontend\\app\\(app)\\tickets\\analytics\\page.jsx",
+      "source_location": "L15",
+      "weight": 1.0,
+      "_src": "page_analyticspage",
+      "_tgt": "theme_context_usetheme",
+      "source": "page_analyticspage",
+      "target": "theme_context_usetheme"
     },
     {
       "relation": "calls",
@@ -10986,7 +11406,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "frontend\\app\\(app)\\tickets\\new\\page.jsx",
-      "source_location": "L28",
+      "source_location": "L41",
       "weight": 1.0,
       "_src": "frontend_app_app_tickets_new_page_jsx",
       "_tgt": "page_newticketpage",
@@ -11017,6 +11437,18 @@
       "_tgt": "module_catalog_resolveprojectmodules",
       "source": "page_newticketpage",
       "target": "module_catalog_resolveprojectmodules"
+    },
+    {
+      "relation": "calls",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "frontend\\app\\(app)\\tickets\\new\\page.jsx",
+      "source_location": "L72",
+      "weight": 1.0,
+      "_src": "page_newticketpage",
+      "_tgt": "ticket_location_pagesformodule",
+      "source": "page_newticketpage",
+      "target": "ticket_location_pagesformodule"
     },
     {
       "relation": "contains",
@@ -11802,7 +12234,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "frontend\\shared\\api\\notifications.js",
-      "source_location": "L5",
+      "source_location": "L12",
       "weight": 1.0,
       "_src": "frontend_shared_api_notifications_js",
       "_tgt": "notifications_markread",
@@ -11814,7 +12246,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "frontend\\shared\\api\\notifications.js",
-      "source_location": "L6",
+      "source_location": "L13",
       "weight": 1.0,
       "_src": "frontend_shared_api_notifications_js",
       "_tgt": "notifications_markallread",
@@ -12185,6 +12617,18 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\components\\attachment-picker.jsx",
+      "source_location": "L11",
+      "weight": 1.0,
+      "_src": "frontend_shared_components_attachment_picker_jsx",
+      "_tgt": "attachment_picker_attachmentpicker",
+      "source": "frontend_shared_components_attachment_picker_jsx",
+      "target": "attachment_picker_attachmentpicker",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "frontend\\shared\\components\\form-error.jsx",
       "source_location": "L1",
       "weight": 1.0,
@@ -12329,6 +12773,66 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\components\\notification-bell.jsx",
+      "source_location": "L13",
+      "weight": 1.0,
+      "_src": "frontend_shared_components_notification_bell_jsx",
+      "_tgt": "notification_bell_unreadcountfrom",
+      "source": "frontend_shared_components_notification_bell_jsx",
+      "target": "notification_bell_unreadcountfrom",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\components\\notification-bell.jsx",
+      "source_location": "L17",
+      "weight": 1.0,
+      "_src": "frontend_shared_components_notification_bell_jsx",
+      "_tgt": "notification_bell_notificationbell",
+      "source": "frontend_shared_components_notification_bell_jsx",
+      "target": "notification_bell_notificationbell",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\components\\notification-bell.jsx",
+      "source_location": "L33",
+      "weight": 1.0,
+      "_src": "notification_bell_notificationbell",
+      "_tgt": "notification_bell_unreadcountfrom",
+      "source": "notification_bell_unreadcountfrom",
+      "target": "notification_bell_notificationbell",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\components\\project-modules-editor.jsx",
+      "source_location": "L21",
+      "weight": 1.0,
+      "_src": "frontend_shared_components_project_modules_editor_jsx",
+      "_tgt": "project_modules_editor_projectmoduleseditor",
+      "source": "frontend_shared_components_project_modules_editor_jsx",
+      "target": "project_modules_editor_projectmoduleseditor",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "frontend\\shared\\components\\project-modules-editor.jsx",
+      "source_location": "L75",
+      "weight": 1.0,
+      "_src": "project_modules_editor_projectmoduleseditor",
+      "_tgt": "project_modules_ismodulesdraftempty",
+      "source": "project_modules_editor_projectmoduleseditor",
+      "target": "project_modules_ismodulesdraftempty"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "frontend\\shared\\components\\project-switcher.jsx",
       "source_location": "L6",
       "weight": 1.0,
@@ -12413,6 +12917,18 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\components\\validation-dialog.jsx",
+      "source_location": "L5",
+      "weight": 1.0,
+      "_src": "frontend_shared_components_validation_dialog_jsx",
+      "_tgt": "validation_dialog_validationdialog",
+      "source": "frontend_shared_components_validation_dialog_jsx",
+      "target": "validation_dialog_validationdialog",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "frontend\\shared\\components\\auth\\auth-error.jsx",
       "source_location": "L4",
       "weight": 1.0,
@@ -12450,7 +12966,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "frontend\\shared\\components\\auth\\auth-shell.jsx",
-      "source_location": "L54",
+      "source_location": "L56",
       "weight": 1.0,
       "_src": "frontend_shared_components_auth_auth_shell_jsx",
       "_tgt": "auth_shell_authbrand",
@@ -12462,7 +12978,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "frontend\\shared\\components\\auth\\auth-shell.jsx",
-      "source_location": "L65",
+      "source_location": "L67",
       "weight": 1.0,
       "_src": "frontend_shared_components_auth_auth_shell_jsx",
       "_tgt": "auth_shell_authaside",
@@ -12474,7 +12990,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "frontend\\shared\\components\\auth\\auth-shell.jsx",
-      "source_location": "L80",
+      "source_location": "L82",
       "weight": 1.0,
       "_src": "frontend_shared_components_auth_auth_shell_jsx",
       "_tgt": "auth_shell_authframe",
@@ -12618,7 +13134,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "frontend\\shared\\components\\tickets\\ticket-filters.jsx",
-      "source_location": "L5",
+      "source_location": "L11",
       "weight": 1.0,
       "_src": "frontend_shared_components_tickets_ticket_filters_jsx",
       "_tgt": "ticket_filters_ticketfilters",
@@ -12801,8 +13317,8 @@
       "source_file": "frontend\\shared\\contexts\\project-context.jsx",
       "source_location": "L16",
       "weight": 1.0,
-      "_src": "project_context_projectprovider",
-      "_tgt": "auth_context_useauth",
+      "_src": "auth_context_useauth",
+      "_tgt": "project_context_projectprovider",
       "source": "auth_context_useauth",
       "target": "project_context_projectprovider"
     },
@@ -12905,6 +13421,90 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\lib\\attachment-config.js",
+      "source_location": "L20",
+      "weight": 1.0,
+      "_src": "frontend_shared_lib_attachment_config_js",
+      "_tgt": "attachment_config_formatfilesize",
+      "source": "frontend_shared_lib_attachment_config_js",
+      "target": "attachment_config_formatfilesize",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\lib\\attachment-config.js",
+      "source_location": "L28",
+      "weight": 1.0,
+      "_src": "frontend_shared_lib_attachment_config_js",
+      "_tgt": "attachment_config_fileextension",
+      "source": "frontend_shared_lib_attachment_config_js",
+      "target": "attachment_config_fileextension",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\lib\\attachment-config.js",
+      "source_location": "L33",
+      "weight": 1.0,
+      "_src": "frontend_shared_lib_attachment_config_js",
+      "_tgt": "attachment_config_isallowedattachment",
+      "source": "frontend_shared_lib_attachment_config_js",
+      "target": "attachment_config_isallowedattachment",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\lib\\attachment-config.js",
+      "source_location": "L43",
+      "weight": 1.0,
+      "_src": "frontend_shared_lib_attachment_config_js",
+      "_tgt": "attachment_config_validateattachmentbatch",
+      "source": "frontend_shared_lib_attachment_config_js",
+      "target": "attachment_config_validateattachmentbatch",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\lib\\attachment-config.js",
+      "source_location": "L66",
+      "weight": 1.0,
+      "_src": "frontend_shared_lib_attachment_config_js",
+      "_tgt": "attachment_config_buildattachmentformdata",
+      "source": "frontend_shared_lib_attachment_config_js",
+      "target": "attachment_config_buildattachmentformdata",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\lib\\attachment-config.js",
+      "source_location": "L34",
+      "weight": 1.0,
+      "_src": "attachment_config_isallowedattachment",
+      "_tgt": "attachment_config_fileextension",
+      "source": "attachment_config_fileextension",
+      "target": "attachment_config_isallowedattachment",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\lib\\attachment-config.js",
+      "source_location": "L55",
+      "weight": 1.0,
+      "_src": "attachment_config_validateattachmentbatch",
+      "_tgt": "attachment_config_isallowedattachment",
+      "source": "attachment_config_isallowedattachment",
+      "target": "attachment_config_validateattachmentbatch",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "frontend\\shared\\lib\\deep-link.js",
       "source_location": "L3",
       "weight": 1.0,
@@ -12953,6 +13553,90 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\lib\\notification-utils.js",
+      "source_location": "L2",
+      "weight": 1.0,
+      "_src": "frontend_shared_lib_notification_utils_js",
+      "_tgt": "notification_utils_notificationhref",
+      "source": "frontend_shared_lib_notification_utils_js",
+      "target": "notification_utils_notificationhref",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\lib\\notification-utils.js",
+      "source_location": "L12",
+      "weight": 1.0,
+      "_src": "frontend_shared_lib_notification_utils_js",
+      "_tgt": "notification_utils_formatrelativetime",
+      "source": "frontend_shared_lib_notification_utils_js",
+      "target": "notification_utils_formatrelativetime",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\lib\\project-modules.js",
+      "source_location": "L7",
+      "weight": 1.0,
+      "_src": "frontend_shared_lib_project_modules_js",
+      "_tgt": "project_modules_newrowid",
+      "source": "frontend_shared_lib_project_modules_js",
+      "target": "project_modules_newrowid",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\lib\\project-modules.js",
+      "source_location": "L13",
+      "weight": 1.0,
+      "_src": "frontend_shared_lib_project_modules_js",
+      "_tgt": "project_modules_modulestoformrows",
+      "source": "frontend_shared_lib_project_modules_js",
+      "target": "project_modules_modulestoformrows",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\lib\\project-modules.js",
+      "source_location": "L26",
+      "weight": 1.0,
+      "_src": "frontend_shared_lib_project_modules_js",
+      "_tgt": "project_modules_formrowstomodules",
+      "source": "frontend_shared_lib_project_modules_js",
+      "target": "project_modules_formrowstomodules",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\lib\\project-modules.js",
+      "source_location": "L41",
+      "weight": 1.0,
+      "_src": "frontend_shared_lib_project_modules_js",
+      "_tgt": "project_modules_clonemodules",
+      "source": "frontend_shared_lib_project_modules_js",
+      "target": "project_modules_clonemodules",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\lib\\project-modules.js",
+      "source_location": "L46",
+      "weight": 1.0,
+      "_src": "frontend_shared_lib_project_modules_js",
+      "_tgt": "project_modules_ismodulesdraftempty",
+      "source": "frontend_shared_lib_project_modules_js",
+      "target": "project_modules_ismodulesdraftempty",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "frontend\\shared\\lib\\theme.js",
       "source_location": "L6",
       "weight": 1.0,
@@ -12972,6 +13656,102 @@
       "_tgt": "theme_applytheme",
       "source": "frontend_shared_lib_theme_js",
       "target": "theme_applytheme",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\lib\\ticket-location.js",
+      "source_location": "L5",
+      "weight": 1.0,
+      "_src": "frontend_shared_lib_ticket_location_js",
+      "_tgt": "ticket_location_pagesformodule",
+      "source": "frontend_shared_lib_ticket_location_js",
+      "target": "ticket_location_pagesformodule",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\lib\\ticket-location.js",
+      "source_location": "L10",
+      "weight": 1.0,
+      "_src": "frontend_shared_lib_ticket_location_js",
+      "_tgt": "ticket_location_defaultpageformodule",
+      "source": "frontend_shared_lib_ticket_location_js",
+      "target": "ticket_location_defaultpageformodule",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\lib\\ticket-location.js",
+      "source_location": "L15",
+      "weight": 1.0,
+      "_src": "frontend_shared_lib_ticket_location_js",
+      "_tgt": "ticket_location_defaultmodulepageselection",
+      "source": "frontend_shared_lib_ticket_location_js",
+      "target": "ticket_location_defaultmodulepageselection",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\lib\\ticket-location.js",
+      "source_location": "L11",
+      "weight": 1.0,
+      "_src": "ticket_location_defaultpageformodule",
+      "_tgt": "ticket_location_pagesformodule",
+      "source": "ticket_location_pagesformodule",
+      "target": "ticket_location_defaultpageformodule",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\lib\\ticket-location.js",
+      "source_location": "L18",
+      "weight": 1.0,
+      "_src": "ticket_location_defaultmodulepageselection",
+      "_tgt": "ticket_location_defaultpageformodule",
+      "source": "ticket_location_defaultpageformodule",
+      "target": "ticket_location_defaultmodulepageselection",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\lib\\ticket-search-focus.js",
+      "source_location": "L4",
+      "weight": 1.0,
+      "_src": "frontend_shared_lib_ticket_search_focus_js",
+      "_tgt": "ticket_search_focus_focusticketsearch",
+      "source": "frontend_shared_lib_ticket_search_focus_js",
+      "target": "ticket_search_focus_focusticketsearch",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\lib\\toast.js",
+      "source_location": "L2",
+      "weight": 1.0,
+      "_src": "frontend_shared_lib_toast_js",
+      "_tgt": "toast_showtoast",
+      "source": "frontend_shared_lib_toast_js",
+      "target": "toast_showtoast",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "frontend\\shared\\lib\\validate-new-ticket.js",
+      "source_location": "L8",
+      "weight": 1.0,
+      "_src": "frontend_shared_lib_validate_new_ticket_js",
+      "_tgt": "validate_new_ticket_validatenewticketdraft",
+      "source": "frontend_shared_lib_validate_new_ticket_js",
+      "target": "validate_new_ticket_validatenewticketdraft",
       "confidence_score": 1.0
     },
     {

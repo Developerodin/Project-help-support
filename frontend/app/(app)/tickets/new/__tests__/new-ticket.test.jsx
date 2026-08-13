@@ -1,11 +1,12 @@
 ﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import NewTicketPage from '../page.jsx';
 
 const push = vi.fn();
 const listProjects = vi.fn();
 const createTicket = vi.fn();
+const uploadAttachments = vi.fn();
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push, back: vi.fn() }),
@@ -21,6 +22,7 @@ vi.mock('@/shared/api/projects.js', () => ({
 
 vi.mock('@/shared/api/tickets.js', () => ({
   createTicket: (...a) => createTicket(...a),
+  uploadAttachments: (...a) => uploadAttachments(...a),
 }));
 
 describe('NewTicketPage', () => {
@@ -32,6 +34,7 @@ describe('NewTicketPage', () => {
       ],
     });
     createTicket.mockReset().mockResolvedValue({ ticketId: 'WEB-42' });
+    uploadAttachments.mockReset().mockResolvedValue([]);
   });
 
   it('renders the redesigned layout with classification sidebar', async () => {
@@ -151,5 +154,66 @@ describe('NewTicketPage', () => {
       labels: [],
     }));
     expect(push).toHaveBeenCalledWith('/tickets?ticket=WEB-42');
+    expect(uploadAttachments).not.toHaveBeenCalled();
+  });
+
+  it('uploads attachments after the ticket is created', async () => {
+    const user = userEvent.setup();
+    render(<NewTicketPage />);
+    await screen.findByLabelText(/^project/i);
+
+    await user.clear(screen.getByLabelText(/^title/i));
+    await user.type(screen.getByLabelText(/^title/i), 'Export drops last row');
+    await user.type(screen.getByLabelText(/^description/i), 'Expected all rows in CSV export');
+
+    const png = new File(['x'], 'shot.png', { type: 'image/png' });
+    await user.upload(screen.getByLabelText(/add attachments/i), png);
+    expect(screen.getByText('shot.png')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /file ticket/i }));
+
+    await waitFor(() => expect(createTicket).toHaveBeenCalled());
+    await waitFor(() => expect(uploadAttachments).toHaveBeenCalledWith(
+      'WEB-42',
+      expect.any(FormData),
+    ));
+    const formData = uploadAttachments.mock.calls[0][1];
+    expect([...formData.getAll('files')]).toHaveLength(1);
+    expect(push).toHaveBeenCalledWith('/tickets?ticket=WEB-42');
+  });
+
+  it('does not block submit when attachments are invalid', async () => {
+    const user = userEvent.setup();
+    render(<NewTicketPage />);
+    await screen.findByLabelText(/^project/i);
+
+    await user.clear(screen.getByLabelText(/^title/i));
+    await user.type(screen.getByLabelText(/^title/i), 'Export drops last row');
+    await user.type(screen.getByLabelText(/^description/i), 'Expected all rows in CSV export');
+
+    const bad = new File(['<svg'], 'payload.svg', { type: 'image/svg+xml' });
+    const input = screen.getByLabelText(/add attachments/i);
+    Object.defineProperty(input, 'files', { configurable: true, value: [bad] });
+    fireEvent.change(input);
+    expect(await screen.findByText(/payload\.svg: type not allowed/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /file ticket/i }));
+
+    await waitFor(() => expect(createTicket).toHaveBeenCalled());
+    expect(uploadAttachments).not.toHaveBeenCalled();
+    expect(push).toHaveBeenCalledWith('/tickets?ticket=WEB-42');
+  });
+
+  it('removes a selected attachment from the list', async () => {
+    const user = userEvent.setup();
+    render(<NewTicketPage />);
+    await screen.findByLabelText(/^project/i);
+
+    const png = new File(['x'], 'shot.png', { type: 'image/png' });
+    await user.upload(screen.getByLabelText(/add attachments/i), png);
+    expect(screen.getByText('shot.png')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /remove shot\.png/i }));
+    expect(screen.queryByText('shot.png')).not.toBeInTheDocument();
   });
 });

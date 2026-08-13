@@ -113,10 +113,12 @@ export default function NewTicketPage() {
   };
 
   const addFiles = useCallback((files) => {
-    const { errors, valid } = validateAttachmentBatch(attachments, files);
-    setAttachmentErrors(errors);
-    if (valid.length) setAttachments((prev) => [...prev, ...valid]);
-  }, [attachments]);
+    setAttachments((prev) => {
+      const { errors, valid } = validateAttachmentBatch(prev, files);
+      setAttachmentErrors(errors);
+      return valid.length ? [...prev, ...valid] : prev;
+    });
+  }, []);
 
   function closeValidationDialog() {
     setValidationDialogOpen(false);
@@ -135,7 +137,6 @@ export default function NewTicketPage() {
 
     setBusy(true);
     setError(null);
-    let createdTicketId = null;
     try {
       const ticket = await createTicket({
         project: draft.project,
@@ -150,23 +151,18 @@ export default function NewTicketPage() {
         environment: draft.environment,
         labels: draft.labels,
       });
-      createdTicketId = ticket.ticketId;
 
       if (attachments.length > 0) {
-        await uploadAttachments(ticket.ticketId, buildAttachmentFormData(attachments));
+        try {
+          await uploadAttachments(ticket.ticketId, buildAttachmentFormData(attachments));
+        } catch {
+          // Ticket exists; attachments remain optional and can be added from the drawer.
+        }
       }
 
       router.push(`/tickets?ticket=${encodeURIComponent(ticket.ticketId)}`);
     } catch (err) {
-      if (createdTicketId) {
-        const message = err?.message
-          ? `Ticket ${createdTicketId} was filed, but attachments could not be uploaded. Open the ticket to try again.`
-          : `Ticket ${createdTicketId} was filed, but attachments could not be uploaded.`;
-        setError(Object.assign(new Error(message), { cause: err }));
-        router.push(`/tickets?ticket=${encodeURIComponent(createdTicketId)}`);
-      } else {
-        setError(err);
-      }
+      setError(err);
     } finally {
       setBusy(false);
     }
@@ -262,6 +258,15 @@ export default function NewTicketPage() {
                 onChange={set('stepsToReproduce')}
               />
             </div>
+
+            <AttachmentPicker
+              files={attachments}
+              onChange={setAttachments}
+              onAddFiles={addFiles}
+              errors={attachmentErrors}
+              disabled={busy}
+              idPrefix="new-ticket-attach"
+            />
           </section>
 
           <section className="new-ticket-block" aria-labelledby="location-heading">
