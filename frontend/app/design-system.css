@@ -1,4 +1,4 @@
-﻿
+
 /* ============================================================
    Tokens. Light is the ground (DESIGN.md section 1: the scene).
    Every colour is defined on bare :root and only redefined in the
@@ -59,6 +59,29 @@
     --shadow-drawer: 0 0 0 1px oklch(0 0 0 / 0.5), -18px 0 48px -12px oklch(0 0 0 / 0.6);
     --shadow-pop:    0 0 0 1px oklch(0 0 0 / 0.5), 0 10px 28px -10px oklch(0 0 0 / 0.55);
   }
+}
+:root[data-theme="light"]{
+  --paper:      oklch(0.988 0.003 85);
+  --panel:      oklch(0.963 0.004 85);
+  --panel-2:    oklch(0.938 0.005 85);
+  --rule:       oklch(0.892 0.006 85);
+  --rule-soft:  oklch(0.930 0.005 85);
+
+  --ink:        oklch(0.245 0.014 262);
+  --ink-2:      oklch(0.480 0.011 262);
+  --ink-3:      oklch(0.625 0.009 262);
+
+  --sig:        oklch(0.455 0.135 262);
+  --sig-hi:     oklch(0.395 0.145 262);
+  --sig-ink:    oklch(0.988 0.003 85);
+  --sig-wash:   oklch(0.455 0.135 262 / 0.09);
+  --sig-line:   oklch(0.455 0.135 262 / 0.35);
+
+  --alarm:      oklch(0.530 0.185 27);
+  --alarm-wash: oklch(0.530 0.185 27 / 0.10);
+
+  --shadow-drawer: 0 0 0 1px oklch(0.245 0.014 262 / 0.08), -18px 0 48px -12px oklch(0.245 0.014 262 / 0.18);
+  --shadow-pop:    0 0 0 1px oklch(0.245 0.014 262 / 0.09), 0 10px 28px -10px oklch(0.245 0.014 262 / 0.30);
 }
 :root[data-theme="dark"]{
   --paper:      oklch(0.196 0.010 262);
@@ -215,6 +238,48 @@ main{ min-width:0; display:flex; flex-direction:column; }
   background:var(--panel); font-size:0.75rem; font-weight:500; color:var(--ink);
 }
 
+/* Theme toggle — compact skeuomorphic switch in the top bar */
+.theme-toggle{ flex:none; display:flex; align-items:center; }
+.theme-toggle__track{
+  position:relative; padding:4px; width:88px; height:34px; border-radius:50px;
+  box-shadow:0 -1px 1px 0 rgba(0,0,0,.35), 0 1px 1px 0 rgba(255,255,255,.35);
+  background:linear-gradient(to bottom, rgb(189,191,193) 0%, rgb(249,251,254) 100%);
+}
+.theme-toggle__track > input[type=checkbox]{
+  position:absolute; opacity:0; top:0; left:0; width:100%; height:100%; margin:0; z-index:5; cursor:pointer;
+}
+.theme-toggle__track > input[type=checkbox] ~ div{
+  width:80px; height:26px; border-radius:50px; border:1px solid #979797;
+  box-shadow:inset 5px 0 0 0 rgba(0,0,0,.1), inset -5px 0 0 0 rgba(0,0,0,.1), inset -6px 0 0 0 rgba(255,255,255,.5), inset -4px 4px 8px -4px rgba(0,0,0,.2), inset 1px 1px 0 0 rgba(255,255,255,1), -4px 3px 8px -5px rgba(0,0,0,.45);
+  background:linear-gradient(to right, rgb(253,252,251) 37%, rgb(229,229,229) 61%);
+  position:relative;
+}
+.theme-toggle__track > input[type=checkbox]:checked ~ div{
+  box-shadow:inset -5px 0 0 0 rgba(0,0,0,.1), inset 5px 0 0 0 rgba(0,0,0,.1), inset 6px 0 0 0 rgba(255,255,255,.5), inset -4px 4px 8px -4px rgba(0,0,0,.2), inset 1px 1px 0 0 rgba(255,255,255,1), -4px 3px 8px -5px rgba(0,0,0,.45);
+  background:linear-gradient(to right, rgb(229,229,229) 39%, rgb(253,252,251) 63%);
+}
+.theme-toggle__track > input[type=checkbox] ~ div:before,
+.theme-toggle__track > input[type=checkbox] ~ div:after{
+  display:block; position:absolute; top:50%; transform:translateY(-50%);
+  font-size:0.5625rem; font-weight:700; letter-spacing:0.02em; line-height:1;
+}
+.theme-toggle__track > input[type=checkbox] ~ div:before{
+  content:attr(data-unchecked); left:11px; color:#119400;
+  text-shadow:0 1px 0 #fff, 0 0 5px #007a08;
+}
+.theme-toggle__track > input[type=checkbox] ~ div:after{
+  content:attr(data-checked); right:10px; color:#df0000;
+  text-shadow:0 1px 0 #fff, 0 0 5px #df0000;
+}
+.theme-toggle__track > input[type=checkbox]:checked ~ div:before{
+  color:#666; text-shadow:none;
+}
+.theme-toggle__track > input[type=checkbox]:checked ~ div:after{
+  color:#119400; text-shadow:0 1px 0 #fff, 0 0 5px #007a08;
+}
+.theme-toggle__track > input[type=checkbox]:focus-visible ~ div{
+  outline:2px solid var(--sig); outline-offset:2px;
+}
 .page{ padding:20px 22px 56px; flex:1; min-width:0; }
 .page-head{ display:flex; align-items:flex-start; gap:14px; margin-bottom:16px; }
 .page-head .sub{ color:var(--ink-2); margin-top:3px; font-size:0.8125rem; max-width:72ch; }

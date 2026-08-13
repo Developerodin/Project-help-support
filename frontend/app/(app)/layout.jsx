@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { AuthProvider, useAuth } from '@/shared/contexts/auth-context.jsx';
 import Icon, { initials } from '@/shared/components/icons.jsx';
+import ThemeToggle from '@/shared/components/theme-toggle.jsx';
 
 const NAV_GROUPS = [
   {
@@ -92,6 +93,7 @@ function TopBar() {
       <Link href="/tickets/new" className="btn btn-primary">
         <Icon name="plus" size={12} /> New ticket
       </Link>
+      <ThemeToggle />
       <div className="avatar" title={user.name}>{initials(user.name)}</div>
     </div>
   );
@@ -99,7 +101,7 @@ function TopBar() {
 
 function Guard({ children }) {
   const { user, loading } = useAuth();
-  if (loading) return <div className="page"><p className="meta">Loading…</p></div>;
+  if (loading) return <div className="page"><p className="meta">Loading...</p></div>;
   if (!user) {
     return (
       <div className="page">
