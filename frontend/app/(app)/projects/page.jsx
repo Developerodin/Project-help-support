@@ -1,21 +1,40 @@
-'use client';
+﻿'use client';
 
 import { useCallback, useEffect, useState } from 'react';
 import { listProjects, patchProject, replaceModules } from '@/shared/api/projects.js';
 import { listUsers } from '@/shared/api/users.js';
 import { listTeams } from '@/shared/api/teams.js';
 import FormError from '@/shared/components/form-error.jsx';
+import ProjectModulesEditor from '@/shared/components/project-modules-editor.jsx';
+import { formRowsToModules, modulesToFormRows } from '@/shared/lib/project-modules.js';
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState([]);
   const [users, setUsers] = useState([]);
   const [teams, setTeams] = useState([]);
-  const [modulesText, setModulesText] = useState({});
+  const [modulesDraft, setModulesDraft] = useState({});
   const [error, setError] = useState(null);
 
-  const reload = useCallback(() => {
-    listProjects().then((p) => setProjects(p.results)).catch(setError);
+  const syncModulesDraft = useCallback((nextProjects) => {
+    setModulesDraft((prev) => {
+      const next = { ...prev };
+      for (const project of nextProjects) {
+        if (!next[project.id]) {
+          next[project.id] = modulesToFormRows(project.modules);
+        }
+      }
+      return next;
+    });
   }, []);
+
+  const reload = useCallback(() => {
+    listProjects()
+      .then((p) => {
+        setProjects(p.results);
+        syncModulesDraft(p.results);
+      })
+      .catch(setError);
+  }, [syncModulesDraft]);
 
   useEffect(() => {
     reload();
@@ -34,10 +53,16 @@ export default function ProjectsPage() {
   const saveModules = async (project) => {
     setError(null);
     try {
-      await replaceModules(project.id, JSON.parse(modulesText[project.id] ?? '[]'));
+      const rows = modulesDraft[project.id] ?? modulesToFormRows(project.modules);
+      await replaceModules(project.id, formRowsToModules(rows));
+      setModulesDraft((prev) => {
+        const next = { ...prev };
+        delete next[project.id];
+        return next;
+      });
       reload();
     } catch (err) {
-      setError(err instanceof SyntaxError ? { message: 'Modules must be valid JSON' } : err);
+      setError(err);
     }
   };
 
@@ -89,11 +114,12 @@ export default function ProjectsPage() {
           </div>
 
           <div className="form-row">
-            <label htmlFor={`modules-${project.id}`}>Modules (JSON)</label>
-            <textarea
-              id={`modules-${project.id}`} rows={6}
-              value={modulesText[project.id] ?? JSON.stringify(project.modules, null, 2)}
-              onChange={(e) => setModulesText({ ...modulesText, [project.id]: e.target.value })}
+            <label>Modules</label>
+            <p className="help">Group pages under module names for ticket location fields.</p>
+            <ProjectModulesEditor
+              projectKey={project.key}
+              value={modulesDraft[project.id] ?? modulesToFormRows(project.modules)}
+              onChange={(rows) => setModulesDraft((prev) => ({ ...prev, [project.id]: rows }))}
             />
           </div>
           <button type="button" className="btn btn-sm" onClick={() => saveModules(project)}>Save modules</button>

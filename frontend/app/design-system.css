@@ -1149,3 +1149,12 @@ a.button3{ display:block; text-align:center; text-decoration:none; cursor:pointe
   .page{ padding:0; }
 }
 
+
+/* Project modules editor */
+.modules-editor{ display:flex; flex-direction:column; gap:10px; margin-top:4px; }
+.module-card{ border:1px solid var(--rule); border-radius:var(--r); background:var(--panel); padding:12px; }
+.module-card > header{ display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+.page-rows{ display:flex; flex-direction:column; gap:6px; margin:8px 0; }
+.page-row{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto; gap:8px; align-items:center; }
+.page-row input{ min-width:0; }
+.modules-editor-actions{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:4px; }
