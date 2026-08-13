@@ -44,18 +44,41 @@ describe('NewTicketPage', () => {
     expect(screen.getByRole('heading', { name: /where it lands/i })).toBeInTheDocument();
   });
 
-  it('keeps module and page as compact dropdowns', async () => {
+  it('auto-selects the first module and page for WEB projects', async () => {
+    render(<NewTicketPage />);
+    await screen.findByLabelText(/^project/i);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/^module/i)).toHaveValue('MAIN');
+      expect(screen.getByLabelText(/^page/i)).toHaveValue('Dashboard');
+    });
+  });
+
+  it('shows Add module when the project has no modules', async () => {
+    listProjects.mockResolvedValue({
+      results: [
+        { id: 'p2', name: 'Mobile App', key: 'MOB', status: 'active', modules: [] },
+      ],
+    });
+
     render(<NewTicketPage />);
     await screen.findByLabelText(/^project/i);
 
     const module = screen.getByLabelText(/^module/i);
-    const page = screen.getByLabelText(/^page/i);
+    expect(module).toBeDisabled();
+    expect(module).toHaveDisplayValue('Add module');
+    expect(screen.getByRole('link', { name: /configure in projects/i })).toHaveAttribute('href', '/projects');
+  });
 
-    expect(module.tagName).toBe('SELECT');
-    expect(page.tagName).toBe('SELECT');
-    expect(module).not.toHaveAttribute('size');
-    expect(page).not.toHaveAttribute('size');
-    expect(module).not.toHaveAttribute('multiple');
+  it('cascades page when module changes', async () => {
+    const user = userEvent.setup();
+    render(<NewTicketPage />);
+    await screen.findByLabelText(/^project/i);
+
+    await waitFor(() => expect(screen.getByLabelText(/^module/i)).toHaveValue('MAIN'));
+    await user.selectOptions(screen.getByLabelText(/^module/i), 'ATS');
+
+    expect(screen.getByLabelText(/^page/i)).toHaveValue('Jobs');
   });
 
   it('shows validation when title is too short', async () => {
@@ -88,8 +111,8 @@ describe('NewTicketPage', () => {
       title: 'Export drops last row',
       description: 'Expected all rows in CSV export',
       stepsToReproduce: '1. Export\n2. Open file',
-      module: undefined,
-      page: undefined,
+      module: 'MAIN',
+      page: 'Dashboard',
       category: 'Bug',
       severity: 'Major',
       priority: 'Medium',

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   CATEGORIES, ENVIRONMENTS, LABELS, PRIORITIES, SEVERITIES,
@@ -10,6 +11,11 @@ import { createTicket } from '@/shared/api/tickets.js';
 import { listProjects } from '@/shared/api/projects.js';
 import { useProject } from '@/shared/contexts/project-context.jsx';
 import FormError from '@/shared/components/form-error.jsx';
+import {
+  defaultModulePageSelection,
+  defaultPageForModule,
+  pagesForModule,
+} from '@/shared/lib/ticket-location.js';
 
 const INITIAL_DRAFT = {
   project: '',
@@ -52,7 +58,24 @@ export default function NewTicketPage() {
     [projects, draft.project],
   );
   const modules = resolveProjectModules(selected);
-  const pages = modules.find((m) => m.label === draft.module)?.pages || [];
+  const pages = pagesForModule(modules, draft.module);
+  const hasModules = modules.length > 0;
+
+  useEffect(() => {
+    if (!selected) return;
+    const { module, page } = defaultModulePageSelection(modules);
+    setDraft((d) => {
+      if (!modules.length) {
+        if (!d.module && !d.page) return d;
+        return { ...d, module: '', page: '' };
+      }
+      const moduleValid = modules.some((m) => m.label === d.module);
+      if (!moduleValid) return { ...d, module, page };
+      const pageValid = pagesForModule(modules, d.module).some((p) => p.label === d.page);
+      if (!pageValid) return { ...d, page: defaultPageForModule(modules, d.module) };
+      return d;
+    });
+  }, [selected?.id, modules]);
 
   const titleLen = draft.title.trim().length;
   const descLen = draft.description.trim().length;
@@ -123,7 +146,13 @@ export default function NewTicketPage() {
                 id="np"
                 required
                 value={draft.project}
-                onChange={(e) => setDraft({ ...draft, project: e.target.value, module: '', page: '' })}
+                onChange={(e) => {
+                  const projectId = e.target.value;
+                  const project = projects.find((p) => p.id === projectId);
+                  const mods = resolveProjectModules(project);
+                  const { module, page } = defaultModulePageSelection(mods);
+                  setDraft({ ...draft, project: projectId, module, page });
+                }}
               >
                 {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
@@ -191,11 +220,28 @@ export default function NewTicketPage() {
                   id="nm"
                   className="new-ticket-select"
                   value={draft.module}
-                  onChange={(e) => setDraft({ ...draft, module: e.target.value, page: '' })}
+                  disabled={!hasModules}
+                  onChange={(e) => {
+                    const module = e.target.value;
+                    setDraft({
+                      ...draft,
+                      module,
+                      page: defaultPageForModule(modules, module),
+                    });
+                  }}
+                  aria-describedby={!hasModules ? 'nm-hint' : undefined}
                 >
-                  <option value="">—</option>
-                  {modules.map((m) => <option key={m.label} value={m.label}>{m.label}</option>)}
+                  {!hasModules ? (
+                    <option value="">Add module</option>
+                  ) : (
+                    modules.map((m) => <option key={m.label} value={m.label}>{m.label}</option>)
+                  )}
                 </select>
+                {!hasModules ? (
+                  <span id="nm-hint" className="help">
+                    <Link href="/projects">Configure in Projects →</Link>
+                  </span>
+                ) : null}
               </div>
 
               <div className="form-row">
@@ -205,14 +251,26 @@ export default function NewTicketPage() {
                   className="new-ticket-select"
                   value={draft.page}
                   onChange={set('page')}
-                  disabled={!draft.module}
-                  aria-describedby={!draft.module ? 'npage-hint' : undefined}
+                  disabled={!draft.module || pages.length === 0}
+                  aria-describedby={
+                    !hasModules ? 'nm-hint'
+                      : !draft.module ? 'npage-hint'
+                        : pages.length === 0 ? 'npage-empty-hint'
+                          : undefined
+                  }
                 >
-                  <option value="">—</option>
-                  {pages.map((p) => <option key={p.path || p.label} value={p.label}>{p.label}</option>)}
+                  {!draft.module ? (
+                    <option value="">Choose a module first</option>
+                  ) : pages.length === 0 ? (
+                    <option value="">No pages</option>
+                  ) : (
+                    pages.map((p) => <option key={p.path || p.label} value={p.label}>{p.label}</option>)
+                  )}
                 </select>
-                {!draft.module ? (
+                {!hasModules ? null : !draft.module ? (
                   <span id="npage-hint" className="help">Choose a module first.</span>
+                ) : pages.length === 0 ? (
+                  <span id="npage-empty-hint" className="help">This module has no pages yet.</span>
                 ) : null}
               </div>
             </div>
