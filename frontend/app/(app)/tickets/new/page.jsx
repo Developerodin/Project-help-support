@@ -1,21 +1,28 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   CATEGORIES, ENVIRONMENTS, LABELS, PRIORITIES, SEVERITIES,
   resolveProjectModules,
 } from '@pms/shared';
-import { createTicket } from '@/shared/api/tickets.js';
+import { createTicket, uploadAttachments } from '@/shared/api/tickets.js';
 import { listProjects } from '@/shared/api/projects.js';
 import { useProject } from '@/shared/contexts/project-context.jsx';
 import FormError from '@/shared/components/form-error.jsx';
+import ValidationDialog from '@/shared/components/validation-dialog.jsx';
+import AttachmentPicker from '@/shared/components/attachment-picker.jsx';
 import {
   defaultModulePageSelection,
   defaultPageForModule,
   pagesForModule,
 } from '@/shared/lib/ticket-location.js';
+import { validateNewTicketDraft } from '@/shared/lib/validate-new-ticket.js';
+import {
+  buildAttachmentFormData,
+  validateAttachmentBatch,
+} from '@/shared/lib/attachment-config.js';
 
 const INITIAL_DRAFT = {
   project: '',
@@ -38,7 +45,11 @@ export default function NewTicketPage() {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [showValidation, setShowValidation] = useState(false);
+  const [validationDialogOpen, setValidationDialogOpen] = useState(false);
+  const [validationItems, setValidationItems] = useState([]);
   const [draft, setDraft] = useState(INITIAL_DRAFT);
+  const [attachments, setAttachments] = useState([]);
+  const [attachmentErrors, setAttachmentErrors] = useState([]);
 
   useEffect(() => {
     listProjects()
@@ -79,8 +90,16 @@ export default function NewTicketPage() {
 
   const titleLen = draft.title.trim().length;
   const descLen = draft.description.trim().length;
+  const validation = useMemo(() => validateNewTicketDraft(draft), [draft]);
+  const projectInvalid = showValidation && !draft.project;
   const titleInvalid = showValidation && titleLen < 5;
   const descInvalid = showValidation && descLen < 10;
+
+  const focusFirstInvalid = useCallback((result) => {
+    const id = result?.firstFieldId;
+    if (!id) return;
+    window.setTimeout(() => document.getElementById(id)?.focus(), 0);
+  }, []);
 
   const set = (key) => (event) => setDraft({ ...draft, [key]: event.target.value });
 
@@ -93,13 +112,30 @@ export default function NewTicketPage() {
     }));
   };
 
+  const addFiles = useCallback((files) => {
+    const { errors, valid } = validateAttachmentBatch(attachments, files);
+    setAttachmentErrors(errors);
+    if (valid.length) setAttachments((prev) => [...prev, ...valid]);
+  }, [attachments]);
+
+  function closeValidationDialog() {
+    setValidationDialogOpen(false);
+    focusFirstInvalid(validateNewTicketDraft(draft));
+  }
+
   async function onSubmit(event) {
     event.preventDefault();
     setShowValidation(true);
-    if (titleLen < 5 || descLen < 10) return;
+    const result = validateNewTicketDraft(draft);
+    if (!result.valid) {
+      setValidationItems(result.summaryItems);
+      setValidationDialogOpen(true);
+      return;
+    }
 
     setBusy(true);
     setError(null);
+    let createdTicketId = null;
     try {
       const ticket = await createTicket({
         project: draft.project,
@@ -114,9 +150,23 @@ export default function NewTicketPage() {
         environment: draft.environment,
         labels: draft.labels,
       });
+      createdTicketId = ticket.ticketId;
+
+      if (attachments.length > 0) {
+        await uploadAttachments(ticket.ticketId, buildAttachmentFormData(attachments));
+      }
+
       router.push(`/tickets?ticket=${encodeURIComponent(ticket.ticketId)}`);
     } catch (err) {
-      setError(err);
+      if (createdTicketId) {
+        const message = err?.message
+          ? `Ticket ${createdTicketId} was filed, but attachments could not be uploaded. Open the ticket to try again.`
+          : `Ticket ${createdTicketId} was filed, but attachments could not be uploaded.`;
+        setError(Object.assign(new Error(message), { cause: err }));
+        router.push(`/tickets?ticket=${encodeURIComponent(createdTicketId)}`);
+      } else {
+        setError(err);
+      }
     } finally {
       setBusy(false);
     }
@@ -140,12 +190,14 @@ export default function NewTicketPage() {
             <h2 id="issue-heading" className="form-section">Issue</h2>
             <p className="form-hint">What broke, and how to reproduce it.</p>
 
-            <div className="form-row">
+            <div className={`form-row${projectInvalid ? ' bad' : ''}`}>
               <label htmlFor="np">Project <span className="req" aria-hidden="true">*</span></label>
               <select
                 id="np"
                 required
                 value={draft.project}
+                aria-invalid={projectInvalid}
+                aria-describedby="np-hint"
                 onChange={(e) => {
                   const projectId = e.target.value;
                   const project = projects.find((p) => p.id === projectId);
@@ -156,6 +208,9 @@ export default function NewTicketPage() {
               >
                 {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
+              <p id="np-hint" className={`field-hint${projectInvalid ? ' invalid' : ''}`}>
+                {projectInvalid ? 'Select a project.' : 'Required'}
+              </p>
             </div>
 
             <div className={`form-row${titleInvalid ? ' bad' : ''}`}>
@@ -172,7 +227,7 @@ export default function NewTicketPage() {
               />
               <p id="nt-hint" className={`field-hint${titleInvalid ? ' invalid' : ''}`}>
                 {titleInvalid
-                  ? 'At least 5 characters required.'
+                  ? (titleLen === 0 ? 'Required.' : 'At least 5 characters required.')
                   : `${titleLen}/200 · min 5 characters`}
               </p>
               <span className="help">Write what happens, not what you expected.</span>
@@ -192,7 +247,7 @@ export default function NewTicketPage() {
               />
               <p id="nd-hint" className={`field-hint${descInvalid ? ' invalid' : ''}`}>
                 {descInvalid
-                  ? 'At least 10 characters required.'
+                  ? (descLen === 0 ? 'Required.' : 'At least 10 characters required.')
                   : `${descLen} characters · min 10`}
               </p>
             </div>
@@ -356,6 +411,25 @@ export default function NewTicketPage() {
           </div>
         </aside>
       </div>
+
+      {showValidation && !validation.valid ? (
+        <div
+          role="alert"
+          aria-live="assertive"
+          style={{
+            position: 'absolute', width: 1, height: 1, padding: 0, margin: -1,
+            overflow: 'hidden', clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap', border: 0,
+          }}
+        >
+          {validation.liveMessage}
+        </div>
+      ) : null}
+
+      <ValidationDialog
+        open={validationDialogOpen}
+        items={validationItems}
+        onClose={closeValidationDialog}
+      />
     </>
   );
 }

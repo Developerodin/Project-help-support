@@ -81,7 +81,22 @@ describe('NewTicketPage', () => {
     expect(screen.getByLabelText(/^page/i)).toHaveValue('Jobs');
   });
 
-  it('shows validation when title is too short', async () => {
+  it('shows validation dialog and inline errors when title is empty', async () => {
+    const user = userEvent.setup();
+    render(<NewTicketPage />);
+    await screen.findByLabelText(/^project/i);
+
+    await user.click(screen.getByRole('button', { name: /file ticket/i }));
+
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /fill in required fields/i })).toBeInTheDocument();
+    expect(screen.getByText(/title \(min 5 characters\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/description \(min 10 characters\)/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/^required\.$/i)).toHaveLength(2);
+    expect(createTicket).not.toHaveBeenCalled();
+  });
+
+  it('shows validation dialog when title is too short', async () => {
     const user = userEvent.setup();
     render(<NewTicketPage />);
     await screen.findByLabelText(/^project/i);
@@ -90,8 +105,24 @@ describe('NewTicketPage', () => {
     await user.type(screen.getByLabelText(/^description/i), 'long enough description');
     await user.click(screen.getByRole('button', { name: /file ticket/i }));
 
-    expect(await screen.findByText(/at least 5 characters required/i)).toBeInTheDocument();
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    expect(screen.getByText(/title \(min 5 characters\)/i)).toBeInTheDocument();
+    expect(document.getElementById('nt-hint')).toHaveTextContent(/at least 5 characters required/i);
     expect(createTicket).not.toHaveBeenCalled();
+  });
+
+  it('focuses the first invalid field after dismissing the validation dialog', async () => {
+    const user = userEvent.setup();
+    render(<NewTicketPage />);
+    await screen.findByLabelText(/^project/i);
+
+    await user.click(screen.getByRole('button', { name: /file ticket/i }));
+    await screen.findByRole('alertdialog');
+    await user.click(screen.getByRole('button', { name: /got it/i }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/^title/i)).toHaveFocus();
+    });
   });
 
   it('submits the create payload with Dharwin fields', async () => {
