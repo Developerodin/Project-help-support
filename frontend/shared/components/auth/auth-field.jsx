@@ -26,35 +26,36 @@ export default function AuthField({
 
   return (
     <div className={cls}>
-      <AuthIcon name={icon} />
-      <label className="sr" htmlFor={id}>{label}</label>
-      <input
-        className="input-field"
-        id={id}
-        type={inputType}
-        placeholder={label}
-        value={value}
-        onChange={onChange}
-        autoComplete={autoComplete}
-        required={required}
-        minLength={minLength}
-        readOnly={readOnly}
-        aria-readonly={readOnly || undefined}
-        aria-invalid={bad || undefined}
-        aria-describedby={describedBy}
-        {...rest}
-      />
-      {peek && isPassword && (
-        <button
-          type="button"
-          className="peek"
-          aria-label={show ? 'Hide password' : 'Show password'}
-          aria-pressed={show}
-          onClick={() => setShow((v) => !v)}
-        >
-          <AuthIcon name={show ? 'eyeoff' : 'eye'} className="" />
-        </button>
-      )}
+      <label className="field-label" htmlFor={id}>{label}</label>
+      <div className="field-row">
+        <AuthIcon name={icon} />
+        <input
+          className="input-field"
+          id={id}
+          type={inputType}
+          value={value}
+          onChange={onChange}
+          autoComplete={autoComplete}
+          required={required}
+          minLength={minLength}
+          readOnly={readOnly}
+          aria-readonly={readOnly || undefined}
+          aria-invalid={bad || undefined}
+          aria-describedby={describedBy}
+          {...rest}
+        />
+        {peek && isPassword && (
+          <button
+            type="button"
+            className="peek"
+            aria-label={show ? 'Hide password' : 'Show password'}
+            aria-pressed={show}
+            onClick={() => setShow((v) => !v)}
+          >
+            <AuthIcon name={show ? 'eyeoff' : 'eye'} className="" />
+          </button>
+        )}
+      </div>
     </div>
   );
 }

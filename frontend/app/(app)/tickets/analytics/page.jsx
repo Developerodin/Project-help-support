@@ -5,12 +5,14 @@ import dynamic from 'next/dynamic';
 import { LANES, STAGES, stageLabel } from '@pms/shared';
 import { getOverview, getTrend, getTimeInStage, getDrill } from '@/shared/api/analytics.js';
 import { useProject } from '@/shared/contexts/project-context.jsx';
+import { useTheme } from '@/shared/contexts/theme-context.jsx';
 import FormError from '@/shared/components/form-error.jsx';
 
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
 
 export default function AnalyticsPage() {
   const { activeProjectId, activeProject } = useProject();
+  const { theme } = useTheme();
   const filters = useMemo(
     () => ({ project: activeProjectId || undefined }),
     [activeProjectId],
@@ -61,11 +63,11 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      <p className="meta" style={{ marginBottom: 20 }}>
+      <p className="meta analytics-meta">
         {overview.total} tickets · lane tiles sum to the total; Blocker / Critical overlaps them.
       </p>
 
-      <div className="panel" style={{ marginBottom: 16 }}>
+      <div className="panel panel-spaced">
         <header><h3>Trend</h3></header>
         {trend && (
           <Chart
@@ -77,7 +79,7 @@ export default function AnalyticsPage() {
             ]}
             options={{
               chart: { toolbar: { show: false }, background: 'transparent' },
-              theme: { mode: 'light' },
+              theme: { mode: theme === 'dark' ? 'dark' : 'light' },
               stroke: { width: 2 },
               xaxis: { categories: trend.points.map((p) => p.bucket) },
             }}
@@ -85,7 +87,7 @@ export default function AnalyticsPage() {
         )}
       </div>
 
-      <div className="panel" style={{ marginBottom: 16 }}>
+      <div className="panel panel-spaced">
         <header>
           <h3>Time in stage</h3>
           <span className="spacer" />
@@ -130,7 +132,7 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      <div className="panel" style={{ marginTop: 16 }}>
+      <div className="panel panel-spaced-top">
         <header>
           <h3>Breakdown</h3>
           <span className="spacer" />

@@ -30,6 +30,13 @@ export default function UsersPage() {
   }
 
   const update = async (id, body) => {
+    if (body.status === 'inactive') {
+      const user = users.find((u) => u.id === id);
+      const ok = window.confirm(
+        `Deactivate ${user?.name || 'this person'}? They will lose access but their ticket history stays.`,
+      );
+      if (!ok) return;
+    }
     setError(null);
     try {
       await patchUser(id, body);

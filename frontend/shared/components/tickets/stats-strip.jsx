@@ -4,16 +4,16 @@ import { LANES } from '@pms/shared';
 
 export default function StatsStrip({ counts, onSelectLane }) {
   return (
-    <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+    <div className="stat-grid">
       {LANES.map((lane) => (
         <button
           key={lane.key}
           type="button"
+          className="stat-tile"
           onClick={() => onSelectLane?.(lane)}
-          style={{ flex: 1, padding: 12, border: '1px solid var(--border)', borderRadius: 6 }}
         >
-          <div style={{ color: 'var(--muted)' }}>{lane.label}</div>
-          <strong style={{ fontSize: 20 }}>{counts?.[lane.key] ?? 0}</strong>
+          <div className="stat-label">{lane.label}</div>
+          <div className="bigfig num">{counts?.[lane.key] ?? 0}</div>
         </button>
       ))}
     </div>

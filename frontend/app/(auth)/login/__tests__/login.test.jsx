@@ -19,7 +19,7 @@ describe('LoginPage', () => {
     render(<LoginPage />);
 
     await userEvent.type(screen.getByLabelText(/email/i), 'ada@example.com');
-    await userEvent.type(screen.getByPlaceholderText('Password'), 'correct-horse');
+    await userEvent.type(screen.getByLabelText(/^password$/i), 'correct-horse');
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
     await waitFor(() => expect(login).toHaveBeenCalledWith('ada@example.com', 'correct-horse'));
@@ -33,7 +33,7 @@ describe('LoginPage', () => {
     render(<LoginPage />);
 
     await userEvent.type(screen.getByLabelText(/email/i), 'nobody@example.com');
-    await userEvent.type(screen.getByPlaceholderText('Password'), 'whatever');
+    await userEvent.type(screen.getByLabelText(/^password$/i), 'whatever');
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
     expect(await screen.findByText(/incorrect email or password/i)).toBeInTheDocument();
@@ -47,7 +47,7 @@ describe('LoginPage', () => {
     render(<LoginPage />);
 
     await userEvent.type(screen.getByLabelText(/email/i), 'ada@example.com');
-    await userEvent.type(screen.getByPlaceholderText('Password'), 'x');
+    await userEvent.type(screen.getByLabelText(/^password$/i), 'x');
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
     expect(await screen.findByText(/try again later/i)).toBeInTheDocument();

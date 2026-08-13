@@ -57,7 +57,7 @@ export function AuthBrand() {
       <span className="mark" aria-hidden="true">
         <span /><span /><span />
       </span>
-      <b>Pipeline</b>
+      <b>Help &amp; Support</b>
     </div>
   );
 }

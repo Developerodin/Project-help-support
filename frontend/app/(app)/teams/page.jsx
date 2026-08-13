@@ -44,8 +44,10 @@ export default function TeamsPage() {
       <FormError error={error} />
 
       <form className="toolbar" onSubmit={create}>
+        <label className="lbl" htmlFor="team-name">Team name</label>
         <input id="team-name" required placeholder="Team name" value={draft.name}
           onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+        <label className="lbl" htmlFor="team-project">Project scope</label>
         <select id="team-project" value={draft.project}
           onChange={(e) => setDraft({ ...draft, project: e.target.value })}>
           <option value="">Global (all projects)</option>
@@ -54,6 +56,12 @@ export default function TeamsPage() {
         <button type="submit" className="btn btn-primary">Create team</button>
       </form>
 
+      {teams.length === 0 ? (
+        <div className="empty">
+          <h3>No teams yet</h3>
+          <p>Create a team to route tickets to a group. Teams can be global or scoped to one project.</p>
+        </div>
+      ) : (
       <div className="teamgrid">
         {teams.map((team) => (
           <section key={team.id} className="panel">
@@ -78,6 +86,7 @@ export default function TeamsPage() {
           </section>
         ))}
       </div>
+      )}
     </>
   );
 }

@@ -2,12 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { useCallback, useEffect } from 'react';
 import { AuthProvider, useAuth } from '@/shared/contexts/auth-context.jsx';
 import { ProjectProvider, useProject } from '@/shared/contexts/project-context.jsx';
 import Icon, { initials } from '@/shared/components/icons.jsx';
 import ProjectSwitcher from '@/shared/components/project-switcher.jsx';
 import NotificationBell from '@/shared/components/notification-bell.jsx';
 import ThemeToggle from '@/shared/components/theme-toggle.jsx';
+import { FOCUS_TICKET_SEARCH_KEY, focusTicketSearch } from '@/shared/lib/ticket-search-focus.js';
 
 const NAV_GROUPS = [
   {
@@ -86,6 +88,29 @@ function TopBar() {
   const { user } = useAuth();
   const { activeProject } = useProject();
   const router = useRouter();
+  const pathname = usePathname();
+
+  const openSearch = useCallback(() => {
+    if (pathname === '/tickets' || pathname.startsWith('/tickets?')) {
+      focusTicketSearch();
+      return;
+    }
+    try { sessionStorage.setItem(FOCUS_TICKET_SEARCH_KEY, '1'); } catch { /* ignore */ }
+    router.push('/tickets');
+  }, [pathname, router]);
+
+  useEffect(() => {
+    function onKey(event) {
+      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
+      const tag = event.target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || event.target?.isContentEditable) return;
+      event.preventDefault();
+      openSearch();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [openSearch]);
+
   if (!user) return null;
 
   const searchHint = activeProject
@@ -95,7 +120,7 @@ function TopBar() {
   return (
     <div className="topbar">
       <ProjectSwitcher />
-      <button type="button" className="search" onClick={() => router.push('/tickets')} aria-label="Search tickets and pages">
+      <button type="button" className="search" onClick={openSearch} aria-label="Search tickets">
         <span className="q">{searchHint}</span>
         <kbd>/</kbd>
       </button>

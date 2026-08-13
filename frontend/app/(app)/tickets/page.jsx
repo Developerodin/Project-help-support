@@ -15,6 +15,7 @@ function TicketListPage() {
 
   const [filters, setFilters] = useState({ scope: 'all', page: 1, limit: 25 });
   const [page, setPage] = useState({ results: [], totalResults: 0, page: 1, totalPages: 1 });
+  const [loading, setLoading] = useState(true);
   const { activeProjectId } = useProject();
   const [openTicketId, setOpenTicketId] = useState(null);
 
@@ -32,7 +33,12 @@ function TicketListPage() {
     setFilters((current) => (current.page === 1 ? current : { ...current, page: 1 }));
   }, [activeProjectId]);
 
-  const reload = useCallback(() => { listTickets(queryFilters).then(setPage); }, [queryFilters]);
+  const reload = useCallback(() => {
+    setLoading(true);
+    listTickets(queryFilters)
+      .then(setPage)
+      .finally(() => setLoading(false));
+  }, [queryFilters]);
   useEffect(() => { reload(); }, [reload]);
 
   const open = (ticketId) => {
@@ -57,7 +63,13 @@ function TicketListPage() {
       </div>
 
       <TicketFilters value={filters} onChange={setFilters} />
-      <TicketTable tickets={page.results} onOpen={open} />
+      {loading ? (
+        <div className="tablewrap loading-skeleton" aria-busy="true" aria-live="polite">
+          <p className="meta">Loading tickets…</p>
+        </div>
+      ) : (
+        <TicketTable tickets={page.results} onOpen={open} />
+      )}
 
       <div className="pager">
         <span className="of">{page.totalResults} tickets</span>

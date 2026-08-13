@@ -121,7 +121,7 @@ function AcceptInviteForm() {
           type="password"
           autoComplete="new-password"
           required
-          minLength={8}
+          minLength={12}
           peek
           bad={Boolean(error)}
           value={password}

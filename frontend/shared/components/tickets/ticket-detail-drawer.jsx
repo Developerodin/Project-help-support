@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   getTicket, patchTicket, transitionTicket, addComment, uploadAttachments,
   watchTicket, unwatchTicket, setBlocked, clearBlocked,
@@ -20,6 +20,15 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
   const [error, setError] = useState(null);
   const [tab, setTab] = useState('discussion');
   const [blockReason, setBlockReason] = useState('');
+  const discussionRef = useRef(null);
+  const historyRef = useRef(null);
+
+  const selectTab = useCallback((next) => {
+    setTab(next);
+    requestAnimationFrame(() => {
+      (next === 'discussion' ? discussionRef : historyRef).current?.focus();
+    });
+  }, []);
 
   const load = useCallback(async () => {
     setTicket(await getTicket(ticketId));
@@ -83,18 +92,20 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
                   onTransition={run((body) => transitionTicket(ticket.ticketId, body))}
                 />
               </div>
-              <div className="tabs" role="tablist">
+              <div className="tabs" role="tablist" aria-label="Ticket detail">
                 <button
-                  type="button" className="tab" role="tab"
+                  type="button" className="tab" role="tab" id="tab-discussion"
                   aria-selected={tab === 'discussion'}
-                  onClick={() => setTab('discussion')}
+                  aria-controls="panel-discussion"
+                  onClick={() => selectTab('discussion')}
                 >
                   Discussion<span className="n">{ticket.comments?.length || 0}</span>
                 </button>
                 <button
-                  type="button" className="tab" role="tab"
+                  type="button" className="tab" role="tab" id="tab-history"
                   aria-selected={tab === 'history'}
-                  onClick={() => setTab('history')}
+                  aria-controls="panel-history"
+                  onClick={() => selectTab('history')}
                 >
                   History
                 </button>
@@ -104,7 +115,14 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
             <div className="drawer-body">
               <div className="detail-split">
                 <div>
-                  <div hidden={tab !== 'discussion'}>
+                  <div
+                    id="panel-discussion"
+                    role="tabpanel"
+                    aria-labelledby="tab-discussion"
+                    tabIndex={-1}
+                    ref={discussionRef}
+                    hidden={tab !== 'discussion'}
+                  >
                     <TicketComments
                       ticket={ticket}
                       onAdd={run((body) => addComment(ticket.ticketId, body))}
@@ -114,7 +132,14 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
                       onUpload={run((form) => uploadAttachments(ticket.ticketId, form))}
                     />
                   </div>
-                  <div hidden={tab !== 'history'}>
+                  <div
+                    id="panel-history"
+                    role="tabpanel"
+                    aria-labelledby="tab-history"
+                    tabIndex={-1}
+                    ref={historyRef}
+                    hidden={tab !== 'history'}
+                  >
                     <TicketHistory ticket={ticket} />
                   </div>
                 </div>

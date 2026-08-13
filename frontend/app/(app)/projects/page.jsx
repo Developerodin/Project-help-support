@@ -7,6 +7,7 @@ import { listTeams } from '@/shared/api/teams.js';
 import FormError from '@/shared/components/form-error.jsx';
 import ProjectModulesEditor from '@/shared/components/project-modules-editor.jsx';
 import { formRowsToModules, modulesToFormRows } from '@/shared/lib/project-modules.js';
+import { showToast } from '@/shared/lib/toast.js';
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState([]);
@@ -61,6 +62,7 @@ export default function ProjectsPage() {
         return next;
       });
       reload();
+      showToast(`Module catalog saved for ${project.key}`);
     } catch (err) {
       setError(err);
     }

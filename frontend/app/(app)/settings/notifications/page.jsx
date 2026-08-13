@@ -5,6 +5,7 @@ import { NOTIFICATION_EVENTS, DEFAULT_NOTIFICATION_PREFS } from '@pms/shared';
 import { updateNotificationPrefs } from '@/shared/api/users.js';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import FormError from '@/shared/components/form-error.jsx';
+import { showToast } from '@/shared/lib/toast.js';
 
 export default function NotificationSettingsPage() {
   const { user } = useAuth();
@@ -13,10 +14,8 @@ export default function NotificationSettingsPage() {
     inApp: { ...DEFAULT_NOTIFICATION_PREFS.inApp, ...(user?.notificationPrefs?.inApp || {}) },
   });
   const [error, setError] = useState(null);
-  const [saved, setSaved] = useState(false);
 
   const toggle = (channel, event) => () => {
-    setSaved(false);
     setPrefs({ ...prefs, [channel]: { ...prefs[channel], [event]: !prefs[channel][event] } });
   };
 
@@ -24,7 +23,7 @@ export default function NotificationSettingsPage() {
     setError(null);
     try {
       await updateNotificationPrefs(prefs);
-      setSaved(true);
+      showToast('Notification preferences saved');
     } catch (err) { setError(err); }
   }
 
@@ -37,9 +36,8 @@ export default function NotificationSettingsPage() {
         </div>
       </div>
       <FormError error={error} />
-      {saved && <p className="meta">Saved.</p>}
 
-      <div className="tablewrap">
+      <div className="tablewrap notif-prefs">
         <table>
           <thead>
             <tr><th>Event</th><th>In app</th><th>Email</th></tr>

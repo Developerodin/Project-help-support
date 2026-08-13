@@ -52,7 +52,7 @@
   top: 0;
   right: 0;
   bottom: 0;
-  width: min(560px, 100vw);
+  width: min(880px, 64vw);
   z-index: 40;
   background: var(--paper);
   box-shadow: var(--shadow-drawer);

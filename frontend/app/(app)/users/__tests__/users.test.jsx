@@ -49,6 +49,7 @@ describe('UsersPage', () => {
   });
 
   it('deactivating goes through PATCH — there is no delete control', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(<UsersPage />);
     await screen.findByText('ada@example.com');
 

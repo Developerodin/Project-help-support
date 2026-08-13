@@ -1,17 +1,35 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
 import { STAGES, PRIORITIES } from '@pms/shared';
+import {
+  FOCUS_TICKET_SEARCH_KEY,
+  TICKET_SEARCH_INPUT_ID,
+  focusTicketSearch,
+} from '@/shared/lib/ticket-search-focus.js';
 
 export default function TicketFilters({ value, onChange }) {
+  const searchRef = useRef(null);
   const set = (key) => (event) => onChange({ ...value, [key]: event.target.value, page: 1 });
   const toggle = (key) => {
     const next = value[key] ? undefined : true;
     onChange({ ...value, [key]: next, page: 1 });
   };
 
+  useEffect(() => {
+    let shouldFocus = false;
+    try { shouldFocus = sessionStorage.getItem(FOCUS_TICKET_SEARCH_KEY) === '1'; } catch { /* ignore */ }
+    if (shouldFocus) {
+      try { sessionStorage.removeItem(FOCUS_TICKET_SEARCH_KEY); } catch { /* ignore */ }
+      focusTicketSearch();
+    }
+  }, []);
+
   return (
     <div className="toolbar">
       <input
+        ref={searchRef}
+        id={TICKET_SEARCH_INPUT_ID}
         className="filterin"
         type="search"
         aria-label="Filter tickets"

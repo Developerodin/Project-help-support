@@ -7,6 +7,9 @@ const getTrend = vi.fn();
 const getTimeInStage = vi.fn();
 const getDrill = vi.fn();
 
+vi.mock('@/shared/contexts/theme-context.jsx', () => ({
+  useTheme: () => ({ theme: 'light', isLight: true, setTheme: vi.fn(), toggleTheme: vi.fn() }),
+}));
 vi.mock('@/shared/contexts/project-context.jsx', () => ({
   useProject: () => ({
     activeProjectId: null,
