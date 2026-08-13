@@ -1,3 +1,8 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 /**
  * NO rewrite of /api/v1. The API base is always an explicit absolute URL.
  * A rewrite here is what makes a missing NEXT_PUBLIC_API_URL look like it works
@@ -6,6 +11,8 @@
 const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ['@pms/shared'],
+  // Monorepo root — avoids Next picking C:\Users\INTEL\package-lock.json.
+  outputFileTracingRoot: path.join(__dirname, '..'),
 };
 
 export default nextConfig;
