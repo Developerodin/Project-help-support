@@ -1,6 +1,7 @@
-import { WEB_MODULE_TAXONOMY } from '@pms/shared';
+﻿import { WEB_MODULE_TAXONOMY } from '@pms/shared';
 import User from './modules/users/user.model.js';
 import Project, { RESERVED_PROJECT_KEYS } from './modules/projects/project.model.js';
+import Notification from './modules/notifications/notification.model.js';
 import logger from './platform/logger.js';
 
 /**
@@ -29,6 +30,14 @@ export async function seedAdmin(config) {
     password: config.seed.adminPassword,
     role: 'admin',
     status: 'active',
+  });
+
+  await Notification.create({
+    user: admin._id,
+    event: 'TICKET_CREATED',
+    title: 'Welcome to Help & Support',
+    body: 'Your inbox will show ticket updates here. Assign a ticket to yourself to test notifications.',
+    link: `${config.frontendBaseUrl}/tickets`,
   });
 
   logger.info(`Seeded initial admin: ${admin.email}`);

@@ -6,7 +6,7 @@ import Project from '../../projects/project.model.js';
 import Ticket from '../../tickets/ticket.model.js';
 import Notification from '../notification.model.js';
 import EmailLog from '../emailLog.model.js';
-import { dispatchTicketEvent } from '../dispatch.js';
+import { dispatchTicketEvent, buildInviteDeliverer } from '../dispatch.js';
 
 withMemoryDb();
 
@@ -45,7 +45,7 @@ test('one dispatch produces one in-app row and one email row per recipient', asy
   assert.equal(await EmailLog.countDocuments({}), 1);
 });
 
-test('a mail failure is logged and swallowed — the caller never sees it', async () => {
+test('a mail failure is logged and swallowed â€” the caller never sees it', async () => {
   const { actor, ticket } = await fixture();
   const exploding = { sendMail: async () => { throw new Error('smtp down'); } };
 
@@ -88,3 +88,28 @@ test('a comment dispatch notifies the always-set, and a mention only the mention
   assert.deepEqual(byEvent.TICKET_COMMENTED, [String(reporter._id)]);
   assert.deepEqual(byEvent.TICKET_MENTIONED, [String(mentioned._id)]);
 });
+test('invite deliverer sends accept link with token', async () => {
+  const sent = [];
+  const transport = { sendMail: async (m) => { sent.push(m); return {}; } };
+  const deliver = buildInviteDeliverer(config, { transport });
+
+  await deliver({ user: { email: 'ada@example.com' }, inviteToken: 'abc123' });
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].to, 'ada@example.com');
+  assert.match(sent[0].text, /invite\/accept\?token=abc123/);
+});
+
+test('invite deliverer skips send when email is disabled', async () => {
+  const sent = [];
+  const transport = { sendMail: async (m) => { sent.push(m); return {}; } };
+  const deliver = buildInviteDeliverer(
+    { ...config, features: { email: false }, email: null },
+    { transport },
+  );
+
+  await deliver({ user: { email: 'ada@example.com' }, inviteToken: 'abc123' });
+
+  assert.equal(sent.length, 0);
+});
+

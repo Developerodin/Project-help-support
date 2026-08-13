@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from '@/shared/contexts/auth-context.jsx';
 import { ProjectProvider, useProject } from '@/shared/contexts/project-context.jsx';
 import Icon, { initials } from '@/shared/components/icons.jsx';
 import ProjectSwitcher from '@/shared/components/project-switcher.jsx';
+import NotificationBell from '@/shared/components/notification-bell.jsx';
 import ThemeToggle from '@/shared/components/theme-toggle.jsx';
 
 const NAV_GROUPS = [
@@ -15,6 +16,7 @@ const NAV_GROUPS = [
       { href: '/tickets/board', id: 'board', label: 'Board', icon: 'board', roles: '*' },
       { href: '/tickets', id: 'tickets', label: 'Tickets', icon: 'list', roles: '*' },
       { href: '/tickets/analytics', id: 'analytics', label: 'Analytics', icon: 'chart', roles: ['admin', 'lead', 'qa'] },
+      { href: '/notifications', id: 'inbox', label: 'Notifications', icon: 'bell', roles: '*' },
     ],
   },
   {
@@ -23,7 +25,7 @@ const NAV_GROUPS = [
       { href: '/projects', id: 'projects', label: 'Projects', icon: 'proj', roles: ['admin'] },
       { href: '/teams', id: 'teams', label: 'Teams', icon: 'team', roles: ['admin', 'lead'] },
       { href: '/users', id: 'people', label: 'People', icon: 'user', roles: ['admin'] },
-      { href: '/settings/notifications', id: 'settings', label: 'Notifications', icon: 'bell', roles: '*' },
+      { href: '/settings/notifications', id: 'settings', label: 'Notification settings', icon: 'bell', roles: '*' },
     ],
   },
 ];
@@ -101,6 +103,7 @@ function TopBar() {
       <Link href="/tickets/new" className="btn btn-primary">
         <Icon name="plus" size={12} /> New ticket
       </Link>
+      <NotificationBell />
       <ThemeToggle />
       <div className="avatar" title={user.name}>{initials(user.name)}</div>
     </div>

@@ -1,4 +1,4 @@
-import nodemailer from 'nodemailer';
+﻿import nodemailer from 'nodemailer';
 import logger from './logger.js';
 
 let transport = null;
@@ -16,7 +16,7 @@ export function getTransport(config) {
   if (!config.features.email) return null;
 
   if (!transport) {
-    transport = nodemailer.createTransport({
+    const options = {
       host: config.email.host,
       port: config.email.port,
       secure: config.email.port === 465,
@@ -24,7 +24,11 @@ export function getTransport(config) {
       pool: true,
       maxConnections: 2,
       maxMessages: 100,
-    });
+    };
+    if (!config.email.tlsRejectUnauthorized) {
+      options.tls = { rejectUnauthorized: false };
+    }
+    transport = nodemailer.createTransport(options);
     logger.info('SMTP transport created (pooled, maxConnections=2)');
   }
 

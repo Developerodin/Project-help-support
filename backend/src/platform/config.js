@@ -1,9 +1,9 @@
-/**
+﻿/**
  * Configuration is a pure function of an env object so it is testable without
  * touching process.env. Three tiers:
- *   required   — boot fails without them
- *   optional   — safe defaults
- *   capability — all-or-nothing groups; absent disables the feature, partial is an error
+ *   required   â€” boot fails without them
+ *   optional   â€” safe defaults
+ *   capability â€” all-or-nothing groups; absent disables the feature, partial is an error
  */
 
 const REQUIRED = ['MONGODB_URL', 'JWT_SECRET', 'FRONTEND_BASE_URL', 'CORS_ORIGINS'];
@@ -105,6 +105,9 @@ export function loadConfig(env = process.env) {
       username: email.SMTP_USERNAME,
       password: email.SMTP_PASSWORD,
       from: email.EMAIL_FROM,
+      tlsRejectUnauthorized: !['false', '0'].includes(
+        String(env.SMTP_TLS_REJECT_UNAUTHORIZED ?? 'true').trim().toLowerCase(),
+      ),
     },
     seed: seed && {
       adminEmail: seed.SEED_ADMIN_EMAIL,
@@ -112,3 +115,4 @@ export function loadConfig(env = process.env) {
     },
   };
 }
+
