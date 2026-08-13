@@ -56,15 +56,15 @@ export default function AnalyticsPage() {
         </select>
       </div>
 
-      <div className="grid2" style={{ marginBottom: 16 }}>
+      <div className="stat-grid">
         {LANES.map((lane) => (
-          <div key={lane.key} className="panel measure">
-            <div className="measure-key">{lane.label}</div>
+          <div key={lane.key} className="stat-tile">
+            <div className="stat-label">{lane.label}</div>
             <div className="bigfig num">{overview.lanes[lane.key]}</div>
           </div>
         ))}
-        <div className="panel measure">
-          <div className="measure-key">Blocker / Critical</div>
+        <div className="stat-tile stat-tile--alert">
+          <div className="stat-label">Blocker / Critical</div>
           <div className="bigfig num">{overview.blockerCritical}</div>
         </div>
       </div>
