@@ -41,14 +41,18 @@ describe('UsersPage', () => {
 
     expect(await screen.findByText('ada@example.com')).toBeInTheDocument();
     expect(screen.getByText('invited')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^invite$/i })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('invites a user and never displays an invite token', async () => {
     render(<UsersPage />);
     await screen.findByText('ada@example.com');
 
-    await userEvent.type(screen.getByLabelText(/^email$/i), 'new@example.com');
-    await userEvent.click(screen.getByRole('button', { name: /send invite/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^invite$/i }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.type(within(dialog).getByLabelText(/^email$/i), 'new@example.com');
+    await userEvent.click(within(dialog).getByRole('button', { name: /send invite/i }));
 
     await waitFor(() => expect(inviteUser).toHaveBeenCalledWith({
       email: 'new@example.com', role: 'member',
@@ -63,12 +67,14 @@ describe('UsersPage', () => {
     render(<UsersPage />);
     await screen.findByText('ada@example.com');
 
-    await userEvent.type(screen.getByLabelText(/^email$/i), 'new@example.com');
-    await userEvent.click(screen.getByRole('button', { name: /send invite/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^invite$/i }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.type(within(dialog).getByLabelText(/^email$/i), 'new@example.com');
+    await userEvent.click(within(dialog).getByRole('button', { name: /send invite/i }));
 
-    expect(screen.getByRole('button', { name: /sending/i })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: /sending/i })).toBeDisabled();
     resolveInvite({ id: 'u3' });
-    await waitFor(() => expect(screen.getByRole('button', { name: /send invite/i })).not.toBeDisabled());
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
   it('deactivating goes through PATCH after confirmation', async () => {

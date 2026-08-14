@@ -36,6 +36,10 @@ export const resendInvite = (deliverInvite) => catchAsync(async (req, res) => {
   res.json({ status: 'ok', sent });
 });
 
+export const updateMe = catchAsync(async (req, res) => {
+  res.json(await userService.updateMe(req.user, req.body));
+});
+
 export const notificationPrefs = catchAsync(async (req, res) => {
   res.json(await userService.updateNotificationPrefs(req.user, req.body));
 });

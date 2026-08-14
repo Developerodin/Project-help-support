@@ -72,12 +72,12 @@ test('invite email includes html, text, eyebrow, and cta link', () => {
     link: 'http://localhost:3002/invite/accept?token=abc',
     recipientEmail: 'ada@example.com',
   });
-  assert.match(msg.subject, /invited to Dharwin PMS/i);
+  assert.match(msg.subject, /invited to PROWPLUS PMS/i);
   assert.match(msg.text, /invite\/accept\?token=abc/);
   assert.match(msg.html, /Accept invite/);
   assert.match(msg.html, /invite\/accept\?token=abc/);
   assert.match(msg.html, /Invitation/i);
-  assert.match(msg.html, /Dharwin PMS/);
+  assert.match(msg.html, /PROWPLUS PMS/);
   assertCtaHasReadableText(msg.html);
   assert.doesNotMatch(msg.html, /This link expires in 72 hours\./i);
   assertNoSupportCopy(msg.html);
@@ -85,7 +85,7 @@ test('invite email includes html, text, eyebrow, and cta link', () => {
 
 test('password reset email includes reset link and security eyebrow', () => {
   const msg = renderPasswordResetEmail({ link: 'http://localhost:3002/reset-password?token=xyz' });
-  assert.match(msg.subject, /Reset your Dharwin PMS password/i);
+  assert.match(msg.subject, /Reset your PROWPLUS PMS password/i);
   assert.match(msg.text, /reset-password\?token=xyz/);
   assert.match(msg.html, /Reset password/);
   assert.match(msg.html, /Account security/i);

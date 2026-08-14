@@ -6,10 +6,10 @@ const F = EMAIL_BRAND.fontFamily;
 const M = EMAIL_BRAND.monoFamily;
 
 /**
- * The Dharwin mark, attached to the message rather than fetched, so it renders
+ * The PROWPLUS mark, attached to the message rather than fetched, so it renders
  * on first open in clients that block remote content. alt is empty on purpose:
  * the brand name sits beside it as live text, so an images-off client still
- * reads "Dharwin PMS" once, not twice.
+ * reads "PROWPLUS PMS" once, not twice.
  */
 function brandMark() {
   return (

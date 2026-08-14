@@ -5,7 +5,7 @@ import {
 
 export function renderPasswordResetEmail({ link, recipientName = '', recipientEmail = '' }) {
   const greeting = recipientName ? `Hi ${recipientName},` : 'Hi there,';
-  const subject = 'Reset your Dharwin PMS password';
+  const subject = `Reset your ${EMAIL_BRAND.shortName} password`;
   const headline = 'Choose a new password';
 
   const facts = [
@@ -33,7 +33,7 @@ export function renderPasswordResetEmail({ link, recipientName = '', recipientEm
   ].join('');
 
   const html = renderEmailLayout({
-    preheader: 'Reset your Dharwin PMS password.',
+    preheader: `Reset your ${EMAIL_BRAND.shortName} password.`,
     eyebrow: eyebrow('Account security'),
     title: headline,
     bodyHtml,

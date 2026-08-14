@@ -110,7 +110,7 @@ test('invite deliverer sends accept link with token', async () => {
   assert.equal(sent[0].to, 'ada@example.com');
   assert.match(sent[0].text, /invite\/accept\?token=abc123/);
   assert.match(sent[0].html, /Accept invite/);
-  assert.match(sent[0].subject, /invited to Dharwin PMS/i);
+  assert.match(sent[0].subject, /invited to PROWPLUS PMS/i);
 });
 
 test('invite deliverer skips send when email is disabled', async () => {

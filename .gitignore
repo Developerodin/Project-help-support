@@ -1,4 +1,4 @@
-node_modules/
+﻿node_modules/
 dist/
 build/
 .next/
@@ -14,7 +14,7 @@ coverage/
 
 # Local-only: specs and plans live here but are never versioned, and the
 # operational scripts are run by hand rather than shipped.
-docs/
+# docs/ — versioned per project policy
 scripts/
 
 # Local dev scratch: records whichever port the frontend last used. Nothing

@@ -6,12 +6,12 @@ import { useAuth } from '@/shared/contexts/auth-context.jsx';
 
 /**
  * Real messages carry the mark as an attachment and reference it as
- * cid:dharwin-mark. A browser cannot resolve a cid, and a srcDoc iframe cannot
+ * cid:prowplus-icon. A browser cannot resolve a cid, and a srcDoc iframe cannot
  * resolve a relative path either, so point it at the served copy absolutely.
  */
 function previewHtml(html) {
   const origin = typeof window === 'undefined' ? '' : window.location.origin;
-  return html.replaceAll('cid:dharwin-mark', `${origin}/dharwin-mark.png`);
+  return html.replaceAll('cid:prowplus-icon', `${origin}/prowplus-icon.png`);
 }
 
 // The two widths that decide whether an email holds up: a desktop reading pane
@@ -87,7 +87,7 @@ export default function EmailPreviewPage() {
       <header className="email-preview-page__head">
         <h1>Email previews</h1>
         <p className="sub">
-          Branded HTML layouts for every email sent from Dharwin PMS — warm paper palette, pipeline rail, and detail tables.
+          Branded HTML layouts for every email sent from PROWPLUS PMS — warm paper palette, pipeline rail, and detail tables.
         </p>
       </header>
 

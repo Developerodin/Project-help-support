@@ -1,8 +1,77 @@
 import { resolveProjectModules } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
+import Team from '../teams/team.model.js';
 import { assertActiveUsers, assertTeamUsable } from '../teams/team.service.js';
 import Project, { RESERVED_PROJECT_KEYS } from './project.model.js';
+
+const PROJECT_KEY_PATTERN = /^[A-Z][A-Z0-9]{1,9}$/;
+
+/** Derive a 2-3 character base key from the first word of the project name. */
+export function deriveProjectKeyBase(name) {
+  const trimmed = String(name || '').trim();
+  const firstWord = trimmed.split(/\s+/).find(Boolean) || trimmed;
+  const alpha = firstWord.replace(/[^a-zA-Z0-9]/g, '');
+  if (!alpha) return 'PRJ';
+
+  let letters = alpha.toUpperCase();
+  if (!/^[A-Z]/.test(letters)) {
+    letters = `P${letters}`.replace(/[^A-Z0-9]/g, '');
+  }
+
+  let base = letters.slice(0, 3);
+  if (base.length < 2) {
+    base = (letters + 'X').slice(0, 2);
+  }
+  return base.slice(0, 10);
+}
+
+async function resolveAvailableProjectKey(name, explicitKey) {
+  const provided = String(explicitKey || '').trim().toUpperCase();
+  if (provided) {
+    if (!PROJECT_KEY_PATTERN.test(provided)) {
+      throw new ApiError(
+        400,
+        'INVALID_PROJECT_KEY',
+        'Project key must be 2-10 uppercase letters or digits and start with a letter',
+      );
+    }
+    return provided;
+  }
+
+  const base = deriveProjectKeyBase(name);
+  let candidate = base;
+  let suffix = 2;
+
+  while (
+    RESERVED_PROJECT_KEYS.includes(candidate)
+    || await Project.exists({ key: candidate })
+  ) {
+    const suffixStr = String(suffix);
+    candidate = `${base.slice(0, Math.max(2, 10 - suffixStr.length))}${suffixStr}`;
+    suffix += 1;
+    if (suffix > 999) {
+      throw new ApiError(500, 'PROJECT_KEY_EXHAUSTED', 'Could not generate a unique project key');
+    }
+  }
+
+  return candidate;
+}
+
+async function assertCreateDefaults(body) {
+  await assertActiveUsers([body.defaultAssignee, body.defaultTester]);
+  if (!body.defaultTeam) return;
+
+  const team = await Team.findById(body.defaultTeam);
+  if (!team) throw new ApiError(404, 'TEAM_NOT_FOUND', 'Team not found');
+  if (team.project != null) {
+    throw new ApiError(
+      400,
+      'TEAM_PROJECT_MISMATCH',
+      'Only global teams can be set as defaults when creating a project',
+    );
+  }
+}
 
 /**
  * module/page are plain strings on the ticket, validated against the project's
@@ -33,7 +102,14 @@ async function assertDefaults(projectId, body) {
 }
 
 export async function createProject(actor, body) {
-  const key = String(body.key || '').trim().toUpperCase();
+  const brand = String(body.brand || '').trim();
+  if (!brand) {
+    throw new ApiError(400, 'BRAND_REQUIRED', 'Brand is required');
+  }
+
+  await assertCreateDefaults(body);
+
+  const key = await resolveAvailableProjectKey(body.name, body.key);
   if (RESERVED_PROJECT_KEYS.includes(key)) {
     throw new ApiError(400, 'RESERVED_PROJECT_KEY', `"${key}" is reserved for imported legacy tickets`);
   }
@@ -42,12 +118,25 @@ export async function createProject(actor, body) {
   }
 
   const project = await Project.create({
+    brand,
     key,
     name: body.name,
     description: body.description,
+    modules: body.modules ?? [],
+    defaultAssignee: body.defaultAssignee || undefined,
+    defaultTester: body.defaultTester || undefined,
+    defaultTeam: body.defaultTeam || undefined,
     createdBy: actor._id,
   });
-  return project.toJSON();
+
+  const populated = await Project.findById(project._id)
+    .populate(['defaultAssignee', 'defaultTester', 'defaultTeam']);
+  return populated.toJSON();
+}
+
+export async function listBrands() {
+  const brands = await Project.distinct('brand', { status: 'active' });
+  return brands.filter(Boolean).sort((a, b) => a.localeCompare(b));
 }
 
 export async function listProjects(query = {}) {
@@ -55,7 +144,7 @@ export async function listProjects(query = {}) {
   const page = await paginate(Project, filter, {
     page: query.page,
     limit: query.limit,
-    sortBy: query.sortBy || 'key:asc',
+    sortBy: query.sortBy || 'brand:asc,key:asc',
     populate: ['defaultAssignee', 'defaultTester', 'defaultTeam'],
   });
   return { ...page, results: page.results.map((p) => p.toJSON()) };

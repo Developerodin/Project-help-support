@@ -1,22 +1,15 @@
-﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import TeamsPage from '../page.jsx';
 
 const listTeams = vi.fn();
-const createTeam = vi.fn();
 const updateMembers = vi.fn();
-const listProjects = vi.fn();
 const listUsers = vi.fn();
 
 vi.mock('@/shared/api/teams.js', () => ({
   listTeams: (...a) => listTeams(...a),
-  createTeam: (...a) => createTeam(...a),
   updateMembers: (...a) => updateMembers(...a),
-}));
-
-vi.mock('@/shared/api/projects.js', () => ({
-  listProjects: (...a) => listProjects(...a),
 }));
 
 vi.mock('@/shared/api/users.js', () => ({
@@ -40,9 +33,7 @@ describe('TeamsPage', () => {
       ],
       totalResults: 1,
     });
-    createTeam.mockReset().mockResolvedValue({ id: 't2' });
     updateMembers.mockReset().mockResolvedValue({});
-    listProjects.mockReset().mockResolvedValue({ results: [{ id: 'p1', name: 'Web App', key: 'WEB' }] });
     listUsers.mockReset().mockResolvedValue({
       results: [
         { id: 'u1', name: 'Ada Lovelace', email: 'ada@example.com' },
@@ -57,6 +48,21 @@ describe('TeamsPage', () => {
     expect(await screen.findByRole('heading', { name: 'Platform' })).toBeInTheDocument();
     expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
     expect(screen.queryByText('Ada Lovelace, Grace Hopper')).not.toBeInTheDocument();
+  });
+
+  it('shows a New team link in the page header', async () => {
+    render(<TeamsPage />);
+    await screen.findByRole('heading', { name: 'Platform' });
+
+    const link = screen.getByRole('link', { name: /new team/i });
+    expect(link).toHaveAttribute('href', '/teams/new');
+  });
+
+  it('shows edit links on team cards', async () => {
+    render(<TeamsPage />);
+    await screen.findByRole('heading', { name: 'Platform' });
+
+    expect(screen.getByRole('link', { name: /^edit$/i })).toHaveAttribute('href', '/teams/t1/edit');
   });
 
   it('shows empty member state when a team has no members', async () => {
@@ -92,20 +98,5 @@ describe('TeamsPage', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: /^remove$/i }));
 
     await waitFor(() => expect(updateMembers).toHaveBeenCalledWith('t1', { remove: ['u1'] }));
-  });
-
-  it('creates a team with loading state', async () => {
-    let resolveCreate;
-    createTeam.mockImplementation(() => new Promise((resolve) => { resolveCreate = resolve; }));
-
-    render(<TeamsPage />);
-    await screen.findByRole('heading', { name: 'Platform' });
-
-    await userEvent.type(screen.getByLabelText(/team name/i), 'New Squad');
-    await userEvent.click(screen.getByRole('button', { name: /^create team$/i }));
-
-    expect(screen.getByRole('button', { name: /creating/i })).toBeDisabled();
-    resolveCreate({ id: 't3' });
-    await waitFor(() => expect(createTeam).toHaveBeenCalledWith({ name: 'New Squad', project: null }));
   });
 });

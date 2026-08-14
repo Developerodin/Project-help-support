@@ -5,7 +5,8 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { AuthProvider, useAuth } from '@/shared/contexts/auth-context.jsx';
 import { ProjectProvider, useProject } from '@/shared/contexts/project-context.jsx';
-import Icon, { initials } from '@/shared/components/icons.jsx';
+import Icon from '@/shared/components/icons.jsx';
+import ProfileMenu from '@/shared/components/profile-menu.jsx';
 import ProjectSwitcher from '@/shared/components/project-switcher.jsx';
 import NotificationBell from '@/shared/components/notification-bell.jsx';
 import ThemeToggle from '@/shared/components/theme-toggle.jsx';
@@ -65,7 +66,7 @@ function TopBar() {
       </Link>
       <NotificationBell />
       <ThemeToggle />
-      <div className="avatar" title={user.name}>{initials(user.name)}</div>
+      <ProfileMenu />
     </div>
   );
 }

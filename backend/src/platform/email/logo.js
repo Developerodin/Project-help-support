@@ -7,7 +7,7 @@ import logger from '../logger.js';
 // backend/src/platform/email -> repo root -> shared/email/assets
 const MARK_PATH = resolve(
   dirname(fileURLToPath(import.meta.url)),
-  '../../../../shared/email/assets/dharwin-mark.png',
+  '../../../../shared/email/assets/prowplus-icon.png',
 );
 
 /**
@@ -15,7 +15,7 @@ const MARK_PATH = resolve(
  * disk hit per recipient on a fan-out.
  *
  * A missing file degrades to no attachment rather than a failed send. The
- * header still reads "Dharwin PMS" as live text, so a message without the mark
+ * header still reads "PROWPLUS PMS" as live text, so a message without the mark
  * is plainer, not broken. Regenerate with: node scripts/build-brand-assets.mjs
  */
 let cached;
@@ -39,7 +39,7 @@ export function brandAttachments() {
   const content = loadMark();
   if (!content) return undefined;
   return [{
-    filename: 'dharwin-mark.png',
+    filename: 'prowplus-icon.png',
     content,
     cid: EMAIL_BRAND.logoCid,
     contentDisposition: 'inline',

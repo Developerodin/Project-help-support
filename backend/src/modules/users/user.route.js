@@ -4,7 +4,7 @@ import { validate } from '../../platform/validate.js';
 import { resendInviteLimiter } from '../../platform/rateLimit.js';
 import * as controller from './user.controller.js';
 import {
-  listUsersSchema, createUserSchema, userIdSchema, updateUserSchema, notificationPrefsSchema,
+  listUsersSchema, createUserSchema, userIdSchema, updateUserSchema, updateMeSchema, notificationPrefsSchema,
 } from './user.validation.js';
 
 export default function userRoutes(config, deliverInvite) {
@@ -12,6 +12,7 @@ export default function userRoutes(config, deliverInvite) {
   router.use(auth(config));
 
   // Before /:id, or "me" is parsed as a user id.
+  router.patch('/me', validate(updateMeSchema), controller.updateMe);
   router.patch('/me/notification-prefs',
     validate(notificationPrefsSchema), controller.notificationPrefs);
 

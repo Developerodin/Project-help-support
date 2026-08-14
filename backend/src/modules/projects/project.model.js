@@ -37,6 +37,7 @@ const projectSchema = new mongoose.Schema(
       set: (v) => (typeof v === 'string' ? v.trim().toUpperCase() : v),
       match: [/^[A-Z][A-Z0-9]{1,9}$/, 'Project key must be 2-10 uppercase letters or digits'],
     },
+    brand: { type: String, required: true, trim: true, index: true, default: 'Uncategorized' },
     name: { type: String, required: true, trim: true },
     description: { type: String, trim: true },
     status: { type: String, enum: ['active', 'archived'], default: 'active', index: true },

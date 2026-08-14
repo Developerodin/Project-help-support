@@ -6,7 +6,7 @@ export function AuthBrand() {
   return (
     <header className="auth-header">
       <div className="brand">
-        <BrandMark id="auth" />
+        <BrandMark />
         {/* Two spans, one wordmark: the phone stacks them, the desktop wraps
             them as the single line of prose it has always been. */}
         <b>

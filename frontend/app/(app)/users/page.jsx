@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ROLES } from '@pms/shared';
 import { listUsers, inviteUser, patchUser, resendInvite, deleteUser } from '@/shared/api/users.js';
-import FormError from '@/shared/components/form-error.jsx';
 import ConfirmDialog from '@/shared/components/confirm-dialog.jsx';
+import InviteDialog from '@/shared/components/invite-dialog.jsx';
 import { initials } from '@/shared/components/icons.jsx';
 import { normalizeApiError } from '@/shared/lib/api-error.js';
 import { showToast } from '@/shared/lib/toast.js';
@@ -56,6 +56,7 @@ export default function UsersPage() {
   const [users, setUsers] = useState([]);
   const [draft, setDraft] = useState({ email: '', role: 'member' });
   const [error, setError] = useState(null);
+  const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteBusy, setInviteBusy] = useState(false);
   const [confirmDeactivate, setConfirmDeactivate] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
@@ -93,13 +94,13 @@ export default function UsersPage() {
     window.setTimeout(() => setRowActionFeedback(key, null), durationMs);
   }
 
-  async function invite(event) {
-    event.preventDefault();
+  async function invite() {
     setError(null);
     setInviteBusy(true);
     try {
       await inviteUser(draft);
       setDraft({ email: '', role: 'member' });
+      setInviteOpen(false);
       showToast('Invite sent');
       reload();
     } catch (err) {
@@ -107,6 +108,13 @@ export default function UsersPage() {
     } finally {
       setInviteBusy(false);
     }
+  }
+
+  function closeInvite() {
+    if (inviteBusy) return;
+    setInviteOpen(false);
+    setError(null);
+    setDraft({ email: '', role: 'member' });
   }
 
   async function patchRow(id, body, actionKey, successMessage) {
@@ -204,27 +212,27 @@ export default function UsersPage() {
           <h1>People</h1>
           <p className="sub">Invite someone, set their role, deactivate without deleting history.</p>
         </div>
-      </div>
-      <FormError error={error} />
-
-      <form className="toolbar" onSubmit={invite}>
-        <label htmlFor="invite-email">Email</label>
-        <input id="invite-email" type="email" required placeholder="name@company.com" value={draft.email}
-          onChange={(e) => setDraft({ ...draft, email: e.target.value })} disabled={inviteBusy} />
-        <label htmlFor="invite-role">Role</label>
-        <select id="invite-role" value={draft.role} disabled={inviteBusy}
-          onChange={(e) => setDraft({ ...draft, role: e.target.value })}>
-          {ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
-        </select>
-        <button type="submit" className="btn btn-primary" disabled={inviteBusy} aria-busy={inviteBusy || undefined}>
-          {inviteBusy ? (
-            <>
-              <span className="btn-spin" aria-hidden="true" />
-              Sending…
-            </>
-          ) : 'Send invite'}
+        <span className="spacer" />
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={() => setInviteOpen(true)}
+        >
+          Invite
         </button>
-      </form>
+      </div>
+
+      <InviteDialog
+        open={inviteOpen}
+        email={draft.email}
+        role={draft.role}
+        error={error}
+        busy={inviteBusy}
+        onEmailChange={(event) => setDraft({ ...draft, email: event.target.value })}
+        onRoleChange={(event) => setDraft({ ...draft, role: event.target.value })}
+        onConfirm={invite}
+        onCancel={closeInvite}
+      />
 
       <div className="tablewrap">
         <table>

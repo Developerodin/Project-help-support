@@ -1,15 +1,15 @@
 /** Email-safe brand tokens aligned with design-system.css light palette. */
 export const EMAIL_BRAND = Object.freeze({
-  name: 'Dharwin',
-  tagline: 'Project Management Portal',
-  fullName: 'Dharwin Project Management Portal',
-  shortName: 'Dharwin PMS',
+  name: 'PROWPLUS',
+  tagline: 'PMS',
+  fullName: 'PROWPLUS PMS',
+  shortName: 'PROWPLUS PMS',
   /**
    * The mark travels with the message as an attachment under this content id.
    * Gmail and Outlook block remote images and data: URIs by default; a cid
    * attachment is the only form that renders on first open, every time.
    */
-  logoCid: 'dharwin-mark',
+  logoCid: 'prowplus-icon',
   colors: Object.freeze({
     canvas: '#eae8e3',
     paper: '#f8f7f4',

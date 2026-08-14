@@ -43,6 +43,16 @@ export async function updateUser(actor, id, body) {
   return user.toJSON();
 }
 
+export async function updateMe(actor, body) {
+  const user = await User.findByIdAndUpdate(
+    actor._id,
+    { $set: body },
+    { new: true, runValidators: true },
+  );
+  if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found');
+  return user.toJSON();
+}
+
 export async function updateNotificationPrefs(actor, { email = {}, inApp = {} }) {
   const user = await User.findById(actor._id);
 

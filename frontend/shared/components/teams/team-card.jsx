@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { initials } from '@/shared/components/icons.jsx';
 
 function ChevronDown() {
@@ -71,6 +72,7 @@ export default function TeamCard({
       <header>
         <h3>{team.name}</h3>
         <span className="spacer" />
+        <Link href={`/teams/${team.id}/edit`} className="btn btn-ghost btn-sm">Edit</Link>
         <span className="chip">{team.project ? team.project.key : 'global'}</span>
       </header>
 

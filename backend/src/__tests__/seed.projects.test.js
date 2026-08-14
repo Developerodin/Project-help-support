@@ -20,6 +20,10 @@ test('seeds WEB, MOB and the reserved DEV project', async () => {
 
   const keys = (await Project.find({}).sort({ key: 1 })).map((p) => p.key);
   assert.deepEqual(keys, ['DEV', 'MOB', 'WEB']);
+
+  assert.equal((await Project.findOne({ key: 'WEB' })).brand, 'Dharwin');
+  assert.equal((await Project.findOne({ key: 'MOB' })).brand, 'Dharwin');
+  assert.equal((await Project.findOne({ key: 'DEV' })).brand, 'Legacy');
 });
 
 test('MOB seeds with an empty module taxonomy and WEB seeds a populated one', async () => {
@@ -35,6 +39,24 @@ test('the DEV project is archived so it never appears in a create form', async (
   await seedProjects(actor);
 
   assert.equal((await Project.findOne({ key: 'DEV' })).status, 'archived');
+});
+
+test('backfills brand on existing projects without one', async () => {
+  const actor = await admin();
+  await Project.collection.insertOne({
+    key: 'WEB',
+    name: 'Web App',
+    createdBy: actor._id,
+    status: 'active',
+    nextTicketSeq: 1,
+    modules: [],
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  const result = await seedProjects(actor);
+  assert.ok(result.brandsBackfilled.includes('WEB'));
+  assert.equal((await Project.findOne({ key: 'WEB' })).brand, 'Dharwin');
 });
 
 test('re-running the seed changes nothing', async () => {

@@ -35,7 +35,7 @@ export async function seedAdmin(config) {
   await Notification.create({
     user: admin._id,
     event: 'TICKET_CREATED',
-    title: 'Welcome to Dharwin Project Management Portal',
+    title: 'Welcome to PROWPLUS PMS',
     body: 'Your inbox will show ticket updates here. Assign a ticket to yourself to test notifications.',
     link: `${config.frontendBaseUrl}/tickets`,
   });
@@ -50,18 +50,25 @@ export async function seedAdmin(config) {
  * through PUT /v1/projects/:id/modules once the screens are known.
  */
 const SEED_PROJECTS = [
-  { key: 'WEB', name: 'Web App', status: 'active', modules: WEB_MODULE_TAXONOMY },
-  { key: 'MOB', name: 'Mobile App', status: 'active', modules: [] },
+  { key: 'WEB', brand: 'Dharwin', name: 'Web App', status: 'active', modules: WEB_MODULE_TAXONOMY },
+  { key: 'MOB', brand: 'Dharwin', name: 'Mobile App', status: 'active', modules: [] },
   // Reserved AND archived: it exists only so a later import of legacy DEV-*
   // tickets has a project to belong to. Archived keeps it out of every form.
   {
     key: 'DEV',
+    brand: 'Legacy',
     name: 'Legacy Dev Tickets',
     status: 'archived',
     modules: [],
     description: 'Reserved for imported legacy tickets. Do not file new tickets here.',
   },
 ];
+
+const DEFAULT_BRAND_BY_KEY = Object.freeze({
+  WEB: 'Dharwin',
+  MOB: 'Dharwin',
+  DEV: 'Legacy',
+});
 
 // The reserved list and the seed list cannot silently drift apart.
 for (const key of RESERVED_PROJECT_KEYS) {
@@ -73,11 +80,21 @@ for (const key of RESERVED_PROJECT_KEYS) {
 export async function seedProjects(actor) {
   const created = [];
   const backfilled = [];
+  const brandsBackfilled = [];
 
   for (const definition of SEED_PROJECTS) {
     if (await Project.exists({ key: definition.key })) continue;
     await Project.create({ ...definition, createdBy: actor._id });
     created.push(definition.key);
+  }
+
+  // Existing installs created before brand grouping: assign sensible defaults.
+  for (const project of await Project.find({
+    $or: [{ brand: { $exists: false } }, { brand: null }, { brand: '' }],
+  })) {
+    project.brand = DEFAULT_BRAND_BY_KEY[project.key] ?? 'Uncategorized';
+    await project.save();
+    brandsBackfilled.push(project.key);
   }
 
   // Existing installs may have WEB with an empty modules array (seed skipped
@@ -91,5 +108,6 @@ export async function seedProjects(actor) {
 
   if (created.length) logger.info(`Seeded projects: ${created.join(', ')}`);
   if (backfilled.length) logger.info(`Backfilled project modules: ${backfilled.join(', ')}`);
-  return { created, backfilled };
+  if (brandsBackfilled.length) logger.info(`Backfilled project brands: ${brandsBackfilled.join(', ')}`);
+  return { created, backfilled, brandsBackfilled };
 }

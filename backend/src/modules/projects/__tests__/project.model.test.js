@@ -9,7 +9,7 @@ withMemoryDb();
 const owner = () => new mongoose.Types.ObjectId();
 
 const make = (over = {}) => Project.create({
-  key: 'WEB', name: 'Web App', createdBy: owner(), ...over,
+  brand: 'Dharwin', key: 'WEB', name: 'Web App', createdBy: owner(), ...over,
 });
 
 test('a new project starts its counter at 1', async () => {

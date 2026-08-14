@@ -61,7 +61,7 @@ export default function AppSidebar() {
           icon width only the wordmark folds away. */}
       <SidebarHeader className="h-(--bar-h) justify-center border-b border-sidebar-border p-0">
         <div className="flex h-(--bar-h) items-center gap-2.5 px-3.5 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-          <BrandMark id="nav" className="size-5 shrink-0" />
+          <BrandMark className="size-5 shrink-0" />
           <b className="truncate text-[0.8125rem] font-semibold tracking-tight text-foreground group-data-[collapsible=icon]:hidden">
             {BRAND_SHORT}
           </b>

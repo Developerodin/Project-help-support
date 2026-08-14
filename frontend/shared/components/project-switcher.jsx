@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useProject } from '@/shared/contexts/project-context.jsx';
+import { groupProjectsByBrand } from '@/shared/lib/group-projects-by-brand.js';
 
 function ChevronDown() {
   return (
@@ -73,19 +74,24 @@ export default function ProjectSwitcher() {
           </button>
           {projects.length > 0 && <div className="menusep" />}
           <div className="menuscroll">
-            {projects.map((project) => (
-              <button
-                key={project.id}
-                type="button"
-                className="menuitem"
-                role="menuitem"
-                aria-current={project.id === activeProjectId ? 'true' : undefined}
-                onClick={() => choose(project.id)}
-              >
-                <span className="tag">{project.key}</span>
-                <span>{project.name}</span>
-                {project.id === activeProjectId && <span className="k">✓</span>}
-              </button>
+            {groupProjectsByBrand(projects).map(({ brand, projects: brandProjects }) => (
+              <div key={brand} className="menubrand">
+                <div className="menubrand-label" role="presentation">{brand}</div>
+                {brandProjects.map((project) => (
+                  <button
+                    key={project.id}
+                    type="button"
+                    className="menuitem menuitem-nested"
+                    role="menuitem"
+                    aria-current={project.id === activeProjectId ? 'true' : undefined}
+                    onClick={() => choose(project.id)}
+                  >
+                    <span className="tag">{project.key}</span>
+                    <span>{project.name}</span>
+                    {project.id === activeProjectId && <span className="k">✓</span>}
+                  </button>
+                ))}
+              </div>
             ))}
           </div>
         </div>

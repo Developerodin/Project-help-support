@@ -36,6 +36,12 @@ export const updateUserSchema = {
   }).min(1),
 };
 
+export const updateMeSchema = {
+  body: Joi.object({
+    name: Joi.string().trim().min(1).max(120).required(),
+  }),
+};
+
 export const notificationPrefsSchema = {
   body: Joi.object({ email: eventFlags, inApp: eventFlags }).min(1),
 };

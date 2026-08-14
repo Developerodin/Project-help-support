@@ -5,7 +5,7 @@ import {
 
 export function renderInviteEmail({ link, recipientName = '', recipientEmail = '' }) {
   const greeting = recipientName ? `Hi ${recipientName},` : 'Hi there,';
-  const subject = "You've been invited to Dharwin PMS";
+  const subject = `You've been invited to ${EMAIL_BRAND.shortName}`;
   const headline = 'Accept your invite to join the workspace';
 
   const facts = [
@@ -33,7 +33,7 @@ export function renderInviteEmail({ link, recipientName = '', recipientEmail = '
   ].join('');
 
   const html = renderEmailLayout({
-    preheader: 'Set your name and password to join Dharwin PMS.',
+    preheader: `Set your name and password to join ${EMAIL_BRAND.shortName}.`,
     eyebrow: eyebrow('Invitation'),
     title: headline,
     bodyHtml,

@@ -1,20 +1,172 @@
-'use client';
+﻿'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { listProjects, patchProject, replaceModules } from '@/shared/api/projects.js';
 import { listUsers } from '@/shared/api/users.js';
 import { listTeams } from '@/shared/api/teams.js';
 import FormError from '@/shared/components/form-error.jsx';
+import Icon from '@/shared/components/icons.jsx';
 import ProjectModulesEditor from '@/shared/components/project-modules-editor.jsx';
+import { groupProjectsByBrand } from '@/shared/lib/group-projects-by-brand.js';
 import { formRowsToModules, modulesToFormRows } from '@/shared/lib/project-modules.js';
 import { showToast } from '@/shared/lib/toast.js';
+
+const EXPANDED_STORAGE_KEY = 'pms-projects-expanded';
+const BRAND_EXPANDED_STORAGE_KEY = 'pms-brands-expanded';
+
+function mergeExpandedState(prev, projectIds) {
+  const next = { ...prev };
+  for (const id of projectIds) {
+    if (!(id in next)) next[id] = true;
+  }
+  return next;
+}
+
+function mergeBrandExpandedState(prev, brands) {
+  const next = { ...prev };
+  for (const brand of brands) {
+    if (!(brand in next)) next[brand] = true;
+  }
+  return next;
+}
+
+function readStoredExpanded(key) {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistExpandedState(key, next) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(next));
+  } catch {
+    // Storage may be unavailable in private mode.
+  }
+}
+
+function ProjectPanel({
+  project,
+  users,
+  teams,
+  moduleRows,
+  hasModuleDraft,
+  isExpanded,
+  onToggleExpanded,
+  onUpdate,
+  onSaveModules,
+  onModulesChange,
+}) {
+  return (
+    <section
+      className={`panel project-panel${isExpanded ? '' : ' collapsed'}`}
+    >
+      <header className="project-panel-head">
+        <h4 className="project-panel-title">
+          <button
+            type="button"
+            className="project-panel-head-toggle"
+            aria-expanded={isExpanded}
+            aria-controls={`project-body-${project.id}`}
+            onClick={() => onToggleExpanded(project.id)}
+          >
+            <span className="project-panel-chev" aria-hidden="true">
+              <Icon name="chev-right" size={14} />
+            </span>
+            <span className="project-panel-head-label">
+              <span className="mono">{project.key}</span> — {project.name}
+            </span>
+            <span className="spacer" />
+            <span className="chip">{project.status}</span>
+            <span className="sr">{isExpanded ? 'Collapse' : 'Expand'} {project.name}</span>
+          </button>
+        </h4>
+      </header>
+
+      <div className="project-form" id={`project-body-${project.id}`}>
+        <div className="project-form-section">
+          <div className="project-form-intro">
+            <h5 className="project-form-heading">Defaults</h5>
+            <p className="project-form-hint">
+              Pre-fill lead, tester, and team when someone files a ticket in this project.
+            </p>
+          </div>
+
+          <div className="project-defaults-grid">
+            <div className="form-row">
+              <label htmlFor={`assignee-${project.id}`}>Default lead</label>
+              <select
+                id={`assignee-${project.id}`}
+                value={project.defaultAssignee?.id || ''}
+                onChange={(e) => onUpdate(project.id, { defaultAssignee: e.target.value || null })}
+              >
+                <option value="">—</option>
+                {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
+
+            <div className="form-row">
+              <label htmlFor={`tester-${project.id}`}>Default tester</label>
+              <select
+                id={`tester-${project.id}`}
+                value={project.defaultTester?.id || ''}
+                onChange={(e) => onUpdate(project.id, { defaultTester: e.target.value || null })}
+              >
+                <option value="">—</option>
+                {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
+
+            <div className="form-row">
+              <label htmlFor={`team-${project.id}`}>Default team</label>
+              <select
+                id={`team-${project.id}`}
+                value={project.defaultTeam?.id || ''}
+                onChange={(e) => onUpdate(project.id, { defaultTeam: e.target.value || null })}
+              >
+                <option value="">—</option>
+                {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div className="project-form-section project-form-section--catalog">
+          <div className="project-form-intro">
+            <h5 className="project-form-heading">Module catalog</h5>
+            <p className="project-form-hint">
+              Group pages under module names for ticket location fields on new tickets.
+            </p>
+          </div>
+
+          <ProjectModulesEditor
+            projectKey={project.key}
+            value={moduleRows}
+            onChange={(rows) => onModulesChange(project.id, rows)}
+            onSave={() => onSaveModules(project)}
+            hasUnsavedChanges={hasModuleDraft}
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState([]);
   const [users, setUsers] = useState([]);
   const [teams, setTeams] = useState([]);
   const [modulesDraft, setModulesDraft] = useState({});
+  const [expanded, setExpanded] = useState({});
+  const [brandExpanded, setBrandExpanded] = useState({});
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  const brandGroups = useMemo(() => groupProjectsByBrand(projects), [projects]);
 
   const syncModulesDraft = useCallback((nextProjects) => {
     setModulesDraft((prev) => {
@@ -29,12 +181,17 @@ export default function ProjectsPage() {
   }, []);
 
   const reload = useCallback(() => {
-    listProjects()
+    setLoading(true);
+    return listProjects()
       .then((p) => {
         setProjects(p.results);
         syncModulesDraft(p.results);
+        const groups = groupProjectsByBrand(p.results);
+        setExpanded((prev) => mergeExpandedState({ ...readStoredExpanded(EXPANDED_STORAGE_KEY), ...prev }, p.results.map((x) => x.id)));
+        setBrandExpanded((prev) => mergeBrandExpandedState({ ...readStoredExpanded(BRAND_EXPANDED_STORAGE_KEY), ...prev }, groups.map((g) => g.brand)));
       })
-      .catch(setError);
+      .catch(setError)
+      .finally(() => setLoading(false));
   }, [syncModulesDraft]);
 
   useEffect(() => {
@@ -42,6 +199,24 @@ export default function ProjectsPage() {
     listUsers({ status: 'active' }).then((p) => setUsers(p.results)).catch(() => {});
     listTeams().then((p) => setTeams(p.results)).catch(() => {});
   }, [reload]);
+
+  const toggleExpanded = (projectId) => {
+    setExpanded((prev) => {
+      const currentlyExpanded = prev[projectId] !== false;
+      const next = { ...prev, [projectId]: !currentlyExpanded };
+      persistExpandedState(EXPANDED_STORAGE_KEY, next);
+      return next;
+    });
+  };
+
+  const toggleBrandExpanded = (brand) => {
+    setBrandExpanded((prev) => {
+      const currentlyExpanded = prev[brand] !== false;
+      const next = { ...prev, [brand]: !currentlyExpanded };
+      persistExpandedState(BRAND_EXPANDED_STORAGE_KEY, next);
+      return next;
+    });
+  };
 
   const update = async (id, body) => {
     setError(null);
@@ -73,91 +248,78 @@ export default function ProjectsPage() {
       <div className="page-head">
         <div>
           <h1>Projects</h1>
-          <p className="sub">Module taxonomy, default assignees and testers for each product line.</p>
+          <p className="sub">Brands, module taxonomy, and default leads for each project.</p>
         </div>
+        <span className="spacer" />
+        <Link href="/projects/new" className="btn btn-primary">
+          <Icon name="plus" size={12} /> New project
+        </Link>
       </div>
       <FormError error={error} />
 
-      {projects.map((project) => {
-        const moduleRows = modulesDraft[project.id] ?? modulesToFormRows(project.modules);
-        const hasModuleDraft = Boolean(modulesDraft[project.id]);
+      {loading ? (
+        <p className="meta" role="status">Loading projects...</p>
+      ) : projects.length === 0 ? (
+        <div className="empty-state">
+          <h3>No projects yet</h3>
+          <p>Create a project to define its module catalog and ticket defaults.</p>
+          <Link href="/projects/new" className="btn btn-primary">New project</Link>
+        </div>
+      ) : (
+        brandGroups.map(({ brand, projects: brandProjects }) => {
+          const isBrandExpanded = brandExpanded[brand] !== false;
 
-        return (
-          <section key={project.id} className="panel project-panel">
-            <header>
-              <h3><span className="mono">{project.key}</span> — {project.name}</h3>
-              <span className="spacer" />
-              <span className="chip">{project.status}</span>
-            </header>
+          return (
+            <section
+              key={brand}
+              className={`brand-group${isBrandExpanded ? '' : ' collapsed'}`}
+            >
+              <header className="brand-group-head">
+                <h3 className="brand-group-title">
+                  <button
+                    type="button"
+                    className="brand-group-toggle"
+                    aria-expanded={isBrandExpanded}
+                    aria-controls={`brand-body-${brand}`}
+                    onClick={() => toggleBrandExpanded(brand)}
+                  >
+                    <span className="brand-group-chev" aria-hidden="true">
+                      <Icon name="chev-right" size={14} />
+                    </span>
+                    <span>{brand}</span>
+                    <span className="chip">{brandProjects.length}</span>
+                    <span className="sr">{isBrandExpanded ? 'Collapse' : 'Expand'} {brand}</span>
+                  </button>
+                </h3>
+              </header>
 
-            <div className="project-form">
-              <div className="project-form-section">
-                <div className="project-form-intro">
-                  <h4 className="project-form-heading">Defaults</h4>
-                  <p className="project-form-hint">
-                    Pre-fill assignee, tester, and team when someone files a ticket in this project.
-                  </p>
-                </div>
+              <div className="brand-group-body" id={`brand-body-${brand}`}>
+                {brandProjects.map((project) => {
+                  const moduleRows = modulesDraft[project.id] ?? modulesToFormRows(project.modules);
+                  const hasModuleDraft = Boolean(modulesDraft[project.id]);
+                  const isExpanded = expanded[project.id] !== false;
 
-                <div className="project-defaults-grid">
-                  <div className="form-row">
-                    <label htmlFor={`assignee-${project.id}`}>Default assignee</label>
-                    <select
-                      id={`assignee-${project.id}`}
-                      value={project.defaultAssignee?.id || ''}
-                      onChange={(e) => update(project.id, { defaultAssignee: e.target.value || null })}
-                    >
-                      <option value="">—</option>
-                      {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-                    </select>
-                  </div>
-
-                  <div className="form-row">
-                    <label htmlFor={`tester-${project.id}`}>Default tester</label>
-                    <select
-                      id={`tester-${project.id}`}
-                      value={project.defaultTester?.id || ''}
-                      onChange={(e) => update(project.id, { defaultTester: e.target.value || null })}
-                    >
-                      <option value="">—</option>
-                      {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-                    </select>
-                  </div>
-
-                  <div className="form-row">
-                    <label htmlFor={`team-${project.id}`}>Default team</label>
-                    <select
-                      id={`team-${project.id}`}
-                      value={project.defaultTeam?.id || ''}
-                      onChange={(e) => update(project.id, { defaultTeam: e.target.value || null })}
-                    >
-                      <option value="">—</option>
-                      {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                    </select>
-                  </div>
-                </div>
+                  return (
+                    <ProjectPanel
+                      key={project.id}
+                      project={project}
+                      users={users}
+                      teams={teams}
+                      moduleRows={moduleRows}
+                      hasModuleDraft={hasModuleDraft}
+                      isExpanded={isExpanded}
+                      onToggleExpanded={toggleExpanded}
+                      onUpdate={update}
+                      onSaveModules={saveModules}
+                      onModulesChange={(projectId, rows) => setModulesDraft((prev) => ({ ...prev, [projectId]: rows }))}
+                    />
+                  );
+                })}
               </div>
-
-              <div className="project-form-section project-form-section--catalog">
-                <div className="project-form-intro">
-                  <h4 className="project-form-heading">Module catalog</h4>
-                  <p className="project-form-hint">
-                    Group pages under module names for ticket location fields on new tickets.
-                  </p>
-                </div>
-
-                <ProjectModulesEditor
-                  projectKey={project.key}
-                  value={moduleRows}
-                  onChange={(rows) => setModulesDraft((prev) => ({ ...prev, [project.id]: rows }))}
-                  onSave={() => saveModules(project)}
-                  hasUnsavedChanges={hasModuleDraft}
-                />
-              </div>
-            </div>
-          </section>
-        );
-      })}
+            </section>
+          );
+        })
+      )}
     </>
   );
 }

@@ -47,7 +47,7 @@ async function attempt(row, transport) {
       text: row.text,
       html: row.html,
       // The brand mark rides along as an inline attachment; the layout renders
-      // it as cid:dharwin-mark so it survives remote-image blocking.
+      // it as cid:prowplus-icon so it survives remote-image blocking.
       attachments: brandAttachments(),
     });
 
