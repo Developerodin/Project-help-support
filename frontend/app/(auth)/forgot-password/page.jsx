@@ -29,10 +29,10 @@ export default function ForgotPasswordPage() {
 
   if (sent) {
     return (
-      <AuthFrame view="sent">
+      <AuthFrame>
+        <AuthBrand />
         <form className="form" onSubmit={(e) => { e.preventDefault(); setSent(false); }}>
-          <AuthBrand />
-          <p id="heading">Check your mail</p>
+          <h1 id="heading">Check your mail</h1>
           <p className="sub">If that address has an account, a reset link is on its way to it.</p>
           <AuthError tone="muted">
             The wording is conditional on purpose. Confirming that an address does or does not have an account would let anyone test addresses one at a time to find out who works here.
@@ -40,7 +40,7 @@ export default function ForgotPasswordPage() {
           <div className="btn-row solo">
             <button className="button1" type="submit">Send it again</button>
           </div>
-          <Link className="button3" href="/login" style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
+          <Link className="button3" href="/login">
             Back to sign in
           </Link>
         </form>
@@ -49,11 +49,11 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <AuthFrame view="reset">
+    <AuthFrame>
+      <AuthBrand />
       <form className="form" onSubmit={onSubmit}>
-        <AuthBrand />
-        <p id="heading">Reset your password</p>
-        <p className="sub">We send a link to the address on your account. It works once and lasts an hour.</p>
+        <h1 id="heading">Reset your password</h1>
+        <p className="sub">We email a link that works once and lasts an hour.</p>
 
         <AuthField
           icon="at"
@@ -61,6 +61,7 @@ export default function ForgotPasswordPage() {
           label="Email"
           type="email"
           autoComplete="username"
+          placeholder="Enter your email"
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -73,7 +74,7 @@ export default function ForgotPasswordPage() {
             {busy ? 'Sending…' : 'Send the link'}
           </button>
         </div>
-        <Link className="button3" href="/login" style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
+        <Link className="button3" href="/login">
           Back to sign in
         </Link>
       </form>

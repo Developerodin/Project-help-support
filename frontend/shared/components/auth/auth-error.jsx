@@ -10,7 +10,7 @@ export default function AuthError({ error, tone = 'alarm', children }) {
       className="autherr"
       id={error ? 'aperr' : undefined}
       role="alert"
-      style={tone === 'muted' ? { color: '#9d9d9d' } : undefined}
+      data-tone={tone === 'muted' ? 'muted' : undefined}
     >
       <AuthIcon name={tone === 'muted' ? 'info' : 'alert'} className="" size={12} />
       <span>{message}</span>

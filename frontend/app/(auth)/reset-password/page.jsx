@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { Suspense, useState } from 'react';
 import Link from 'next/link';
@@ -37,10 +37,10 @@ function ResetPasswordForm() {
 
   if (!token) {
     return (
-      <AuthFrame view="expired">
+      <AuthFrame>
+        <AuthBrand />
         <form className="form" onSubmit={(e) => { e.preventDefault(); router.push('/forgot-password'); }}>
-          <AuthBrand />
-          <p id="heading">This link has expired</p>
+          <h1 id="heading">This link has expired</h1>
           <p className="sub">Invite links last 72 hours, reset links last one. This one is missing its token.</p>
           <AuthError tone="muted">
             Nothing is wrong with your account. An expired link is the system working: a link that lived forever in an inbox would be a permanent way in.
@@ -48,7 +48,7 @@ function ResetPasswordForm() {
           <div className="btn-row solo">
             <button className="button1" type="submit">Ask for a new link</button>
           </div>
-          <Link className="button3" href="/login" style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
+          <Link className="button3" href="/login">
             Back to sign in
           </Link>
         </form>
@@ -57,10 +57,10 @@ function ResetPasswordForm() {
   }
 
   return (
-    <AuthFrame view="reset">
+    <AuthFrame>
+      <AuthBrand />
       <form className="form" onSubmit={onSubmit}>
-        <AuthBrand />
-        <p id="heading">Reset your password</p>
+        <h1 id="heading">Reset your password</h1>
         <p className="sub">Choose a new password. Using this link signs out every other session.</p>
 
         <AuthField
@@ -69,6 +69,7 @@ function ResetPasswordForm() {
           label="Password"
           type="password"
           autoComplete="new-password"
+          placeholder="Enter a new password"
           required
           minLength={8}
           peek
@@ -82,6 +83,7 @@ function ResetPasswordForm() {
           label="Password again"
           type="password"
           autoComplete="new-password"
+          placeholder="Enter it again"
           required
           peek
           value={password2}
@@ -95,7 +97,7 @@ function ResetPasswordForm() {
             {busy ? 'Saving…' : 'Set new password'}
           </button>
         </div>
-        <Link className="button3" href="/login" style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
+        <Link className="button3" href="/login">
           Back to sign in
         </Link>
       </form>
@@ -105,8 +107,13 @@ function ResetPasswordForm() {
 
 export default function ResetPasswordPage() {
   return (
-    <Suspense fallback={<div className="auth"><p className="sub">Loading…</p></div>}>
+    <Suspense fallback={(
+      <AuthFrame>
+        <div className="form"><p className="sub">Loading…</p></div>
+      </AuthFrame>
+    )}>
       <ResetPasswordForm />
     </Suspense>
   );
 }
+

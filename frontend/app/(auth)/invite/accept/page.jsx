@@ -56,10 +56,10 @@ function AcceptInviteForm() {
 
   if (!token) {
     return (
-      <AuthFrame view="expired">
+      <AuthFrame>
+        <AuthBrand />
         <form className="form" onSubmit={(e) => e.preventDefault()}>
-          <AuthBrand />
-          <p id="heading">This link has expired</p>
+          <h1 id="heading">This link has expired</h1>
           <p className="sub">Invite links last 72 hours, reset links last one. This one is missing its token.</p>
           <AuthError tone="muted">
             Nothing is wrong with your account. An expired link is the system working: a link that lived forever in an inbox would be a permanent way in.
@@ -76,10 +76,10 @@ function AcceptInviteForm() {
 
   if (expired) {
     return (
-      <AuthFrame view="expired">
+      <AuthFrame>
+        <AuthBrand />
         <form className="form" onSubmit={(e) => { e.preventDefault(); router.push('/login'); }}>
-          <AuthBrand />
-          <p id="heading">This link has expired</p>
+          <h1 id="heading">This link has expired</h1>
           <p className="sub">Invite links last 72 hours, reset links last one. Ask an admin for a new invite.</p>
           <AuthError tone="muted">
             Nothing is wrong with your account. An expired link is the system working: a link that lived forever in an inbox would be a permanent way in.
@@ -96,10 +96,10 @@ function AcceptInviteForm() {
   }
 
   return (
-    <AuthFrame view="invite">
+    <AuthFrame>
+      <AuthBrand />
       <form className="form" onSubmit={onSubmit}>
-        <AuthBrand />
-        <p id="heading">Set your password</p>
+        <h1 id="heading">Set your password</h1>
         <p className="sub">Setting a password is what accepts the invite.</p>
 
         {emailHint ? (
@@ -120,6 +120,7 @@ function AcceptInviteForm() {
           label="Password"
           type="password"
           autoComplete="new-password"
+          placeholder="Choose a password"
           required
           minLength={12}
           peek
@@ -138,6 +139,7 @@ function AcceptInviteForm() {
           label="Password again"
           type="password"
           autoComplete="new-password"
+          placeholder="Enter it again"
           required
           peek
           value={password2}
@@ -161,7 +163,11 @@ function AcceptInviteForm() {
 
 export default function AcceptInvitePage() {
   return (
-    <Suspense fallback={<div className="auth"><p className="sub">Loading…</p></div>}>
+    <Suspense fallback={(
+      <AuthFrame>
+        <div className="form"><p className="sub">Loading…</p></div>
+      </AuthFrame>
+    )}>
       <AcceptInviteForm />
     </Suspense>
   );

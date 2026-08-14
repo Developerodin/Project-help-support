@@ -30,11 +30,11 @@ export default function LoginPage() {
   }
 
   return (
-    <AuthFrame view="signin">
+    <AuthFrame>
+      <AuthBrand />
       <form className="form" onSubmit={onSubmit}>
-        <AuthBrand />
-        <p id="heading">Sign in</p>
-        <p className="sub">Use the address your invite was sent to.</p>
+        <h1 id="heading">Sign in</h1>
+        <p className="sub">Sign in to continue to your workspace.</p>
 
         <AuthField
           icon="at"
@@ -42,6 +42,7 @@ export default function LoginPage() {
           label="Email"
           type="email"
           autoComplete="username"
+          placeholder="Enter your email"
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -52,6 +53,7 @@ export default function LoginPage() {
           label="Password"
           type="password"
           autoComplete="current-password"
+          placeholder="Enter your password"
           required
           peek
           bad={Boolean(error)}
@@ -62,17 +64,9 @@ export default function LoginPage() {
 
         <AuthError error={error} />
 
-        <div className="btn-row">
+        <div className="btn-row solo">
           <button className="button1" type="submit" disabled={busy}>
             {busy ? 'Signing in…' : 'Sign in'}
-          </button>
-          <button
-            className="button2"
-            type="button"
-            disabled
-            title="There is no sign-up. An admin invites you, and accepting the invite is where you set a password."
-          >
-            Sign up
           </button>
         </div>
         <button className="button3" type="button" onClick={() => router.push('/forgot-password')}>
