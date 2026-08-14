@@ -80,15 +80,30 @@ describe('api-error', () => {
   it('logApiError never emits an empty payload for partial error objects', () => {
     logApiError({ requestId: 'req-orphan' }, { ticketId: 'WEB-1', operation: 'addComment' });
 
-    expect(console.error).toHaveBeenCalledWith('[PMS]', expect.objectContaining({
-      message: expect.any(String),
-      requestId: 'req-orphan',
-      context: { ticketId: 'WEB-1', operation: 'addComment' },
-    }));
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('[PMS]'),
+      expect.objectContaining({
+        message: expect.any(String),
+        requestId: 'req-orphan',
+        context: { ticketId: 'WEB-1', operation: 'addComment' },
+      }),
+    );
 
     const payload = console.error.mock.calls.at(-1)[1];
     expect(payload.message.length).toBeGreaterThan(0);
     expect(Object.values(payload).some((value) => value != null && value !== '')).toBe(true);
+  });
+
+  it('puts the diagnostic in the first console arg, where dev overlays can read it', () => {
+    logApiError(
+      { status: 422, code: 'ESTIMATES_REQUIRED', message: 'Dates required' },
+      { ticketId: 'WEB-1', operation: 'transitionTicket' },
+    );
+
+    const [summary] = console.error.mock.calls.at(-1);
+    expect(summary).toContain('422');
+    expect(summary).toContain('ESTIMATES_REQUIRED');
+    expect(summary).toContain('Dates required');
   });
 
   it('maps attachment capability errors to a readable message', () => {

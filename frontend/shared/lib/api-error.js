@@ -36,7 +36,15 @@ export function logApiError(error, context) {
   const normalized = normalizeApiError(error);
   if (!normalized) return;
 
-  console.error('[PMS]', {
+  // The Next dev overlay renders every plain object argument as "{}" — its
+  // formatObject reads getOwnPropertyDescriptor(arg, 'key') instead of the loop
+  // variable — so the summary has to ride in the first string argument to be
+  // readable there. The object is still passed for devtools, where it expands.
+  const summary = [normalized.status, normalized.code, normalized.message]
+    .filter(Boolean)
+    .join(' ');
+
+  console.error(`[PMS] ${summary}`, {
     code: normalized.code ?? null,
     status: normalized.status ?? null,
     message: normalized.message,
