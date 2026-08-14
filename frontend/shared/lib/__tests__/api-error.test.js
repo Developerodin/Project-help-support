@@ -6,6 +6,7 @@ import {
   logApiError,
   normalizeApiError,
   attachmentErrorMessage,
+  OWNERSHIP_REQUIRED_MESSAGE,
 } from '../api-error.js';
 
 describe('api-error', () => {
@@ -56,7 +57,24 @@ describe('api-error', () => {
 
   it('recognizes transition validation error codes', () => {
     expect(isTransitionValidationError({ code: 'ESTIMATES_REQUIRED' })).toBe(true);
+    expect(isTransitionValidationError({ code: 'OWNERSHIP_REQUIRED' })).toBe(true);
     expect(isTransitionValidationError({ code: 'STAGE_CONFLICT' })).toBe(false);
+  });
+
+  it('builds a validation dialog for ownership errors', () => {
+    expect(getValidationDialogForTransitionError({ code: 'OWNERSHIP_REQUIRED' }, ticket)).toMatchObject({
+      title: 'Assignment required',
+      message: OWNERSHIP_REQUIRED_MESSAGE,
+    });
+  });
+
+  it('does not console.error expected transition validation failures', () => {
+    logApiError(
+      { status: 400, code: 'OWNERSHIP_REQUIRED', message: 'A team or an assignee is required' },
+      { ticketId: 'WEB-1', operation: 'transitionTicket' },
+    );
+
+    expect(console.error).not.toHaveBeenCalled();
   });
 
   it('normalizes nested API error bodies and statusCode aliases', () => {
@@ -96,14 +114,14 @@ describe('api-error', () => {
 
   it('puts the diagnostic in the first console arg, where dev overlays can read it', () => {
     logApiError(
-      { status: 422, code: 'ESTIMATES_REQUIRED', message: 'Dates required' },
+      { status: 409, code: 'STAGE_CONFLICT', message: 'Reload before transitioning.' },
       { ticketId: 'WEB-1', operation: 'transitionTicket' },
     );
 
     const [summary] = console.error.mock.calls.at(-1);
-    expect(summary).toContain('422');
-    expect(summary).toContain('ESTIMATES_REQUIRED');
-    expect(summary).toContain('Dates required');
+    expect(summary).toContain('409');
+    expect(summary).toContain('STAGE_CONFLICT');
+    expect(summary).toContain('Reload before transitioning.');
   });
 
   it('maps attachment capability errors to a readable message', () => {

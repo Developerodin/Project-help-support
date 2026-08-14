@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { stageLabel } from '@pms/shared';
 import { priorityChipClass, priorityLabel, initials } from '../icons.jsx';
@@ -29,9 +29,77 @@ function EmptyValue({ children = 'Not set' }) {
   return <span className="empty">{children}</span>;
 }
 
-export default function TicketDetailsTab({ ticket }) {
+function AssignmentSelect({
+  id,
+  label,
+  emptyLabel,
+  value,
+  options,
+  loading,
+  error,
+  assigning,
+  onChange,
+}) {
+  return (
+    <>
+      <select
+        id={id}
+        className="detail-select"
+        aria-label={label}
+        value={value}
+        disabled={assigning || loading}
+        onChange={onChange}
+      >
+        <option value="">{emptyLabel}</option>
+        {options.map((option) => (
+          <option key={option.id} value={option.id}>{option.name}</option>
+        ))}
+      </select>
+      {loading ? <span className="meta detail-select-hint">Loading…</span> : null}
+      {error ? <span className="field-hint invalid detail-select-hint" role="alert">{error}</span> : null}
+    </>
+  );
+}
+
+export default function TicketDetailsTab({
+  ticket,
+  canAssign = false,
+  assignment,
+}) {
   const elapsed = ticket.createdAt ? daysBetween(ticket.createdAt) : 0;
   const projectName = ticket.project?.name || ticket.project?.key || ticket.projectKey;
+  const editable = canAssign && assignment?.submitAssignment;
+
+  const assigneeId = assignment?.assigneeValue?.id || '';
+  const teamId = assignment?.teamValue?.id || '';
+
+  async function handleAssigneeChange(event) {
+    const next = event.target.value;
+    if (next === assigneeId) return;
+    try {
+      await assignment.submitAssignment(
+        'assignee',
+        { assignedTo: next || null },
+        'Assignee updated',
+      );
+    } catch {
+      event.target.value = assigneeId;
+    }
+  }
+
+  async function handleTeamChange(event) {
+    const next = event.target.value;
+    if (next === teamId) return;
+    try {
+      await assignment.submitAssignment(
+        'team',
+        { team: next || null },
+        'Team assigned',
+      );
+    } catch {
+      event.target.value = teamId;
+    }
+  }
 
   return (
     <div className="detail-tab">
@@ -66,10 +134,38 @@ export default function TicketDetailsTab({ ticket }) {
           <PersonValue name={ticket.createdBy?.name} empty="—" />
         </DetailField>
         <DetailField label="Assignee">
-          <PersonValue name={ticket.assignedTo?.name} />
+          {editable ? (
+            <AssignmentSelect
+              id="detail-assignee"
+              label="Assignee"
+              emptyLabel="Unassigned"
+              value={assigneeId}
+              options={assignment.userOptions}
+              loading={assignment.loadingUsers}
+              error={assignment.usersError}
+              assigning={assignment.assigningField === 'assignee'}
+              onChange={handleAssigneeChange}
+            />
+          ) : (
+            <PersonValue name={ticket.assignedTo?.name} />
+          )}
         </DetailField>
         <DetailField label="Team">
-          {ticket.team?.name || <EmptyValue>No team</EmptyValue>}
+          {editable ? (
+            <AssignmentSelect
+              id="detail-team"
+              label="Team"
+              emptyLabel="No team"
+              value={teamId}
+              options={assignment.teamOptions}
+              loading={assignment.loadingTeams}
+              error={assignment.teamsError}
+              assigning={assignment.assigningField === 'team'}
+              onChange={handleTeamChange}
+            />
+          ) : (
+            ticket.team?.name || <EmptyValue>No team</EmptyValue>
+          )}
         </DetailField>
         <DetailField label="Created">
           {ticket.createdAt ? (
@@ -132,3 +228,4 @@ export default function TicketDetailsTab({ ticket }) {
     </div>
   );
 }
+

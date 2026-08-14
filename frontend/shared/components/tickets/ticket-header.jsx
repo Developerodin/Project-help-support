@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import Icon, { priorityChipClass, priorityLabel, isOverdue } from '../icons.jsx';
 
 export default function TicketHeader({ ticket, watching, onClose, onToggleWatch }) {
@@ -12,6 +13,12 @@ export default function TicketHeader({ ticket, watching, onClose, onToggleWatch 
         {ticket.module && <span className="chip">{ticket.module}</span>}
         <span className="spacer" />
         <span className="acts">
+          <Link
+            href={`/tickets/${encodeURIComponent(ticket.ticketId)}/edit`}
+            className="btn btn-sm"
+          >
+            Edit
+          </Link>
           <button
             type="button"
             className={`btn btn-sm${watching ? ' chip-on' : ''}`}

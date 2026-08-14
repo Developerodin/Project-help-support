@@ -1,10 +1,11 @@
-'use client';
+﻿'use client';
 
 import { useRef, useState } from 'react';
 import Icon, { initials, isOverdue } from '../icons.jsx';
 import AttachmentUploadLoader from '../attachment-upload-loader.jsx';
 import { formatFileSize, ATTACHMENT_ACCEPT, validateAttachmentBatch } from '@/shared/lib/attachment-config.js';
 import { TicketAttachmentLink } from './ticket-attachment.jsx';
+import TicketRailPicker from './ticket-rail-picker.jsx';
 import {
   dateValue, daysBetween, formatWhen, stageAgeDays,
 } from './ticket-drawer-utils.js';
@@ -19,12 +20,31 @@ function PersonLine({ name, empty = 'Unassigned' }) {
   );
 }
 
+function personKey(person) {
+  if (!person) return '';
+  if (typeof person === 'string') return person;
+  return String(person.id || person._id || person.email || person.name || '');
+}
+
+function uniquePeople(...people) {
+  const seen = new Set();
+  const result = [];
+  for (const person of people) {
+    if (!person) continue;
+    const key = personKey(person);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    result.push(person);
+  }
+  return result;
+}
+
 function WatcherAvatar({ name }) {
   return <span className="avatar sm" title={name}>{initials(name)}</span>;
 }
 
 export default function TicketMetadataRail({
-  ticket, onSave, onBlock, onUnblock, blockReason, setBlockReason, onUpload,
+  ticket, onSave, canAssign = false, assignment, onBlock, onUnblock, blockReason, setBlockReason, onUpload,
   fieldErrors = {}, onFieldEdit, collapsed = false, onToggleCollapsed,
 }) {
   const uploadRef = useRef(null);
@@ -34,6 +54,23 @@ export default function TicketMetadataRail({
     estimatedResolutionAt: dateValue(ticket.estimatedResolutionAt),
     expectedReleaseDate: dateValue(ticket.expectedReleaseDate),
   });
+
+  const {
+    assigneePickerOpen,
+    setAssigneePickerOpen,
+    teamPickerOpen,
+    setTeamPickerOpen,
+    userOptions,
+    teamOptions,
+    loadingUsers,
+    loadingTeams,
+    usersError,
+    teamsError,
+    assigningField,
+    assigneeValue,
+    teamValue,
+    submitAssignment,
+  } = assignment || {};
 
   const set = (key) => (event) => {
     onFieldEdit?.(key);
@@ -58,7 +95,9 @@ export default function TicketMetadataRail({
   const span = estIso ? daysBetween(ticket.createdAt, `${estIso}T00:00:00Z`) : 0;
   const pct = span > 0 ? Math.min(100, Math.round((elapsed / span) * 100)) : 0;
   const daysLeft = estIso ? -daysBetween(`${estIso}T00:00:00Z`) : null;
+  const watcherAvatars = uniquePeople(ticket.createdBy, ticket.assignedTo);
   const watcherExtra = Math.max(0, (ticket.watchers?.length ?? 0) - 2);
+  const canEditAssignment = canAssign && submitAssignment;
 
   async function submitUpload() {
     const files = uploadRef.current?.files;
@@ -106,14 +145,48 @@ export default function TicketMetadataRail({
       <div className="metadata-rail-body">
         <div className="siderow">
           <span className="lbl">Assignee</span>
-          <PersonLine name={ticket.assignedTo?.name} />
+          {canEditAssignment ? (
+            <TicketRailPicker
+              label="Assignee"
+              emptyLabel="Unassigned"
+              kind="user"
+              value={assigneeValue}
+              options={userOptions}
+              loadingOptions={loadingUsers}
+              optionsError={usersError}
+              open={assigneePickerOpen}
+              onOpenChange={setAssigneePickerOpen}
+              assigning={assigningField === 'assignee'}
+              searchPlaceholder="Search people…"
+              onSelect={(assignedTo) => submitAssignment('assignee', { assignedTo }, 'Assignee updated')}
+            />
+          ) : (
+            <PersonLine name={ticket.assignedTo?.name} />
+          )}
         </div>
 
         <div className="siderow">
           <span className="lbl">Team</span>
-          {ticket.team?.name
-            ? <span className="v">{ticket.team.name}</span>
-            : <span className="v empty">No team</span>}
+          {canEditAssignment ? (
+            <TicketRailPicker
+              label="Team"
+              emptyLabel="No team"
+              kind="team"
+              value={teamValue}
+              options={teamOptions}
+              loadingOptions={loadingTeams}
+              optionsError={teamsError}
+              open={teamPickerOpen}
+              onOpenChange={setTeamPickerOpen}
+              assigning={assigningField === 'team'}
+              searchPlaceholder="Search teams…"
+              onSelect={(team) => submitAssignment('team', { team }, 'Team assigned')}
+            />
+          ) : (
+            ticket.team?.name
+              ? <span className="v">{ticket.team.name}</span>
+              : <span className="v empty">No team</span>
+          )}
         </div>
 
         <div className="siderow">
@@ -273,13 +346,11 @@ export default function TicketMetadataRail({
         <div className="siderow">
           <span className="lbl">Watchers</span>
           <div className="teamgrid">
-            {[ticket.createdBy?.name, ticket.assignedTo?.name]
-              .filter(Boolean)
-              .map((name) => (
-                <WatcherAvatar key={name} name={name} />
-              ))}
+            {watcherAvatars.map((person) => (
+              <WatcherAvatar key={personKey(person)} name={person.name} />
+            ))}
             {watcherExtra > 0 && <span className="meta">+{watcherExtra} more</span>}
-            {!ticket.createdBy?.name && !ticket.assignedTo?.name && watcherExtra === 0 && (
+            {!watcherAvatars.length && watcherExtra === 0 && (
               <span className="v empty">None</span>
             )}
           </div>

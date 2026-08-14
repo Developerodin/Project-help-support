@@ -32,9 +32,13 @@ export function normalizeApiError(error) {
   };
 }
 
+export const OWNERSHIP_REQUIRED_MESSAGE = 'Assign a team or person before moving to Ready for QA';
+
 export function logApiError(error, context) {
   const normalized = normalizeApiError(error);
   if (!normalized) return;
+
+  if (isTransitionValidationError(normalized)) return;
 
   // The Next dev overlay renders every plain object argument as "{}" — its
   // formatObject reads getOwnPropertyDescriptor(arg, 'key') instead of the loop
@@ -90,6 +94,15 @@ const FIELD_LABELS = {
 };
 
 export function getValidationDialogForTransitionError(error, ticket) {
+  if (error.code === 'OWNERSHIP_REQUIRED') {
+    return {
+      title: 'Assignment required',
+      message: OWNERSHIP_REQUIRED_MESSAGE,
+      items: [],
+      firstFieldId: null,
+    };
+  }
+
   const fieldErrors = getTransitionFieldErrors(error, ticket);
   if (!fieldErrors) return null;
 
@@ -119,6 +132,15 @@ export function getValidationDialogForTransitionError(error, ticket) {
 
 export function isTransitionValidationError(error) {
   return error?.code === 'ESTIMATES_REQUIRED' || error?.code === 'OWNERSHIP_REQUIRED';
+}
+
+export function friendlyTransitionError(error) {
+  const normalized = normalizeApiError(error);
+  if (!normalized) return error;
+  if (normalized.code === 'OWNERSHIP_REQUIRED') {
+    return { ...normalized, message: OWNERSHIP_REQUIRED_MESSAGE };
+  }
+  return normalized;
 }
 
 export async function copyErrorId(requestId) {

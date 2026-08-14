@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { STAGES, LANES } from '@pms/shared';
 import TicketStageBar from '../ticket-stage-bar.jsx';
@@ -61,7 +61,7 @@ describe('TicketStageBar', () => {
   });
 
   it('a Reopen asks for a note before it will submit', async () => {
-    const onTransition = vi.fn();
+    const onTransition = vi.fn().mockResolvedValue(undefined);
     render(
       <TicketStageBar ticket={ticket({ status: 'qa_approved' })}
         actor={{ _id: 'u-admin', role: 'admin' }} onTransition={onTransition} />,
@@ -69,12 +69,36 @@ describe('TicketStageBar', () => {
 
     await userEvent.click(screen.getByRole('listitem', { name: 'In Progress' }));
 
-    expect(screen.getByLabelText(/note/i)).toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText(/note/i), 'Still failing on Safari');
-    await userEvent.click(screen.getByRole('button', { name: /confirm/i }));
+    const dialog = screen.getByRole('alertdialog');
+    const field = within(dialog).getByLabelText(/note \(required to reopen\)/i);
+    fireEvent.change(field, { target: { value: 'Still failing on Safari' } });
+    await userEvent.click(within(dialog).getByRole('button', { name: /^confirm$/i }));
 
     expect(onTransition).toHaveBeenCalledWith({
       to: 'in_progress', revision: 0, note: 'Still failing on Safari',
+    });
+  });
+
+  it('Close asks for a reason in a modal before it will submit', async () => {
+    const onTransition = vi.fn().mockResolvedValue(undefined);
+    render(
+      <TicketStageBar ticket={ticket({ status: 'live' })}
+        actor={{ _id: 'u-admin', role: 'admin' }} onTransition={onTransition} />,
+    );
+
+    await userEvent.click(screen.getByRole('listitem', { name: 'Closed' }));
+
+    const dialog = screen.getByRole('alertdialog');
+    expect(within(dialog).getByText('Close WEB-1')).toBeInTheDocument();
+    const field = within(dialog).getByLabelText(/reason \(required to close\)/i);
+    expect(field).toHaveClass('input');
+    expect(within(dialog).getByRole('button', { name: /^confirm$/i })).toBeDisabled();
+
+    fireEvent.change(field, { target: { value: 'Shipped to prod' } });
+    await userEvent.click(within(dialog).getByRole('button', { name: /^confirm$/i }));
+
+    expect(onTransition).toHaveBeenCalledWith({
+      to: 'closed', revision: 0, reason: 'Shipped to prod',
     });
   });
 });

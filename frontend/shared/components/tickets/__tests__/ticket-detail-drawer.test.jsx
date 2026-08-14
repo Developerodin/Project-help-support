@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import TicketDetailDrawer from '../ticket-detail-drawer.jsx';
@@ -6,11 +6,16 @@ import TicketDetailDrawer from '../ticket-detail-drawer.jsx';
 const getTicket = vi.fn();
 const transitionTicket = vi.fn();
 const uploadAttachments = vi.fn();
+const assignTicket = vi.fn();
+const listTeams = vi.fn();
+const listUsers = vi.fn();
+const showToast = vi.fn();
 
 vi.mock('@/shared/api/tickets.js', () => ({
   getTicket: (...args) => getTicket(...args),
   transitionTicket: (...args) => transitionTicket(...args),
   patchTicket: vi.fn(),
+  assignTicket: (...args) => assignTicket(...args),
   addComment: vi.fn(),
   uploadAttachments: (...args) => uploadAttachments(...args),
   attachmentDownloadUrl: () => '/x',
@@ -19,6 +24,15 @@ vi.mock('@/shared/api/tickets.js', () => ({
   unwatchTicket: vi.fn(),
   setBlocked: vi.fn(),
   clearBlocked: vi.fn(),
+}));
+vi.mock('@/shared/api/teams.js', () => ({
+  listTeams: (...args) => listTeams(...args),
+}));
+vi.mock('@/shared/api/users.js', () => ({
+  listUsers: (...args) => listUsers(...args),
+}));
+vi.mock('@/shared/lib/toast.js', () => ({
+  showToast: (...args) => showToast(...args),
 }));
 vi.mock('@/shared/contexts/auth-context.jsx', () => ({
   useAuth: () => ({ user: { _id: 'u-admin', id: 'u-admin', role: 'admin' } }),
@@ -37,6 +51,14 @@ describe('TicketDetailDrawer', () => {
     transitionTicket.mockReset()
       .mockResolvedValue({ ...ticket, status: 'under_review', revision: 4 });
     uploadAttachments.mockReset().mockResolvedValue([]);
+    assignTicket.mockReset().mockResolvedValue({ ...ticket, team: { id: 'team-1', name: 'Platform' }, revision: 4 });
+    listTeams.mockReset().mockResolvedValue({
+      results: [{ id: 'team-1', _id: 'team-1', name: 'Platform', project: { key: 'WEB' } }],
+    });
+    listUsers.mockReset().mockResolvedValue({
+      results: [{ id: 'u-dev', _id: 'u-dev', name: 'Dev User', email: 'dev@example.com' }],
+    });
+    showToast.mockReset();
   });
 
   it('loads the ticket by its human id and shows the three-section drawer layout', async () => {
@@ -83,7 +105,7 @@ describe('TicketDetailDrawer', () => {
     expect(within(rail).getByText('Assignee')).toBeInTheDocument();
   });
 
-  it('closing calls back — it does not navigate', async () => {
+  it('closing calls back â€” it does not navigate', async () => {
     const onClose = vi.fn();
     render(<TicketDetailDrawer ticketId="WEB-101" onClose={onClose} onChanged={() => {}} />);
 
@@ -145,6 +167,24 @@ describe('TicketDetailDrawer', () => {
     expect(screen.queryByText(/771f225e/i)).not.toBeInTheDocument();
     expect(document.getElementById('estimatedResolutionAt')).toHaveAttribute('aria-invalid', 'true');
     expect(document.getElementById('expectedReleaseDate')).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('shows validation dialog when ownership is missing', async () => {
+    transitionTicket.mockRejectedValueOnce({
+      status: 400,
+      code: 'OWNERSHIP_REQUIRED',
+      message: 'A team or an assignee is required to enter Ready for QA',
+    });
+
+    render(<TicketDetailDrawer ticketId="WEB-101" onClose={() => {}} onChanged={() => {}} />);
+    await screen.findByText('WEB-101');
+
+    await userEvent.click(screen.getByRole('listitem', { name: 'Ready for QA' }));
+
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /assignment required/i })).toBeInTheDocument();
+    expect(screen.getByText(/assign a team or person before moving to ready for qa/i)).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('focuses the first missing date field after dismissing the validation dialog', async () => {
@@ -213,4 +253,155 @@ describe('TicketDetailDrawer', () => {
     await waitFor(() => expect(getTicket).toHaveBeenCalledTimes(2));
     expect(await screen.findByText('shot.png')).toBeInTheDocument();
   });
+
+  it('assigns a team from the metadata rail picker overlay', async () => {
+    render(<TicketDetailDrawer ticketId="WEB-101" onClose={() => {}} onChanged={() => {}} />);
+    await screen.findByText('WEB-101');
+
+    const rail = screen.getByRole('complementary', { name: /ticket metadata/i });
+    await userEvent.click(within(rail).getByRole('button', { name: /assign team/i }));
+
+    await waitFor(() => expect(listTeams).toHaveBeenCalled());
+    await userEvent.click(await screen.findByRole('option', { name: /platform/i }));
+
+    await waitFor(() => expect(assignTicket).toHaveBeenCalledWith('WEB-101', {
+      revision: 3,
+      team: 'team-1',
+    }));
+    expect(showToast).toHaveBeenCalledWith('Team assigned');
+    await waitFor(() => expect(getTicket).toHaveBeenCalledTimes(2));
+  });
+
+  it('assigns an assignee from the metadata rail picker overlay', async () => {
+    assignTicket.mockResolvedValue({
+      ...ticket,
+      assignedTo: { id: 'u-dev', name: 'Dev User' },
+      revision: 4,
+    });
+
+    render(<TicketDetailDrawer ticketId="WEB-101" onClose={() => {}} onChanged={() => {}} />);
+    await screen.findByText('WEB-101');
+
+    const rail = screen.getByRole('complementary', { name: /ticket metadata/i });
+    await userEvent.click(within(rail).getByRole('button', { name: /assign assignee/i }));
+
+    await waitFor(() => expect(listUsers).toHaveBeenCalledWith({ status: 'active' }));
+    await userEvent.click(await screen.findByRole('option', { name: /dev user/i }));
+
+    await waitFor(() => expect(assignTicket).toHaveBeenCalledWith('WEB-101', {
+      revision: 3,
+      assignedTo: 'u-dev',
+    }));
+    expect(showToast).toHaveBeenCalledWith('Assignee updated');
+  });
+
+  it('shows an edit link to the ticket edit page', async () => {
+    render(<TicketDetailDrawer ticketId="WEB-101" onClose={() => {}} onChanged={() => {}} />);
+    await screen.findByText('WEB-101');
+
+    expect(screen.getByRole('link', { name: /^edit$/i })).toHaveAttribute('href', '/tickets/WEB-101/edit');
+  });
+
+  it('assigns a team from the details tab dropdown', async () => {
+    render(<TicketDetailDrawer ticketId="WEB-101" onClose={() => {}} onChanged={() => {}} />);
+    await screen.findByText('WEB-101');
+
+    await waitFor(() => expect(listTeams).toHaveBeenCalled());
+    await userEvent.click(screen.getByRole('tab', { name: /^details$/i }));
+    const details = document.getElementById('panel-details');
+    await userEvent.selectOptions(within(details).getByLabelText(/^team$/i), 'team-1');
+
+    await waitFor(() => expect(assignTicket).toHaveBeenCalledWith('WEB-101', {
+      revision: 3,
+      team: 'team-1',
+    }));
+    expect(showToast).toHaveBeenCalledWith('Team assigned');
+  });
+
+  it('shows assignee and team dropdowns on the Details tab for admins', async () => {
+    render(<TicketDetailDrawer ticketId="WEB-101" onClose={() => {}} onChanged={() => {}} />);
+    await screen.findByText('WEB-101');
+
+    await waitFor(() => expect(listUsers).toHaveBeenCalledWith({ status: 'active' }));
+    await waitFor(() => expect(listTeams).toHaveBeenCalled());
+
+    await userEvent.click(screen.getByRole('tab', { name: /^details$/i }));
+
+    const details = document.getElementById('panel-details');
+    expect(within(details).getByRole('combobox', { name: /^assignee$/i })).toBeInTheDocument();
+    expect(within(details).getByRole('combobox', { name: /^team$/i })).toBeInTheDocument();
+    expect(within(details).getByRole('option', { name: /dev user/i })).toBeInTheDocument();
+    expect(within(details).getByRole('option', { name: /platform/i })).toBeInTheDocument();
+  });
+
+  it('assigns a team from the Details tab dropdown', async () => {
+    render(<TicketDetailDrawer ticketId="WEB-101" onClose={() => {}} onChanged={() => {}} />);
+    await screen.findByText('WEB-101');
+    await waitFor(() => expect(listTeams).toHaveBeenCalled());
+
+    await userEvent.click(screen.getByRole('tab', { name: /^details$/i }));
+
+    const details = document.getElementById('panel-details');
+    await userEvent.selectOptions(
+      within(details).getByRole('combobox', { name: /^team$/i }),
+      'team-1',
+    );
+
+    await waitFor(() => expect(assignTicket).toHaveBeenCalledWith('WEB-101', {
+      revision: 3,
+      team: 'team-1',
+    }));
+    expect(showToast).toHaveBeenCalledWith('Team assigned');
+    await waitFor(() => expect(getTicket).toHaveBeenCalledTimes(2));
+  });
+
+  it('assigns an assignee from the Details tab dropdown', async () => {
+    assignTicket.mockResolvedValue({
+      ...ticket,
+      assignedTo: { id: 'u-dev', name: 'Dev User' },
+      revision: 4,
+    });
+
+    render(<TicketDetailDrawer ticketId="WEB-101" onClose={() => {}} onChanged={() => {}} />);
+    await screen.findByText('WEB-101');
+    await waitFor(() => expect(listUsers).toHaveBeenCalledWith({ status: 'active' }));
+
+    await userEvent.click(screen.getByRole('tab', { name: /^details$/i }));
+
+    const details = document.getElementById('panel-details');
+    await userEvent.selectOptions(
+      within(details).getByRole('combobox', { name: /^assignee$/i }),
+      'u-dev',
+    );
+
+    await waitFor(() => expect(assignTicket).toHaveBeenCalledWith('WEB-101', {
+      revision: 3,
+      assignedTo: 'u-dev',
+    }));
+    expect(showToast).toHaveBeenCalledWith('Assignee updated');
+  });
+
+  it('reverts Details tab dropdown and toasts on assignment failure', async () => {
+    assignTicket.mockRejectedValueOnce({
+      status: 409,
+      message: 'Ticket was updated elsewhere. Reload and try again.',
+    });
+
+    render(<TicketDetailDrawer ticketId="WEB-101" onClose={() => {}} onChanged={() => {}} />);
+    await screen.findByText('WEB-101');
+    await waitFor(() => expect(listTeams).toHaveBeenCalled());
+
+    await userEvent.click(screen.getByRole('tab', { name: /^details$/i }));
+
+    const details = document.getElementById('panel-details');
+    const teamSelect = within(details).getByRole('combobox', { name: /^team$/i });
+    expect(teamSelect).toHaveValue('');
+
+    await userEvent.selectOptions(teamSelect, 'team-1');
+
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('Ticket was updated elsewhere. Reload and try again.'));
+    expect(teamSelect).toHaveValue('');
+  });
 });
+
+

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import {
   STAGES, LANES, stageIndex, stageLabel, laneOf, legalDestinations, canTransition,
 } from '@pms/shared';
+import RemarkDialog from '../remark-dialog.jsx';
 
 const STAGE_SHORT = {
   pending: 'Pending',
@@ -41,6 +42,7 @@ function listRelationships(rels) {
 export default function TicketStageBar({ ticket, actor, onTransition }) {
   const [pending, setPending] = useState(null);
   const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
 
   const currentIndex = stageIndex(ticket.status);
   const destinations = legalDestinations(ticket.status, actor, ticket);
@@ -56,9 +58,19 @@ export default function TicketStageBar({ ticket, actor, onTransition }) {
     onTransition({ to, revision: ticket.revision });
   }
 
-  function confirm() {
-    onTransition({ to: pending.to, revision: ticket.revision, [pending.kind]: text });
-    setPending(null);
+  async function confirm() {
+    setBusy(true);
+    try {
+      await onTransition({
+        to: pending.to,
+        revision: ticket.revision,
+        [pending.kind]: text.trim(),
+      });
+      setPending(null);
+      setText('');
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -139,29 +151,20 @@ export default function TicketStageBar({ ticket, actor, onTransition }) {
         </span>
       </div>
 
-      {pending && (
-        <div className="dlg" style={{ position: 'relative', display: 'block', marginTop: 8 }}>
-          <div className="dlg-head">
-            <h3>{pending.kind === 'note' ? 'Reopen' : 'Close'} {ticket.ticketId}</h3>
-          </div>
-          <div className="dlg-body">
-            <label className="lbl" htmlFor="transition-text">
-              {pending.kind === 'note' ? 'Note (required to reopen)' : 'Reason (required to close)'}
-            </label>
-            <textarea
-              id="transition-text" rows={3}
-              value={text} onChange={(e) => setText(e.target.value)}
-            />
-          </div>
-          <div className="dlg-foot">
-            <button type="button" className="btn" onClick={() => setPending(null)}>Cancel</button>
-            <span className="spacer" />
-            <button type="button" className="btn btn-primary" onClick={confirm} disabled={!text.trim()}>
-              Confirm
-            </button>
-          </div>
-        </div>
-      )}
+      <RemarkDialog
+        open={Boolean(pending)}
+        title={`${pending?.kind === 'note' ? 'Reopen' : 'Close'} ${ticket.ticketId}`}
+        label={pending?.kind === 'note' ? 'Note (required to reopen)' : 'Reason (required to close)'}
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        busy={busy}
+        onConfirm={confirm}
+        onCancel={() => {
+          if (busy) return;
+          setPending(null);
+          setText('');
+        }}
+      />
     </>
   );
 }

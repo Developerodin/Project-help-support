@@ -232,7 +232,7 @@ main{ min-width:0; display:flex; flex-direction:column; }
   background:var(--panel); font-size:0.75rem; font-weight:500; color:var(--ink);
 }
 
-/* Theme toggle â€” compact top-bar switch aligned with .btn / .search */
+/* Theme toggle — compact top-bar switch aligned with .btn / .search */
 .theme-toggle{
   flex:none; position:relative; display:inline-flex; align-items:center;
   cursor:pointer; user-select:none;
@@ -606,10 +606,6 @@ input[type="checkbox"]{ accent-color:var(--sig); width:14px; height:14px; cursor
 .sidecol input[type="date"]:focus, .sidecol textarea:focus{
   border-color:var(--sig); box-shadow:0 0 0 3px var(--sig-wash);
 }
-.drawer-pending-dlg{
-  margin:0 18px 12px; border:1px solid var(--rule); border-radius:var(--r-lg);
-  background:var(--paper); box-shadow:var(--shadow-pop);
-}
 
 .composer{ margin-top:14px; border:1px solid var(--rule); border-radius:var(--r-lg); background:var(--panel); }
 .composer:focus-within{ border-color:var(--sig); }
@@ -691,6 +687,17 @@ input[type="checkbox"]{ accent-color:var(--sig); width:14px; height:14px; cursor
 .dlg-foot{ padding:12px 18px; border-top:1px solid var(--rule); display:flex; gap:8px; background:var(--panel);
   border-radius:0 0 var(--r-lg) var(--r-lg); }
 .dlg-foot .spacer{ flex:1; }
+.dlg .form-row > label{ font-size:0.8125rem; font-weight:600; color:var(--ink); text-transform:none; letter-spacing:normal; }
+.dlg .input,
+.dlg .form-row textarea{
+  width:100%; min-height:100px; padding:9px 10px; line-height:1.55; resize:vertical;
+  border:1px solid var(--rule); border-radius:var(--r); background:var(--paper); color:var(--ink);
+  outline:none; font-size:0.875rem;
+}
+.dlg .input:focus,
+.dlg .form-row textarea:focus{
+  border-color:var(--sig); box-shadow:0 0 0 3px var(--sig-wash);
+}
 
 /* ============================================================ Analytics */
 .grid2{ display:grid; grid-template-columns:repeat(auto-fit, minmax(418px,1fr)); gap:14px; }
@@ -1217,102 +1224,6 @@ a.button3{ display:block; text-align:center; text-decoration:none; cursor:pointe
 .auth.gallery{ padding-top:70px; }
 .auth :focus-visible{ outline:2px solid var(--au-focus); outline-offset:2px; }
 
-/* ============================================================ Card material
-   The same card, applied to the two surfaces that float above the page:
-   dialogs and anchored menus. Both are already lifted off the ground by a
-   shadow, so a second material reads as depth rather than as a second theme.
-   Radius steps down with the surface: 25px on a full card, 20 on a dialog,
-   14 on a 212px dropdown, because a dropdown at 25px is a pill.
-   ============================================================ */
-.dscrim{ background:oklch(0.12 0.006 262 / 0.62); }
-.dlg{
-  background:var(--au-card); color:var(--au-ink-2); border-radius:20px;
-  box-shadow:0 0 0 1px #000, 0 26px 64px -22px rgb(0 0 0 / 0.72);
-}
-.dlg-head h3{ color:var(--au-ink); }
-.dlg-head p{ color:#9d9d9d; }
-.dlg-foot{
-  background:transparent; border-top:1px solid rgba(255,255,255,0.08);
-  border-radius:0 0 20px 20px;
-}
-.dlg .lbl, .dlg .menucap{ color:var(--au-ink-3); }
-.dlg .form-row > label{ color:var(--au-ink-2); }
-.dlg .form-row .help{ color:#6f6f6f; }
-.dlg .meta{ color:#8a8a8a; }
-.dlg .mono, .dlg code.mono{ color:var(--au-ink-2); }
-
-/* Sunken pills, same shadow as the auth fields. */
-.dlg .form-row input[type="text"], .dlg .form-row input[type="email"],
-.dlg .form-row input[type="password"], .dlg .form-row input[type="date"],
-.dlg .form-row select, .dlg .menusearch{
-  height:38px; padding:0 15px; border-radius:22px; border:1px solid transparent;
-  background:var(--au-card); color:var(--au-ink-2); box-shadow:var(--au-sunk);
-}
-.dlg .form-row textarea{
-  border-radius:16px; padding:11px 15px; border:1px solid transparent;
-  background:var(--au-card); color:var(--au-ink-2); box-shadow:var(--au-sunk);
-}
-.dlg .form-row input::placeholder, .dlg .form-row textarea::placeholder,
-.dlg .menusearch::placeholder{ color:#6f6f6f; }
-.dlg .form-row input:focus, .dlg .form-row select:focus,
-.dlg .form-row textarea:focus, .dlg .menusearch:focus{
-  border-color:#3b3b3b; box-shadow:var(--au-sunk);
-}
-.dlg .form-row select{ appearance:none; padding-right:32px;
-  background-image:linear-gradient(45deg, transparent 50%, var(--au-ink-3) 50%),
-                   linear-gradient(135deg, var(--au-ink-3) 50%, transparent 50%);
-  background-position:calc(100% - 17px) 17px, calc(100% - 12px) 17px;
-  background-size:5px 5px, 5px 5px; background-repeat:no-repeat; }
-.dlg .form-row select option{ background:var(--au-card); color:var(--au-ink-2); }
-
-/* Button vocabulary from the card: one surface, black on hover. Primary is a
-   step lighter so it still reads as primary standing still, and destructive
-   stays red before the pointer arrives rather than after. */
-.dlg .btn{ background:var(--au-btn); border-color:transparent; color:var(--au-ink); border-radius:5px; }
-.dlg .btn:hover{ background:var(--au-btn-hi); border-color:transparent; }
-.dlg .btn:active{ transform:translateY(1px); background:var(--au-btn-hi); }
-.dlg .btn-primary{ background:#3a3a3a; }
-.dlg .btn-primary:hover{ background:var(--au-btn-hi); }
-.dlg .btn-danger{ background:var(--au-alarm); color:#0d0d0d; }
-.dlg .btn-danger:hover{ background:var(--au-alarm); filter:brightness(1.08); }
-.dlg .btn-ghost{ background:transparent; }
-.dlg .btn-ghost:hover{ background:rgba(255,255,255,0.07); }
-.dlg .btn[disabled]{ opacity:0.4; }
-
-.menu{
-  background:var(--au-card); color:var(--au-ink-2); border-radius:14px; padding:6px;
-  box-shadow:0 0 0 1px #000, 0 16px 38px -14px rgb(0 0 0 / 0.7);
-  /* A dropdown is shrink-to-fit, so one nowrap line of body text drags it off
-     the screen. Cap it and let the preview line ellipsis inside. */
-  max-width:min(380px, 86vw);
-}
-.menuitem{ color:var(--au-ink-2); border-radius:9px; }
-.menuitem:hover{ background:rgba(255,255,255,0.07); color:var(--au-ink); }
-.menuitem[disabled]:hover{ background:none; }
-.menuitem .k{ color:var(--au-ink-3); }
-.menuitem.danger{ color:var(--au-alarm); }
-.menuitem.danger:hover{ background:rgba(255,95,86,0.12); }
-.menusep{ background:rgba(255,255,255,0.09); }
-.menucap{ color:var(--au-ink-3); }
-.menu .menusearch{
-  height:32px; padding:0 13px; border-radius:22px; border:1px solid transparent;
-  background:var(--au-card); color:var(--au-ink-2); box-shadow:var(--au-sunk);
-}
-.menu .menusearch:focus{ border-color:#3b3b3b; }
-.tpl{ border-radius:9px; }
-.tpl:hover{ background:rgba(255,255,255,0.07); }
-.tpl b, .tpl span{ min-width:0; max-width:100%; }
-.tpl b{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.menuitem{ min-width:0; }
-.tpl b{ color:var(--au-ink); }
-.tpl span{ color:#6f6f6f; }
-.tpl .sc{ color:#8fa5ff; }
-.pid{ color:#8fa5ff; font-weight:600; }
-/* The application avatar is accent-on-wash and disappears against the card. */
-.menu .avatar{ background:rgba(255,255,255,0.08); color:var(--au-ink-2); border-color:rgba(255,255,255,0.16); }
-.dlg :focus-visible, .menu :focus-visible{ outline-color:#6f8dff; }
-.dlg .btn-sm, .menu .btn-sm{ color:var(--au-ink); }
-
 /* ============================================================ Toast */
 .toast{
   position:fixed; bottom:18px; left:50%; z-index:80; max-width:min(560px, 92vw);
@@ -1495,6 +1406,17 @@ a.button3{ display:block; text-align:center; text-decoration:none; cursor:pointe
   color:var(--ink-3); font-weight:400; font-style:italic;
 }
 .detail-field.wide{ grid-column:1 / -1; }
+.detail-field select.detail-select{
+  width:100%; height:34px; padding:0 10px;
+  border:1px solid var(--rule); border-radius:var(--r);
+  background:var(--paper); outline:none;
+  font-size:0.8125rem; font-weight:500; color:var(--ink);
+}
+.detail-field select.detail-select:focus{
+  border-color:var(--sig); box-shadow:0 0 0 3px var(--sig-wash);
+}
+.detail-field select.detail-select:disabled{ opacity:0.6; cursor:not-allowed; }
+.detail-select-hint{ display:block; margin-top:4px; }
 .detail-prose{
   margin:0; font-size:0.875rem; line-height:1.55; color:var(--ink);
   max-width:72ch; white-space:pre-wrap;
@@ -1912,3 +1834,4 @@ a.button3{ display:block; text-align:center; text-decoration:none; cursor:pointe
   0%, 100%{ opacity:0.4; transform:rotateY(var(--pl-angle)) translateZ(calc(var(--pl-size) * 0.36)) scale(0.88); }
   50%{ opacity:0.95; transform:rotateY(var(--pl-angle)) translateZ(calc(var(--pl-size) * 0.36)) scale(1); }
 }
+

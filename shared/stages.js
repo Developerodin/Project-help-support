@@ -61,6 +61,12 @@ export const GUARD_ESTIMATES_FROM_INDEX = stageIndex('in_progress');
 /** team or assignedTo required to enter ANY stage at or past ready_qa. */
 export const GUARD_OWNERSHIP_FROM_INDEX = stageIndex('ready_qa');
 
+/** Mirrors backend checkGuards ownership rule for client-side preflight. */
+export function wouldFailOwnershipGuard(to, ticket) {
+  if (stageIndex(to) < GUARD_OWNERSHIP_FROM_INDEX) return false;
+  return !ticket?.team && !ticket?.assignedTo;
+}
+
 const QA_LANE_STAGES = Object.freeze(LANES.find((l) => l.key === 'qa').stages);
 
 const idOf = (value) => {

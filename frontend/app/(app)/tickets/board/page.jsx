@@ -2,10 +2,11 @@
 
 import Link from 'next/link';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { LANES, laneOf } from '@pms/shared';
+import { LANES, laneOf, wouldFailOwnershipGuard } from '@pms/shared';
 import { listTickets, transitionTicket, getTicket } from '@/shared/api/tickets.js';
 import { useProject } from '@/shared/contexts/project-context.jsx';
 import { ticketFromSearch, withTicketParam, withoutTicketParam } from '@/shared/lib/deep-link.js';
+import { friendlyTransitionError, OWNERSHIP_REQUIRED_MESSAGE } from '@/shared/lib/api-error.js';
 import BoardLane from '@/shared/components/tickets/board-lane.jsx';
 import TicketDetailDrawer from '@/shared/components/tickets/ticket-detail-drawer.jsx';
 import FormError from '@/shared/components/form-error.jsx';
@@ -38,10 +39,18 @@ function BoardPage() {
     setError(null);
     try {
       const current = await getTicket(ticketId);
+      if (wouldFailOwnershipGuard(to, current)) {
+        setError({
+          status: 400,
+          code: 'OWNERSHIP_REQUIRED',
+          message: OWNERSHIP_REQUIRED_MESSAGE,
+        });
+        return;
+      }
       await transitionTicket(ticketId, { to, revision: current.revision });
       reload();
     } catch (err) {
-      setError(err);
+      setError(friendlyTransitionError(err));
       reload();
     }
   }
