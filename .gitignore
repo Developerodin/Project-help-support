@@ -17,6 +17,10 @@ coverage/
 docs/
 scripts/
 
+# Local dev scratch: records whichever port the frontend last used. Nothing
+# reads it, and a committed copy just tracks one machine's state.
+.fe-port
+
 # graphify
 graphify-out/
 .graphify/
