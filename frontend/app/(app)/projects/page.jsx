@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useCallback, useEffect, useState } from 'react';
 import { listProjects, patchProject, replaceModules } from '@/shared/api/projects.js';

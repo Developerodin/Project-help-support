@@ -1,4 +1,126 @@
+/* ---------------------------------------------------------------------------
+   Cascade order. design-system.css is UNLAYERED and owns the global reset plus
+   every page that predates shadcn/ui. Tailwind is bolted on beside it for the
+   shadcn components only:
+     - preflight is NOT imported. It would re-reset the whole app on top of the
+       reset design-system.css already performs. The handful of preflight rules
+       shadcn's utilities actually need are re-created, scoped, in the
+       `shadcn-compat` layer below.
+     - theme.css sits in a layer, so its :root variables can never outrank ours.
+     - utilities.css stays UNLAYERED and last, so a utility like `border`
+       outranks design-system.css element selectors such as `button{border:none}`.
+   --------------------------------------------------------------------------- */
+@layer theme;
+
 @import './design-system.css';
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css';
+
+/* shadcn ships `dark:` bound to a `.dark` class. This app themes with
+   data-theme on <html> plus the system default, so the variant is repointed at
+   the same three states design-system.css already resolves. */
+@custom-variant dark {
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme='light']), :root:not([data-theme='light']) *) { @slot; }
+  }
+  &:where([data-theme='dark'], [data-theme='dark'] *) { @slot; }
+}
+
+@source '../app';
+@source '../shared';
+
+/* shadcn/ui token bridge. The names shadcn components ship with, pointed at the
+   OKLCH scale design-system.css already themes for light, dark and system — so
+   the components track the app theme with no second palette to maintain. */
+:root{
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: var(--panel);
+  --card-foreground: var(--ink);
+  --popover: var(--panel);
+  --popover-foreground: var(--ink);
+  --primary: var(--sig);
+  --primary-foreground: var(--sig-ink);
+  --secondary: var(--panel-2);
+  --secondary-foreground: var(--ink);
+  --muted: var(--panel-2);
+  --muted-foreground: var(--ink-3);
+  --accent: var(--panel-2);
+  --accent-foreground: var(--ink);
+  --destructive: var(--alarm);
+  --destructive-foreground: var(--sig-ink);
+  --border: var(--rule);
+  --input: var(--rule);
+  --ring: var(--sig);
+  --radius: var(--r-lg);
+
+  --sidebar: var(--panel);
+  --sidebar-foreground: var(--ink-2);
+  --sidebar-primary: var(--sig);
+  --sidebar-primary-foreground: var(--sig-ink);
+  --sidebar-accent: var(--panel-2);
+  --sidebar-accent-foreground: var(--ink);
+  --sidebar-border: var(--rule);
+  --sidebar-ring: var(--sig);
+}
+
+@theme inline{
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 6px);
+}
+
+/* The only parts of Tailwind preflight shadcn's components depend on, scoped to
+   those components (every one carries a data-slot) so no existing page is
+   touched. These are deliberately UNLAYERED: design-system.css is unlayered
+   too, and unlayered always outranks a layer, so a layered reset could never
+   beat its `a{color:var(--sig)}`. Specificity is instead tuned by hand —
+   `:where([data-slot])` contributes nothing, leaving each rule at exactly the
+   weight of the element selector it has to override (0,0,1 for a/ul/svg) while
+   still losing to any real utility class (0,1,0). */
+:where([data-slot]) a{ color: inherit; text-decoration: inherit; }
+:where([data-slot]) ul,
+:where([data-slot]) ol{ list-style: none; margin: 0; padding: 0; }
+:where([data-slot]) svg{ display: block; vertical-align: middle; }
+:where([data-slot]),
+:where([data-slot]) *,
+:where([data-slot])::before,
+:where([data-slot])::after,
+:where([data-slot]) *::before,
+:where([data-slot]) *::after{
+  border-style: solid;
+  border-width: 0;
+}
 
 .spacer { flex: 1; min-width: 0; }
 
@@ -75,25 +197,6 @@
   margin: 10px 0 4px;
 }
 
-.ticket-drawer.drawer {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: min(880px, 64vw);
-  z-index: 40;
-  background: var(--paper);
-  box-shadow: var(--shadow-drawer);
-  display: flex;
-  flex-direction: column;
-  transform: translateX(100%);
-  transition: transform 160ms ease-out;
-}
-
-.ticket-drawer.drawer.on {
-  transform: translateX(0);
-}
-
 .scrim.on {
   opacity: 1;
   pointer-events: auto;
@@ -109,4 +212,129 @@
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* Dev email preview page */
+.email-preview-page__head { margin-bottom: 20px; }
+.email-preview-page__head .sub { color: var(--ink-3); margin-top: 6px; }
+.email-preview-page__layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.email-preview-page__nav {
+  position: sticky;
+  top: 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-lg);
+  background: var(--panel);
+  padding: 10px;
+}
+.email-preview-page__group + .email-preview-page__group { margin-top: 12px; }
+.email-preview-page__cap {
+  display: block;
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin: 0 8px 6px;
+}
+.email-preview-page__link {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  padding: 8px 10px;
+  border-radius: var(--r);
+  cursor: pointer;
+  font: inherit;
+}
+.email-preview-page__link.is-active,
+.email-preview-page__link:hover {
+  background: var(--sig-wash);
+  color: var(--ink);
+}
+.email-preview-page__panel {
+  border: 1px solid var(--rule);
+  border-radius: var(--r-lg);
+  background: var(--paper);
+  padding: 16px;
+}
+
+.email-preview-page__meta-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.email-preview-page__meta-head h2 { margin: 0; font-size: 1.125rem; }
+.email-preview-page__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--r);
+  background: var(--sig-wash);
+  color: var(--sig);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.email-preview-page__meta p { margin: 0 0 12px; color: var(--ink-2); }
+.email-preview-page__widths {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  margin-bottom: 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  background: var(--panel);
+}
+.email-preview-page__width {
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 0.75rem;
+  padding: 4px 12px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.email-preview-page__width.is-active {
+  background: var(--paper);
+  color: var(--ink);
+  font-weight: 600;
+}
+.email-preview-page__width:focus-visible {
+  outline: 2px solid var(--sig);
+  outline-offset: 1px;
+}
+.email-preview-page__plain { margin-top: 12px; }
+.email-preview-page__plain pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--panel);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--r);
+  padding: 12px;
+  font-size: 0.8125rem;
+}
+@media (max-width: 960px) {
+  .email-preview-page__layout { grid-template-columns: 1fr; }
+  .email-preview-page__nav { position: static; }
+}
+
+.dark {
+  --sidebar: hsl(240 5.9% 10%);
+  --sidebar-foreground: hsl(240 4.8% 95.9%);
+  --sidebar-primary: hsl(224.3 76.3% 48%);
+  --sidebar-primary-foreground: hsl(0 0% 100%);
+  --sidebar-accent: hsl(240 3.7% 15.9%);
+  --sidebar-accent-foreground: hsl(240 4.8% 95.9%);
+  --sidebar-border: hsl(240 3.7% 15.9%);
+  --sidebar-ring: hsl(217.2 91.2% 59.8%);
 }

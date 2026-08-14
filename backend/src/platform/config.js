@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Configuration is a pure function of an env object so it is testable without
  * touching process.env. Three tiers:
  *   required   â€” boot fails without them

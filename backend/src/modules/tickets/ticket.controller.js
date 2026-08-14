@@ -23,11 +23,21 @@ export const create = (config) => catchAsync(async (req, res) => {
 });
 
 export const get = catchAsync(async (req, res) => {
-  res.json(await ticketService.getTicket(req.params.id));
+  res.json(await ticketService.getTicket(req.user, req.params.id));
 });
 
-export const patch = catchAsync(async (req, res) => {
-  res.json(await ticketService.patchTicket(req.user, req.params.id, req.body));
+export const patch = (config) => catchAsync(async (req, res) => {
+  const ticket = await ticketService.patchTicket(req.user, req.params.id, req.body);
+  res.json(ticket);
+
+  const estimatePatched = 'estimatedResolutionAt' in req.body || 'expectedReleaseDate' in req.body;
+  if (!estimatePatched) return;
+
+  const doc = await ticketService.resolveTicketDoc(ticket.id);
+  await dispatchTicketEvent({
+    event: { type: 'TICKET_ESTIMATE_SET', requestId: req.id },
+    ticket: doc, actor: req.user, config,
+  });
 });
 
 export const assign = (config) => catchAsync(async (req, res) => {
@@ -107,10 +117,21 @@ export const reactToComment = catchAsync(async (req, res) => {
 });
 
 export const addAttachments = (config) => catchAsync(async (req, res) => {
-  const added = await attachmentService.addAttachments(
-    req.user, req.params.id, req.files || [], config, { clientRef: req.body?.clientRef },
+  const { attachments, comment, commentCreated, event } = await attachmentService.addAttachments(
+    req.user, req.params.id, req.files || [], config, {
+      clientRef: req.body?.clientRef,
+      commentId: req.body?.commentId,
+      commentContent: req.body?.commentContent,
+      commentClientRef: req.body?.commentClientRef,
+    },
   );
-  res.status(201).json(added);
+  res.status(201).json(attachments);
+
+  if (!commentCreated || !event) return;
+  const doc = await ticketService.resolveTicketDoc(req.params.id);
+  await dispatchTicketEvent({
+    event: { ...event, requestId: req.id }, ticket: doc, actor: req.user, config,
+  });
 });
 
 export const removeAttachment = (config) => catchAsync(async (req, res) => {
@@ -123,7 +144,13 @@ export const downloadAttachment = (config) => catchAsync(async (req, res) => {
   const url = await attachmentService.downloadUrl(
     req.user, req.params.id, req.params.attachmentId, config,
   );
-  // 302 to a short-lived URL that was minted only because the line above
-  // returned rather than threw.
+
+  // Programmatic clients (fetch + Bearer) cannot read a cross-origin 302's
+  // Location header — CORS does not expose it. JSON matches Dharwin's
+  // mentor/employee download endpoints; redirect remains for direct navigation.
+  if (req.headers.accept?.includes('application/json')) {
+    return res.json({ url });
+  }
+
   res.redirect(302, url);
 });

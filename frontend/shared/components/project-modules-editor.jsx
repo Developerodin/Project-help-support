@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { WEB_MODULE_TAXONOMY } from '@pms/shared';
 import Icon from '@/shared/components/icons.jsx';

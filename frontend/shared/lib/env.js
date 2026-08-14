@@ -14,4 +14,9 @@ export function requireEnv(name, value) {
   return value.trim().replace(/\/$/, '');
 }
 
-export const API_URL = requireEnv('NEXT_PUBLIC_API_URL', process.env.NEXT_PUBLIC_API_URL);
+// Static property access — Next/webpack inlines `process.env.NEXT_PUBLIC_*` at
+// compile time; bracket lookup (`process.env[key]`) stays undefined in the browser.
+export const API_URL = requireEnv(
+  'NEXT_PUBLIC_API_URL',
+  process.env.NEXT_PUBLIC_API_URL,
+);

@@ -1,4 +1,4 @@
-﻿import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach } from 'vitest';
 import {
   ACTIVE_PROJECT_STORAGE_KEY,
   readStoredProjectId,

@@ -68,14 +68,28 @@ export async function logout(presentedRaw) {
   if (presentedRaw) await revokeRefreshToken(presentedRaw);
 }
 
-export async function createInvite(_actor, { name, email, role = 'member' }) {
-  if (await User.isEmailTaken(email)) {
-    throw new ApiError(400, 'EMAIL_TAKEN', 'A user with that email already exists');
+export async function createInvite(_actor, { email, role = 'member' }) {
+  const existing = await User.findByNormalisedEmail(email);
+  if (existing) {
+    if (existing.status === 'inactive') {
+      throw new ApiError(
+        400,
+        'USER_INACTIVE',
+        'This user was deactivated. Reactivate them or delete the account before inviting again.',
+      );
+    }
+    if (existing.status === 'invited') {
+      throw new ApiError(
+        400,
+        'INVITE_PENDING',
+        'An invite is already pending for this email. Resend it from the People list.',
+      );
+    }
+    throw new ApiError(400, 'EMAIL_TAKEN', 'A user with that email is already active.');
   }
 
   const inviteToken = newRawToken();
   const user = await User.create({
-    name,
     email,
     role,
     status: 'invited',
@@ -88,15 +102,30 @@ export async function createInvite(_actor, { name, email, role = 'member' }) {
   return { user: user.toJSON(), inviteToken };
 }
 
-export async function acceptInvite(rawToken, password) {
+export async function previewInvite(rawToken) {
   const user = await User.findOne({ inviteTokenHash: hashToken(rawToken) })
-    .select('+inviteTokenHash +inviteTokenExpiresAt +password');
+    .select('+inviteTokenHash +inviteTokenExpiresAt');
 
   if (!user) throw badInvite();
+  if (user.status !== 'invited') throw badInvite();
   if (!user.inviteTokenExpiresAt || user.inviteTokenExpiresAt.getTime() <= Date.now()) {
     throw badInvite();
   }
 
+  return { email: user.email };
+}
+
+export async function acceptInvite(rawToken, name, password) {
+  const user = await User.findOne({ inviteTokenHash: hashToken(rawToken) })
+    .select('+inviteTokenHash +inviteTokenExpiresAt +password');
+
+  if (!user) throw badInvite();
+  if (user.status !== 'invited') throw badInvite();
+  if (!user.inviteTokenExpiresAt || user.inviteTokenExpiresAt.getTime() <= Date.now()) {
+    throw badInvite();
+  }
+
+  user.name = String(name).trim();
   user.password = password;
   user.status = 'active';
   // Single use: clearing the hash is what makes a replay fail the lookup above.

@@ -39,7 +39,6 @@ function listRelationships(rels) {
 }
 
 export default function TicketStageBar({ ticket, actor, onTransition }) {
-  const [menuOpen, setMenuOpen] = useState(false);
   const [pending, setPending] = useState(null);
   const [text, setText] = useState('');
 
@@ -48,7 +47,6 @@ export default function TicketStageBar({ ticket, actor, onTransition }) {
   const rels = ticketRelationships(actor, ticket);
 
   function choose(to) {
-    setMenuOpen(false);
     const verdict = canTransition(ticket.status, to, actor, ticket);
     if (verdict.isReopen || verdict.isClose) {
       setPending({ to, kind: verdict.isReopen ? 'note' : 'reason' });
@@ -138,34 +136,6 @@ export default function TicketStageBar({ ticket, actor, onTransition }) {
         <span style={{ marginLeft: 'auto' }}>
           You are {capRole(actor?.role)}
           {rels.length > 0 && ` and ${listRelationships(rels)}`} on this ticket
-          {' · '}
-          <span className="menuwrap">
-            <button
-              type="button"
-              className="btn btn-sm"
-              aria-haspopup="true"
-              aria-expanded={menuOpen}
-              onClick={() => setMenuOpen((v) => !v)}
-              disabled={destinations.length === 0}
-            >
-              Move to…
-            </button>
-            {menuOpen && (
-              <div className="menu on" role="menu">
-                {destinations.map((key) => (
-                  <button
-                    key={key}
-                    type="button"
-                    className="menuitem"
-                    role="menuitem"
-                    onClick={() => choose(key)}
-                  >
-                    {stageLabel(key)}
-                  </button>
-                ))}
-              </div>
-            )}
-          </span>
         </span>
       </div>
 

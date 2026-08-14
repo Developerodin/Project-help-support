@@ -1,4 +1,4 @@
-﻿/** @typedef {{ label: string, path?: string }} ModulePage */
+/** @typedef {{ label: string, path?: string }} ModulePage */
 /** @typedef {{ label: string, pages?: ModulePage[] }} ModuleGroup */
 
 /** @param {ModuleGroup[]} modules */

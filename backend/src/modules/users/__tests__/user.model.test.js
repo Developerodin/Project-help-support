@@ -63,6 +63,12 @@ test('defaults are role=member, kind=internal, status=invited', async () => {
   assert.equal(user.status, 'invited');
 });
 
+test('an invited user may be created without a name', async () => {
+  const user = await User.create({ email: 'pending@example.com', password: 'placeholder-password' });
+  assert.equal(user.name, '');
+  assert.equal(user.status, 'invited');
+});
+
 test('rejects a role outside the shared ROLES enum', async () => {
   await assert.rejects(() => User.create({ ...valid, role: 'superuser' }), /role/);
 });

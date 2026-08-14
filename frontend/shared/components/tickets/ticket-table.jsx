@@ -29,9 +29,9 @@ function Rail({ ticket }) {
 export default function TicketTable({ tickets, onOpen }) {
   if (tickets.length === 0) {
     return (
-      <div className="empty">
+      <div className="empty-state">
         <h3>No ticket matches those filters</h3>
-        <p>Clear the stage or owner filter first — those usually do the narrowing.</p>
+        <p>Clear the stage or scope filter first — those usually do the narrowing.</p>
       </div>
     );
   }

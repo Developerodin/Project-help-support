@@ -10,7 +10,6 @@ import BoardLane from '@/shared/components/tickets/board-lane.jsx';
 import TicketDetailDrawer from '@/shared/components/tickets/ticket-detail-drawer.jsx';
 import FormError from '@/shared/components/form-error.jsx';
 import Icon from '@/shared/components/icons.jsx';
-
 function BoardPage() {
   const { activeProjectId } = useProject();
   const [tickets, setTickets] = useState([]);

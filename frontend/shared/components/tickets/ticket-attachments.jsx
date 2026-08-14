@@ -1,8 +1,7 @@
 'use client';
 
 import { useRef } from 'react';
-import { API_URL } from '@/shared/lib/env.js';
-import { attachmentDownloadUrl } from '@/shared/api/tickets.js';
+import { TicketAttachmentLink } from './ticket-attachment.jsx';
 
 export default function TicketAttachments({ ticket, onUpload }) {
   const input = useRef(null);
@@ -27,9 +26,12 @@ export default function TicketAttachments({ ticket, onUpload }) {
           <li key={attachment._id || attachment.id}>
             {/* The download endpoint authorizes and THEN 302s to a short-lived
                 presigned URL. No URL is stored anywhere. */}
-            <a href={`${API_URL}${attachmentDownloadUrl(ticket.ticketId, attachment._id || attachment.id)}`}>
+            <TicketAttachmentLink
+              ticketId={ticket.ticketId}
+              attachmentId={attachment._id || attachment.id}
+            >
               {attachment.name}
-            </a>
+            </TicketAttachmentLink>
           </li>
         ))}
       </ul>

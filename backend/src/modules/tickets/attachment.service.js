@@ -1,8 +1,10 @@
+import mongoose from 'mongoose';
 import { ApiError } from '../../platform/errors.js';
 import { sniffType, safeKey } from '../../platform/upload.js';
 import * as defaultStorage from '../../platform/s3.js';
 import Ticket from './ticket.model.js';
-import { resolveTicketDoc, assertCanEditTicket } from './ticket.service.js';
+import { resolveTicketDoc, assertCanEditTicket, assertCanViewTicket } from './ticket.service.js';
+import { findComment } from './comment.service.js';
 
 const sameId = (a, b) => !!a && !!b && String(a._id ?? a) === String(b._id ?? b);
 
@@ -18,18 +20,60 @@ function findAttachment(ticket, attachmentId) {
  * The capability gate always comes from the real module, so a test double
  * cannot accidentally disable it.
  */
+function attachmentReplay(ticket, clientRef) {
+  if (!clientRef) return null;
+  const attachments = ticket.attachments.filter((a) => a.clientRef === clientRef);
+  return attachments.length ? attachments : null;
+}
+
+function commentReplay(ticket, commentClientRef) {
+  if (!commentClientRef) return null;
+  return ticket.comments.find((c) => c.clientRef === commentClientRef) || null;
+}
+
+function buildAttachmentResult(attachments, comment = null, commentCreated = false) {
+  const result = { attachments, comment, commentCreated, event: null };
+  if (commentCreated && comment) {
+    result.event = {
+      type: 'TICKET_COMMENTED',
+      actorId: String(comment.commentedBy),
+      commentId: String(comment._id),
+      mentions: comment.mentions || [],
+      at: comment.createdAt,
+    };
+  }
+  return result;
+}
+
 export async function addAttachments(actor, idOrKey, files, config, opts = {}) {
   const storage = opts.storage ?? defaultStorage;
-  const { clientRef, prefix = 'tickets' } = opts;
+  const {
+    clientRef,
+    prefix = 'tickets',
+    commentId,
+    commentContent,
+    commentClientRef,
+  } = opts;
 
   defaultStorage.assertStorageEnabled(config);
 
   const ticket = await resolveTicketDoc(idOrKey);
   assertCanEditTicket(actor, ticket);
 
-  if (clientRef && ticket.attachments.some((a) => a.clientRef === clientRef)) {
-    return ticket.attachments.filter((a) => a.clientRef === clientRef);
+  const replayedAttachments = attachmentReplay(ticket, clientRef);
+  if (replayedAttachments) {
+    const replayedComment = commentReplay(ticket, commentClientRef);
+    return buildAttachmentResult(replayedAttachments, replayedComment, false);
   }
+
+  if (commentClientRef) {
+    const replayedComment = commentReplay(ticket, commentClientRef);
+    if (replayedComment) {
+      return buildAttachmentResult(replayedComment.attachments || [], replayedComment, false);
+    }
+  }
+
+  if (commentId) findComment(ticket, commentId);
 
   // Validate EVERY file before uploading ANY of them: a batch that half-uploads
   // and then rejects leaves orphan objects in the bucket.
@@ -53,34 +97,85 @@ export async function addAttachments(actor, idOrKey, files, config, opts = {}) {
     });
   }
 
-  const entries = prepared.map(({ buffer: _buffer, ...rest }) => rest);
+  const entries = prepared.map(({ buffer: _buffer, ...rest }) => ({
+    ...rest,
+    _id: new mongoose.Types.ObjectId(),
+  }));
 
-  const filter = clientRef
-    ? { _id: ticket._id, 'attachments.clientRef': { $ne: clientRef } }
-    : { _id: ticket._id };
+  const activityEntry = {
+    action: 'attachments_added',
+    performedBy: actor._id,
+    at: new Date(),
+    changes: entries.map((e) => ({ field: 'attachment', from: null, to: e.name })),
+  };
 
-  const written = await Ticket.findOneAndUpdate(
-    filter,
-    {
+  const filter = { _id: ticket._id };
+  if (clientRef) filter['attachments.clientRef'] = { $ne: clientRef };
+  if (commentClientRef) filter['comments.clientRef'] = { $ne: commentClientRef };
+
+  let update;
+  let commentCreated = false;
+
+  if (commentId) {
+    update = {
       $push: {
         attachments: { $each: entries },
-        activityLog: {
-          action: 'attachments_added',
-          performedBy: actor._id,
-          at: new Date(),
-          changes: entries.map((e) => ({ field: 'attachment', from: null, to: e.name })),
-        },
+        'comments.$.attachments': { $each: entries.map((entry) => ({ ...entry })) },
+        activityLog: activityEntry,
       },
-    },
-    { new: true },
-  );
+    };
+    filter['comments._id'] = commentId;
+  } else if (commentContent) {
+    const createdAt = new Date();
+    const comment = {
+      _id: new mongoose.Types.ObjectId(),
+      content: commentContent,
+      commentedBy: actor._id,
+      mentions: [],
+      attachments: entries.map((entry) => ({ ...entry })),
+      clientRef: commentClientRef,
+      createdAt,
+    };
+    commentCreated = true;
+    update = {
+      $push: {
+        attachments: { $each: entries },
+        comments: comment,
+        activityLog: activityEntry,
+      },
+    };
+  } else {
+    update = {
+      $push: {
+        attachments: { $each: entries },
+        activityLog: activityEntry,
+      },
+    };
+  }
+
+  const written = await Ticket.findOneAndUpdate(filter, update, { new: true });
 
   if (!written) {
     const existing = await Ticket.findById(ticket._id);
-    return existing.attachments.filter((a) => a.clientRef === clientRef);
+    const replayed = attachmentReplay(existing, clientRef)
+      || (commentClientRef ? commentReplay(existing, commentClientRef)?.attachments : null)
+      || [];
+    const replayedComment = commentReplay(existing, commentClientRef);
+    return buildAttachmentResult(replayed, replayedComment, false);
   }
 
-  return written.attachments.slice(-entries.length);
+  const attachments = written.attachments.slice(-entries.length);
+  let comment = null;
+
+  if (commentId) {
+    comment = written.comments.id(commentId);
+  } else if (commentContent) {
+    comment = commentClientRef
+      ? written.comments.find((c) => c.clientRef === commentClientRef)
+      : written.comments.at(-1);
+  }
+
+  return buildAttachmentResult(attachments, comment, commentCreated);
 }
 
 export async function removeAttachment(actor, idOrKey, attachmentId, config, opts = {}) {
@@ -97,7 +192,10 @@ export async function removeAttachment(actor, idOrKey, attachmentId, config, opt
   await Ticket.updateOne(
     { _id: ticket._id },
     {
-      $pull: { attachments: { _id: attachment._id } },
+      $pull: {
+        attachments: { _id: attachment._id },
+        'comments.$[].attachments': { _id: attachment._id },
+      },
       $push: {
         activityLog: {
           action: 'attachment_removed',
@@ -125,7 +223,8 @@ export async function downloadUrl(actor, idOrKey, attachmentId, config, opts = {
   defaultStorage.assertStorageEnabled(config);
 
   const ticket = await resolveTicketDoc(idOrKey);
+  await assertCanViewTicket(actor, ticket);
   const attachment = findAttachment(ticket, attachmentId);
 
-  return storage.presignGet(config, attachment.key, { filename: attachment.name });
+  return storage.presignGet(config, attachment.key);
 }

@@ -20,7 +20,6 @@ export const listUsersSchema = {
 
 export const createUserSchema = {
   body: Joi.object({
-    name: Joi.string().trim().min(1).max(120).required(),
     email: Joi.string().trim().lowercase().email().required(),
     role: Joi.string().valid(...ROLES).default('member'),
   }),

@@ -153,3 +153,13 @@ export const reactionSchema = {
 export const attachmentIdSchema = {
   params: Joi.object({ id: ticketRef.required(), attachmentId: objectId.required() }),
 };
+
+export const addAttachmentsSchema = {
+  params: Joi.object({ id: ticketRef.required() }),
+  body: Joi.object({
+    clientRef: Joi.string().trim().max(64),
+    commentId: objectId,
+    commentContent: Joi.string().trim().min(1).max(10000),
+    commentClientRef: Joi.string().trim().max(64),
+  }).nand('commentId', 'commentContent'),
+};

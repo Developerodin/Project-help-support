@@ -2,14 +2,67 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { ROLES } from '@pms/shared';
-import { listUsers, inviteUser, patchUser, resendInvite } from '@/shared/api/users.js';
+import { listUsers, inviteUser, patchUser, resendInvite, deleteUser } from '@/shared/api/users.js';
 import FormError from '@/shared/components/form-error.jsx';
+import ConfirmDialog from '@/shared/components/confirm-dialog.jsx';
 import { initials } from '@/shared/components/icons.jsx';
+import { normalizeApiError } from '@/shared/lib/api-error.js';
+import { showToast } from '@/shared/lib/toast.js';
+
+function capRole(role) {
+  if (!role) return 'Member';
+  return role.charAt(0).toUpperCase() + role.slice(1);
+}
+
+function ActionButton({
+  label,
+  busyLabel,
+  busy,
+  success,
+  error,
+  onClick,
+  danger = false,
+}) {
+  return (
+    <span className="row-action">
+      <button
+        type="button"
+        className={`btn btn-sm${danger ? ' btn-danger' : ''}`}
+        onClick={onClick}
+        disabled={busy}
+        aria-busy={busy || undefined}
+      >
+        {busy ? (
+          <>
+            <span className="btn-spin" aria-hidden="true" />
+            {busyLabel || `${label}…`}
+          </>
+        ) : label}
+      </button>
+      {(success || error) && (
+        <span
+          className={`row-action-status${error ? ' row-action-status--error' : ''}`}
+          role="status"
+          aria-live="polite"
+        >
+          {success || error}
+        </span>
+      )}
+    </span>
+  );
+}
 
 export default function UsersPage() {
   const [users, setUsers] = useState([]);
-  const [draft, setDraft] = useState({ name: '', email: '', role: 'member' });
+  const [draft, setDraft] = useState({ email: '', role: 'member' });
   const [error, setError] = useState(null);
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [confirmDeactivate, setConfirmDeactivate] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [deactivateBusy, setDeactivateBusy] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [rowBusy, setRowBusy] = useState({});
+  const [rowFeedback, setRowFeedback] = useState({});
 
   const reload = useCallback(() => {
     listUsers().then((page) => setUsers(page.results)).catch(setError);
@@ -17,32 +70,132 @@ export default function UsersPage() {
 
   useEffect(() => { reload(); }, [reload]);
 
+  function setRowActionBusy(key, value) {
+    setRowBusy((prev) => {
+      const next = { ...prev };
+      if (value) next[key] = true;
+      else delete next[key];
+      return next;
+    });
+  }
+
+  function setRowActionFeedback(key, feedback) {
+    setRowFeedback((prev) => {
+      const next = { ...prev };
+      if (feedback) next[key] = feedback;
+      else delete next[key];
+      return next;
+    });
+  }
+
+  function flashRowFeedback(key, feedback, durationMs = 2500) {
+    setRowActionFeedback(key, feedback);
+    window.setTimeout(() => setRowActionFeedback(key, null), durationMs);
+  }
+
   async function invite(event) {
     event.preventDefault();
     setError(null);
+    setInviteBusy(true);
     try {
       await inviteUser(draft);
-      setDraft({ name: '', email: '', role: 'member' });
+      setDraft({ email: '', role: 'member' });
+      showToast('Invite sent');
       reload();
     } catch (err) {
       setError(err);
+    } finally {
+      setInviteBusy(false);
     }
   }
 
-  const update = async (id, body) => {
-    if (body.status === 'inactive') {
-      const user = users.find((u) => u.id === id);
-      const ok = window.confirm(
-        `Deactivate ${user?.name || 'this person'}? They will lose access but their ticket history stays.`,
-      );
-      if (!ok) return;
-    }
+  async function patchRow(id, body, actionKey, successMessage) {
     setError(null);
+    setRowActionBusy(actionKey, true);
+    setRowActionFeedback(actionKey, null);
     try {
       await patchUser(id, body);
+      if (successMessage) showToast(successMessage);
       reload();
-    } catch (err) { setError(err); }
-  };
+    } catch (err) {
+      const message = normalizeApiError(err)?.message || 'Request failed';
+      setRowActionFeedback(actionKey, { error: message });
+      showToast(message);
+    } finally {
+      setRowActionBusy(actionKey, false);
+    }
+  }
+
+  function requestDeactivate(user) {
+    setConfirmDeactivate(user);
+  }
+
+  async function confirmDeactivateUser() {
+    if (!confirmDeactivate) return;
+    setDeactivateBusy(true);
+    setError(null);
+    const actionKey = `${confirmDeactivate.id}:deactivate`;
+    try {
+      await patchUser(confirmDeactivate.id, { status: 'inactive' });
+      showToast(`${confirmDeactivate.name || confirmDeactivate.email} deactivated`);
+      setConfirmDeactivate(null);
+      reload();
+    } catch (err) {
+      const message = normalizeApiError(err)?.message || 'Could not deactivate';
+      setRowActionFeedback(actionKey, { error: message });
+      showToast(message);
+    } finally {
+      setDeactivateBusy(false);
+    }
+  }
+
+  function requestDelete(user) {
+    setConfirmDelete(user);
+  }
+
+  async function confirmDeleteUser() {
+    if (!confirmDelete) return;
+    setDeleteBusy(true);
+    setError(null);
+    const actionKey = `${confirmDelete.id}:delete`;
+    try {
+      await deleteUser(confirmDelete.id);
+      showToast(`${confirmDelete.name || confirmDelete.email} deleted`);
+      setConfirmDelete(null);
+      reload();
+    } catch (err) {
+      const message = normalizeApiError(err)?.message || 'Could not delete';
+      setRowActionFeedback(actionKey, { error: message });
+      showToast(message);
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
+  async function handleResend(user) {
+    const actionKey = `${user.id}:resend`;
+    setRowActionBusy(actionKey, true);
+    setRowActionFeedback(actionKey, null);
+    try {
+      const result = await resendInvite(user.id);
+      if (result?.sent) {
+        showToast(`Invite sent to ${user.email}`);
+        flashRowFeedback(actionKey, { success: 'Invite sent' });
+      } else {
+        const message = user.status === 'active'
+          ? 'No invite sent — user is already active'
+          : 'No invite sent — user is not pending invite';
+        flashRowFeedback(actionKey, { error: message });
+        showToast(message);
+      }
+    } catch (err) {
+      const message = normalizeApiError(err)?.message || 'Could not send invite';
+      setRowActionFeedback(actionKey, { error: message });
+      showToast(message);
+    } finally {
+      setRowActionBusy(actionKey, false);
+    }
+  }
 
   return (
     <>
@@ -55,18 +208,22 @@ export default function UsersPage() {
       <FormError error={error} />
 
       <form className="toolbar" onSubmit={invite}>
-        <label htmlFor="invite-name">Name</label>
-        <input id="invite-name" required placeholder="Name" value={draft.name}
-          onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
         <label htmlFor="invite-email">Email</label>
         <input id="invite-email" type="email" required placeholder="name@company.com" value={draft.email}
-          onChange={(e) => setDraft({ ...draft, email: e.target.value })} />
+          onChange={(e) => setDraft({ ...draft, email: e.target.value })} disabled={inviteBusy} />
         <label htmlFor="invite-role">Role</label>
-        <select id="invite-role" value={draft.role}
+        <select id="invite-role" value={draft.role} disabled={inviteBusy}
           onChange={(e) => setDraft({ ...draft, role: e.target.value })}>
           {ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
         </select>
-        <button type="submit" className="btn btn-primary">Send invite</button>
+        <button type="submit" className="btn btn-primary" disabled={inviteBusy} aria-busy={inviteBusy || undefined}>
+          {inviteBusy ? (
+            <>
+              <span className="btn-spin" aria-hidden="true" />
+              Sending…
+            </>
+          ) : 'Send invite'}
+        </button>
       </form>
 
       <div className="tablewrap">
@@ -81,45 +238,123 @@ export default function UsersPage() {
             </tr>
           </thead>
           <tbody>
-            {users.map((user) => (
-              <tr key={user.id}>
-                <td>
-                  <span className="personcell">
-                    <span className="avatar sm">{initials(user.name)}</span>
-                    <span>{user.name}</span>
-                  </span>
-                </td>
-                <td>{user.email}</td>
-                <td>
-                  <select
-                    aria-label={`Role for ${user.name}`}
-                    value={user.role}
-                    onChange={(e) => update(user.id, { role: e.target.value })}
-                  >
-                    {ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
-                  </select>
-                </td>
-                <td><span className="chip">{user.status}</span></td>
-                <td>
-                  {user.status === 'active' && (
-                    <button type="button" className="btn btn-sm" onClick={() => update(user.id, { status: 'inactive' })}>
-                      Deactivate
-                    </button>
-                  )}
-                  {user.status === 'inactive' && (
-                    <button type="button" className="btn btn-sm" onClick={() => update(user.id, { status: 'active' })}>
-                      Reactivate
-                    </button>
-                  )}
-                  {user.status === 'invited' && (
-                    <button type="button" className="btn btn-sm" onClick={() => resendInvite(user.id)}>Resend</button>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {users.map((user) => {
+              const deactivateKey = `${user.id}:deactivate`;
+              const reactivateKey = `${user.id}:reactivate`;
+              const resendKey = `${user.id}:resend`;
+              const deleteKey = `${user.id}:delete`;
+
+              return (
+                <tr key={user.id}>
+                  <td>
+                    <span className="personcell">
+                      <span className="avatar sm">{initials(user.name || user.email)}</span>
+                      <span>{user.name || user.email}</span>
+                    </span>
+                  </td>
+                  <td>{user.email}</td>
+                  <td>
+                    <select
+                      aria-label={`Role for ${user.name || user.email}`}
+                      value={user.role}
+                      onChange={(e) => patchRow(user.id, { role: e.target.value }, `${user.id}:role`)}
+                      disabled={Boolean(rowBusy[`${user.id}:role`])}
+                    >
+                      {ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
+                    </select>
+                  </td>
+                  <td><span className="chip">{user.status}</span></td>
+                  <td>
+                    <div className="row-actions">
+                      {user.status === 'active' && (
+                        <ActionButton
+                          label="Deactivate"
+                          busyLabel="Deactivating…"
+                          busy={Boolean(rowBusy[deactivateKey]) || deactivateBusy}
+                          success={rowFeedback[deactivateKey]?.success}
+                          error={rowFeedback[deactivateKey]?.error}
+                          danger
+                          onClick={() => requestDeactivate(user)}
+                        />
+                      )}
+                      {user.status === 'inactive' && (
+                        <ActionButton
+                          label="Reactivate"
+                          busyLabel="Reactivating…"
+                          busy={Boolean(rowBusy[reactivateKey])}
+                          success={rowFeedback[reactivateKey]?.success}
+                          error={rowFeedback[reactivateKey]?.error}
+                          onClick={() => patchRow(
+                            user.id,
+                            { status: 'active' },
+                            reactivateKey,
+                            `${user.name} reactivated`,
+                          )}
+                        />
+                      )}
+                      {user.status === 'invited' && (
+                        <ActionButton
+                          label="Resend"
+                          busyLabel="Sending…"
+                          busy={Boolean(rowBusy[resendKey])}
+                          success={rowFeedback[resendKey]?.success}
+                          error={rowFeedback[resendKey]?.error}
+                          onClick={() => handleResend(user)}
+                        />
+                      )}
+                      <ActionButton
+                        label="Delete"
+                        busyLabel="Deleting…"
+                        busy={Boolean(rowBusy[deleteKey]) || deleteBusy}
+                        success={rowFeedback[deleteKey]?.success}
+                        error={rowFeedback[deleteKey]?.error}
+                        danger
+                        onClick={() => requestDelete(user)}
+                      />
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
+
+      <ConfirmDialog
+        open={Boolean(confirmDeactivate)}
+        title={`Deactivate ${capRole(confirmDeactivate?.role)}?`}
+        message={
+          confirmDeactivate
+            ? `${confirmDeactivate.name || confirmDeactivate.email} will lose access, but their ticket history stays.`
+            : ''
+        }
+        confirmLabel="Deactivate"
+        cancelLabel="Cancel"
+        danger
+        busy={deactivateBusy}
+        onConfirm={confirmDeactivateUser}
+        onCancel={() => {
+          if (!deactivateBusy) setConfirmDeactivate(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={Boolean(confirmDelete)}
+        title={`Delete ${confirmDelete?.name || confirmDelete?.email}?`}
+        message={
+          confirmDelete
+            ? 'This permanently removes their account and cannot be undone.'
+            : ''
+        }
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        danger
+        busy={deleteBusy}
+        onConfirm={confirmDeleteUser}
+        onCancel={() => {
+          if (!deleteBusy) setConfirmDelete(null);
+        }}
+      />
     </>
   );
 }

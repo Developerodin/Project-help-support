@@ -49,7 +49,7 @@ export default function TicketFilters({ value, onChange }) {
       </select>
 
       <select aria-label="Scope" value={value.scope || 'all'} onChange={set('scope')}>
-        <option value="all">Anyone</option>
+        <option value="all">All tickets</option>
         <option value="assigned">Assigned to me</option>
         <option value="reported">Reported by me</option>
         <option value="unassigned">Unassigned</option>

@@ -1,6 +1,9 @@
 import { NOTIFICATION_EVENTS } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
+import Notification from '../notifications/notification.model.js';
+import Team from '../teams/team.model.js';
+import Ticket from '../tickets/ticket.model.js';
 import User from './user.model.js';
 
 export async function listUsers(query = {}) {
@@ -54,4 +57,45 @@ export async function updateNotificationPrefs(actor, { email = {}, inApp = {} })
 
   await user.save();
   return user.toJSON();
+}
+
+export async function deleteUser(actor, id) {
+  if (String(actor._id) === String(id)) {
+    throw new ApiError(400, 'CANNOT_DELETE_SELF', 'You cannot delete your own account');
+  }
+
+  const user = await User.findById(id);
+  if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found');
+
+  if (user.role === 'admin') {
+    const otherAdmins = await User.countDocuments({ role: 'admin', _id: { $ne: user._id } });
+    if (otherAdmins === 0) {
+      throw new ApiError(400, 'LAST_ADMIN', 'Cannot delete the last admin');
+    }
+  }
+
+  await Promise.all([
+    Notification.deleteMany({ user: user._id }),
+    Team.updateMany({ members: user._id }, { $pull: { members: user._id } }),
+    Team.updateMany({ lead: user._id }, { $unset: { lead: 1 } }),
+    Ticket.updateMany({ assignedTo: user._id }, { $set: { assignedTo: null } }),
+    Ticket.updateMany({ testedBy: user._id }, { $set: { testedBy: null } }),
+    Ticket.updateMany({ watchers: user._id }, { $pull: { watchers: user._id } }),
+    Ticket.updateMany(
+      { blockedBy: user._id },
+      { $set: { blocked: false }, $unset: { blockedBy: 1, blockedAt: 1, blockerReason: 1 } },
+    ),
+  ]);
+
+  // Scrub PII and revoke access instead of hard-delete — historical ticket refs stay valid.
+  user.name = 'Deleted User';
+  user.email = `deleted+${user._id}@internal`;
+  user.status = 'inactive';
+  user.inviteTokenHash = undefined;
+  user.inviteTokenExpiresAt = undefined;
+  user.refreshTokens = [];
+  user.password = 'revoked-deleted-user-password';
+  await user.save();
+
+  return { status: 'deleted' };
 }

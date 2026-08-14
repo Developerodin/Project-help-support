@@ -7,6 +7,7 @@ import { getOverview, getTrend, getTimeInStage, getDrill } from '@/shared/api/an
 import { useProject } from '@/shared/contexts/project-context.jsx';
 import { useTheme } from '@/shared/contexts/theme-context.jsx';
 import FormError from '@/shared/components/form-error.jsx';
+import AppLoader from '@/shared/components/app-loader.jsx';
 
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
 
@@ -39,14 +40,14 @@ export default function AnalyticsPage() {
   useEffect(() => { reload(); }, [reload]);
 
   if (error) return <FormError error={error} />;
-  if (!overview) return <p className="meta">Loading…</p>;
+  if (!overview) return <AppLoader inline />;
 
   return (
     <>
       <div className="page-head">
         <div>
           <h1>Analytics</h1>
-          <p className="sub">Lane counts, time-in-stage, estimate accuracy and reopen rate — derived from stageHistory{activeProject ? ` · ${activeProject.name}` : ''}.</p>
+          <p className="sub">Lane counts, time-in-stage, estimate accuracy and reopen rate â€” derived from stageHistory{activeProject ? ` Â· ${activeProject.name}` : ''}.</p>
         </div>
       </div>
 
@@ -64,7 +65,7 @@ export default function AnalyticsPage() {
       </div>
 
       <p className="meta analytics-meta">
-        {overview.total} tickets · lane tiles sum to the total; Blocker / Critical overlaps them.
+        {overview.total} tickets Â· lane tiles sum to the total; Blocker / Critical overlaps them.
       </p>
 
       <div className="panel panel-spaced">
@@ -91,7 +92,7 @@ export default function AnalyticsPage() {
         <header>
           <h3>Time in stage</h3>
           <span className="spacer" />
-          <span className="meta">Bottleneck: <b>{stages?.bottleneck ? stageLabel(stages.bottleneck) : '—'}</b></span>
+          <span className="meta">Bottleneck: <b>{stages?.bottleneck ? stageLabel(stages.bottleneck) : 'â€”'}</b></span>
         </header>
         {stages && (
           <div className="tablewrap">
@@ -104,8 +105,8 @@ export default function AnalyticsPage() {
                   <tr key={stage.key}>
                     <td>{stage.label}</td>
                     <td className="t-num">{stages.byStage[stage.key].count}</td>
-                    <td className="t-num">{stages.byStage[stage.key].medianHours ?? '—'}</td>
-                    <td className="t-num">{stages.byStage[stage.key].p90Hours ?? '—'}</td>
+                    <td className="t-num">{stages.byStage[stage.key].medianHours ?? 'â€”'}</td>
+                    <td className="t-num">{stages.byStage[stage.key].p90Hours ?? 'â€”'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -118,8 +119,8 @@ export default function AnalyticsPage() {
         <div className="panel">
           <header><h3>Estimate accuracy</h3></header>
           <p className="meta">
-            {overview.estimates.measured} measurable · Early {overview.estimates.early} ·
-            {' '}On time {overview.estimates.onTime} · Late {overview.estimates.late}
+            {overview.estimates.measured} measurable Â· Early {overview.estimates.early} Â·
+            {' '}On time {overview.estimates.onTime} Â· Late {overview.estimates.late}
           </p>
         </div>
         <div className="panel">

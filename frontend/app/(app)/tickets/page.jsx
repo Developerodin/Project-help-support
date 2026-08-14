@@ -8,6 +8,7 @@ import { ticketFromSearch, withTicketParam, withoutTicketParam } from '@/shared/
 import TicketFilters from '@/shared/components/tickets/ticket-filters.jsx';
 import TicketTable from '@/shared/components/tickets/ticket-table.jsx';
 import TicketDetailDrawer from '@/shared/components/tickets/ticket-detail-drawer.jsx';
+import AppLoader from '@/shared/components/app-loader.jsx';
 
 function TicketListPage() {
   const pathname = usePathname();
@@ -63,11 +64,7 @@ function TicketListPage() {
       </div>
 
       <TicketFilters value={filters} onChange={setFilters} />
-      {loading ? (
-        <div className="tablewrap loading-skeleton" aria-busy="true" aria-live="polite">
-          <p className="meta">Loading tickets…</p>
-        </div>
-      ) : (
+      {loading ? (<AppLoader inline label={"Loading tickets\u2026"} />) : (
         <TicketTable tickets={page.results} onOpen={open} />
       )}
 

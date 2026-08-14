@@ -25,17 +25,21 @@ export const update = catchAsync(async (req, res) => {
 
 export const resendInvite = (deliverInvite) => catchAsync(async (req, res) => {
   const target = await User.findById(req.params.id);
+  let sent = false;
 
-  // Same body, same status, whether or not the user exists or is invitable —
-  // this endpoint must not become an account-existence oracle.
   if (target && target.status === 'invited') {
     const { user, inviteToken } = await reissueInvite(target._id);
     if (deliverInvite) await deliverInvite({ user, inviteToken });
+    sent = true;
   }
 
-  res.json({ status: 'ok' });
+  res.json({ status: 'ok', sent });
 });
 
 export const notificationPrefs = catchAsync(async (req, res) => {
   res.json(await userService.updateNotificationPrefs(req.user, req.body));
+});
+
+export const remove = catchAsync(async (req, res) => {
+  res.json(await userService.deleteUser(req.user, req.params.id));
 });

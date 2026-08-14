@@ -18,7 +18,7 @@ const emptyLanes = () => Object.fromEntries(LANES.map((lane) => [lane.key, 0]));
 const emptyStages = () => Object.fromEntries(STAGE_KEYS.map((key) => [key, 0]));
 
 export async function overview(actor, query = {}) {
-  const filter = buildTicketFilter(actor, query);
+  const filter = await buildTicketFilter(actor, query);
 
   const tickets = await Ticket.find(filter).select('status severity labels').lean();
 
@@ -85,7 +85,7 @@ export function stageDurations(stageHistory) {
 }
 
 export async function timeInStage(actor, query = {}) {
-  const filter = buildTicketFilter(actor, query);
+  const filter = await buildTicketFilter(actor, query);
 
   const tickets = await Ticket.find(filter).select('stageHistory').lean();
 
@@ -138,7 +138,7 @@ const dayKey = (date) => new Date(date).toISOString().slice(0, 10);
  * and is excluded — counting it as on time would flatter every report.
  */
 export async function estimateAccuracy(actor, query = {}) {
-  const filter = buildTicketFilter(actor, query);
+  const filter = await buildTicketFilter(actor, query);
 
   const tickets = await Ticket.find(filter)
     .select('estimatedResolutionAt stageHistory')
@@ -178,7 +178,7 @@ export async function estimateAccuracy(actor, query = {}) {
  * because it measures work QA sent back rather than churn in general.
  */
 export async function reopenAfterQa(actor, query = {}) {
-  const filter = buildTicketFilter(actor, query);
+  const filter = await buildTicketFilter(actor, query);
 
   const tickets = await Ticket.find(filter).select('stageHistory').lean();
 
@@ -209,7 +209,7 @@ export async function reopenAfterQa(actor, query = {}) {
 }
 
 export async function aging(actor, query = {}) {
-  const filter = { ...buildTicketFilter(actor, query), status: { $ne: 'closed' } };
+  const filter = { ...(await buildTicketFilter(actor, query)), status: { $ne: 'closed' } };
 
   const tickets = await Ticket.find(filter).select('createdAt').lean();
 
@@ -238,7 +238,7 @@ function weekKey(date) {
 export async function trend(actor, query = {}) {
   const groupBy = query.groupBy === 'week' ? 'week' : 'day';
   const bucketOf = groupBy === 'week' ? weekKey : dayKey;
-  const filter = buildTicketFilter(actor, query);
+  const filter = await buildTicketFilter(actor, query);
 
   const tickets = await Ticket.find(filter).select('createdAt closedAt').lean();
 
@@ -264,7 +264,7 @@ const DRILL_FIELDS = { module: 'module', severity: 'severity', assignee: 'assign
 export async function drill(actor, query = {}) {
   const dimension = DRILL_FIELDS[query.dimension] ? query.dimension : 'severity';
   const field = DRILL_FIELDS[dimension];
-  const filter = buildTicketFilter(actor, query);
+  const filter = await buildTicketFilter(actor, query);
 
   let cursor = Ticket.find(filter).select(field);
   if (dimension === 'assignee') cursor = cursor.populate('assignedTo', 'name');

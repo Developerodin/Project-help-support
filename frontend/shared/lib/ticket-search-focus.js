@@ -1,4 +1,4 @@
-﻿export const FOCUS_TICKET_SEARCH_KEY = 'pms-focus-ticket-search';
+export const FOCUS_TICKET_SEARCH_KEY = 'pms-focus-ticket-search';
 export const TICKET_SEARCH_INPUT_ID = 'ticket-search-input';
 
 export function focusTicketSearch() {

@@ -1,4 +1,4 @@
-﻿/** Normalize API/client errors for display — keep support IDs out of primary UI. */
+/** Normalize API/client errors for display — keep support IDs out of primary UI. */
 
 function readMessage(error) {
   if (typeof error?.message === 'string' && error.message.trim()) return error.message.trim();

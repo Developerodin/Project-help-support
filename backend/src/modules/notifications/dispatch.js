@@ -1,16 +1,66 @@
 import { NOTIFICATION_EVENTS } from '@pms/shared';
 import logger from '../../platform/logger.js';
 import { getTransport } from '../../platform/mailer.js';
+import Ticket from '../tickets/ticket.model.js';
 import { getNotificationRecipients } from './recipients.js';
 import { createInAppNotifications } from './notification.service.js';
 import { sendTicketEmail } from './email.service.js';
+import { renderInviteEmail, renderPasswordResetEmail } from '../../platform/email/templates/index.js';
+import { brandAttachments } from '../../platform/email/logo.js';
+
+// Template spec and add-a-template checklist: docs/email/DESIGN.md
+
+const EMAIL_TICKET_POPULATE = ['assignedTo', 'createdBy'];
+
+function findCommentOnTicket(ticket, commentId) {
+  if (!commentId || !ticket?.comments?.length) return null;
+  if (typeof ticket.comments.id === 'function') {
+    return ticket.comments.id(commentId) ?? null;
+  }
+  return ticket.comments.find((c) => String(c._id) === String(commentId)) ?? null;
+}
+
+function nameOfRef(ref) {
+  if (ref && typeof ref === 'object' && typeof ref.name === 'string') return ref.name;
+  return '';
+}
+
+/** Fields consumed by @pms/shared/email renderTicketEmail — see docs/email/DESIGN.md */
+function buildEmailContext(event, ticket, actor) {
+  const context = {
+    from: event.from,
+    to: event.to ?? ticket.status,
+    note: event.note,
+    reason: event.reason,
+    requestId: event.requestId,
+    actorName: actor?.name || 'Someone',
+    mentions: event.mentions,
+  };
+
+  const commentEntry = findCommentOnTicket(ticket, event.commentId);
+  if (commentEntry) {
+    context.comment = commentEntry.content;
+    context.commentAuthor = actor?.name || nameOfRef(commentEntry.commentedBy) || 'Someone';
+  }
+
+  return context;
+}
+
+async function resolveTicketForEmail(ticket) {
+  const hasNames = ticket.createdBy && typeof ticket.createdBy === 'object' && ticket.createdBy.name;
+  if (hasNames) return ticket;
+  const id = ticket._id ?? ticket.id;
+  return Ticket.findById(id).populate(EMAIL_TICKET_POPULATE);
+}
 
 async function fanOut(eventKey, ticket, actor, context, config, deps) {
   const recipients = await getNotificationRecipients(eventKey, ticket, actor, context);
   if (recipients.length === 0) return;
 
+  const emailTicket = await resolveTicketForEmail(ticket);
+
   await createInAppNotifications(eventKey, ticket, recipients, config);
-  await sendTicketEmail(eventKey, ticket, recipients, context, config, deps);
+  await sendTicketEmail(eventKey, emailTicket, recipients, context, config, deps);
 }
 
 /**
@@ -25,13 +75,7 @@ export async function dispatchTicketEvent({ event, ticket, actor, config, deps =
       return;
     }
 
-    const context = {
-      from: event.from,
-      to: event.to,
-      note: event.note,
-      reason: event.reason,
-      requestId: event.requestId,
-    };
+    const context = buildEmailContext(event, ticket, actor);
 
     await fanOut(event.type, ticket, actor, context, config, deps);
 
@@ -59,7 +103,11 @@ async function sendPlain(config, deps, message) {
 
   const transport = deps.transport ?? getTransport(config);
   try {
-    await transport.sendMail({ from: config.email.from, ...message });
+    await transport.sendMail({
+      from: config.email.from,
+      attachments: brandAttachments(),
+      ...message,
+    });
   } catch (err) {
     // Never fails the request that triggered it — an invite that did not send is
     // resendable; a 500 on user creation is not recoverable by the admin.
@@ -71,10 +119,15 @@ async function sendPlain(config, deps, message) {
 export function buildInviteDeliverer(config, deps = {}) {
   return async ({ user, inviteToken }) => {
     const link = `${config.frontendBaseUrl}/invite/accept?token=${inviteToken}`;
+    const { subject, text, html } = renderInviteEmail({
+      link,
+      recipientEmail: user.email,
+    });
     await sendPlain(config, deps, {
       to: user.email,
-      subject: 'You have been invited to Dharwin Project Management Portal',
-      text: `You have been invited to Dharwin Project Management Portal.\n\nSet your password: ${link}\n\nThis link expires in 72 hours.`,
+      subject,
+      text,
+      html,
     });
   };
 }
@@ -82,10 +135,15 @@ export function buildInviteDeliverer(config, deps = {}) {
 export function buildResetDeliverer(config, deps = {}) {
   return async ({ user, resetToken }) => {
     const link = `${config.frontendBaseUrl}/reset-password?token=${resetToken}`;
+    const { subject, text, html } = renderPasswordResetEmail({
+      link,
+      recipientName: user.name,
+    });
     await sendPlain(config, deps, {
       to: user.email,
-      subject: 'Reset your Dharwin Project Management Portal password',
-      text: `Reset your Dharwin Project Management Portal password: ${link}\n\nThis link expires in 2 hours.`,
+      subject,
+      text,
+      html,
     });
   };
 }

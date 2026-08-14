@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import mongoose from 'mongoose';
 import { WEB_MODULE_TAXONOMY } from '@pms/shared';

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { stageLabel } from '@pms/shared';
+import { renderTicketEmail, ticketEmailSubject } from '../../platform/email/templates/index.js';
+import { brandAttachments } from '../../platform/email/logo.js';
 import logger from '../../platform/logger.js';
 import { getTransport } from '../../platform/mailer.js';
 import EmailLog from './emailLog.model.js';
@@ -7,16 +8,7 @@ import EmailLog from './emailLog.model.js';
 export const EMAIL_MAX_ATTEMPTS = 3;
 const DEFAULT_GRACE_MS = 5 * 60 * 1000;
 
-const SUBJECTS = {
-  TICKET_CREATED: (t) => `[${t.ticketId}] Filed: ${t.title}`,
-  TICKET_ASSIGNED: (t) => `[${t.ticketId}] Assigned: ${t.title}`,
-  TICKET_STAGE_CHANGED: (t, c) => `[${t.ticketId}] ${stageLabel(c.to)}: ${t.title}`,
-  TICKET_REOPENED: (t) => `[${t.ticketId}] Reopened: ${t.title}`,
-  TICKET_CLOSED: (t) => `[${t.ticketId}] Closed: ${t.title}`,
-  TICKET_COMMENTED: (t) => `[${t.ticketId}] New comment: ${t.title}`,
-  TICKET_MENTIONED: (t) => `[${t.ticketId}] You were mentioned: ${t.title}`,
-  TICKET_ESTIMATE_SET: (t) => `[${t.ticketId}] Estimates updated: ${t.title}`,
-};
+
 
 function domainOf(config) {
   const match = String(config.email?.from || '').match(/@([^>\s]+)/);
@@ -39,28 +31,7 @@ export function messageIdFor(eventId, recipientUserId, domain) {
 }
 
 function renderBody(event, ticket, context, config) {
-  const link = `${config.frontendBaseUrl}/tickets?ticket=${ticket.ticketId}`;
-  const rows = [];
-
-  if (context.to) rows.push(`Stage: ${stageLabel(context.from)} -> ${stageLabel(context.to)}`);
-  if (context.note) rows.push(`Note: ${context.note}`);
-  if (context.reason) rows.push(`Reason: ${context.reason}`);
-
-  const text = [
-    `${ticket.ticketId}: ${ticket.title}`,
-    ...rows,
-    '',
-    link,
-    '',
-    'Attachment links in this email are presigned and expire shortly after sending.',
-  ].join('\n');
-
-  const html = `<p><strong>${ticket.ticketId}</strong>: ${ticket.title}</p>`
-    + rows.map((r) => `<p>${r}</p>`).join('')
-    + `<p><a href="${link}">Open the ticket</a></p>`
-    + '<p style="color:#666;font-size:12px">Attachment links in this email are presigned '
-    + 'and expire shortly after sending.</p>';
-
+  const { text, html } = renderTicketEmail(event, ticket, context, config);
   return { text, html };
 }
 
@@ -75,6 +46,9 @@ async function attempt(row, transport) {
       messageId: row.messageId,
       text: row.text,
       html: row.html,
+      // The brand mark rides along as an inline attachment; the layout renders
+      // it as cid:dharwin-mark so it survives remote-image blocking.
+      attachments: brandAttachments(),
     });
 
     await EmailLog.updateOne({ _id: row._id }, {
@@ -98,7 +72,7 @@ async function attempt(row, transport) {
  * This is AT-LEAST-ONCE delivery, and SMTP cannot give exactly-once. The window
  * is real: pending -> SMTP accepts -> process dies -> row still pending ->
  * retry -> the recipient receives it twice. What bounds the damage is the
- * deterministic Message-ID, the attempt cap and the grace period â€” not a claim
+ * deterministic Message-ID, the attempt cap and the grace period Ã¢â‚¬â€ not a claim
  * that the window does not exist.
  */
 export async function sendTicketEmail(event, ticket, recipients, context, config, deps = {}) {
@@ -112,7 +86,7 @@ export async function sendTicketEmail(event, ticket, recipients, context, config
 
   const eventId = deps.eventId ?? randomUUID().replace(/-/g, '');
   const domain = domainOf(config);
-  const subject = (SUBJECTS[event] ?? ((t) => `[${t.ticketId}] ${t.title}`))(ticket, context);
+  const subject = ticketEmailSubject(event, ticket, context);
   const { text, html } = renderBody(event, ticket, context, config);
 
   const rows = await EmailLog.insertMany(wanted.map((r) => ({
@@ -132,7 +106,7 @@ export async function sendTicketEmail(event, ticket, recipients, context, config
   let sent = 0;
   let failed = 0;
   for (const row of rows) {
-    // text/html are not persisted â€” a retry re-renders them from the ticket,
+    // text/html are not persisted Ã¢â‚¬â€ a retry re-renders them from the ticket,
     // which is the source of truth for what the email should say.
     const ok = await attempt({ ...row.toObject(), text, html }, transport);
     if (ok) sent += 1; else failed += 1;
@@ -144,7 +118,7 @@ export async function sendTicketEmail(event, ticket, recipients, context, config
 /**
  * The sweep. Only rows older than the grace period are picked up, long enough
  * that a row mid-flight in a healthy process is never touched. After the cap
- * the row stays `failed` and stops â€” no unbounded loop hammering a mailbox.
+ * the row stays `failed` and stops Ã¢â‚¬â€ no unbounded loop hammering a mailbox.
  */
 export async function retryPendingEmails(config, deps = {}, options = {}) {
   if (!config.features.email) return { attempted: 0, sent: 0 };
@@ -179,3 +153,4 @@ export async function retryPendingEmails(config, deps = {}, options = {}) {
 
   return { attempted: rows.length, sent };
 }
+

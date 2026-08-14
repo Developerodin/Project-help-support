@@ -156,6 +156,6 @@ export async function transitionTicket(actor, idOrKey, { to, revision, note, rea
   return {
     ticket: written.toJSON(),
     event: { type, from, to, actorId: String(actor._id), note, reason, at: now },
-    detail: () => getTicket(String(written._id)),
+    detail: () => getTicket(actor, String(written._id)),
   };
 }

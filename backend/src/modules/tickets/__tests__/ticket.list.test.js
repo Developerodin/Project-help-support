@@ -5,6 +5,7 @@ import { withMemoryDb } from '../../../platform/__tests__/helpers/memoryDb.js';
 import User from '../../users/user.model.js';
 import Project from '../../projects/project.model.js';
 import Ticket from '../ticket.model.js';
+import Team from '../../teams/team.model.js';
 import { getTicket, listTickets, resolveTicketDoc } from '../ticket.service.js';
 
 withMemoryDb();
@@ -67,8 +68,16 @@ test('resolveTicketDoc throws 404 for both forms when missing', async () => {
 });
 
 test('getTicket returns revision so the client can send it back', async () => {
-  await fixture();
-  assert.equal((await getTicket('WEB-101')).revision, 0);
+  const { actor } = await fixture();
+  assert.equal((await getTicket(actor, 'WEB-101')).revision, 0);
+});
+
+test('getTicket rejects a member with no relationship to the ticket', async () => {
+  const { other } = await fixture();
+  await assert.rejects(
+    () => getTicket(other, 'WEB-101'),
+    (err) => err.statusCode === 403 && err.code === 'FORBIDDEN',
+  );
 });
 
 test('q matches the text index', async () => {
@@ -104,12 +113,74 @@ test('scope=assigned and scope=reported resolve against the actor, not the query
 test('scope=unassigned finds tickets with neither assignee nor team', async () => {
   const { actor } = await fixture();
   const page = await listTickets(actor, { scope: 'unassigned' });
-  assert.deepEqual(page.results.map((t) => t.ticketId).sort(), ['MOB-1', 'WEB-101']);
+  assert.deepEqual(page.results.map((t) => t.ticketId), ['WEB-101']);
 });
 
-test('every user sees every ticket — there is no per-project visibility scoping', async () => {
+test('members only see tickets they are related to', async () => {
   const { other } = await fixture();
-  assert.equal((await listTickets(other, {})).totalResults, 3);
+  const page = await listTickets(other, {});
+  assert.equal(page.totalResults, 2);
+  assert.deepEqual(page.results.map((t) => t.ticketId).sort(), ['MOB-1', 'WEB-102']);
+});
+
+test('watchers can view and list tickets they watch', async () => {
+  const { actor, other, web } = await fixture();
+  await Ticket.updateOne({ ticketId: 'WEB-101' }, { $addToSet: { watchers: other._id } });
+
+  const page = await listTickets(other, {});
+  assert.ok(page.results.some((t) => t.ticketId === 'WEB-101'));
+  assert.equal((await getTicket(other, 'WEB-101')).ticketId, 'WEB-101');
+});
+
+test('team members can view and list tickets assigned to their team', async () => {
+  const { actor, other, web } = await fixture();
+  const team = await Team.create({
+    name: 'Platform', project: web._id, members: [other._id], createdBy: actor._id,
+  });
+  await Ticket.updateOne({ ticketId: 'WEB-101' }, { $set: { team: team._id } });
+
+  const page = await listTickets(other, {});
+  assert.ok(page.results.some((t) => t.ticketId === 'WEB-101'));
+  assert.equal((await getTicket(other, 'WEB-101')).ticketId, 'WEB-101');
+});
+
+test('q matches the module field', async () => {
+  const { actor, web } = await fixture();
+  await Ticket.create({
+    ticketId: 'WEB-201', project: web._id, title: 'Unrelated title',
+    module: 'Authentication', createdBy: actor._id, status: 'pending',
+  });
+
+  const page = await listTickets(actor, { q: 'Authentication' });
+  assert.deepEqual(page.results.map((t) => t.ticketId), ['WEB-201']);
+});
+
+test('overdue excludes closed and live tickets with past estimatedResolutionAt', async () => {
+  const { actor, web } = await fixture();
+  const past = new Date(Date.now() - 86400000);
+  const future = new Date(Date.now() + 86400000);
+
+  await Ticket.create([
+    {
+      ticketId: 'WEB-301', project: web._id, title: 'Overdue pending',
+      createdBy: actor._id, status: 'pending', estimatedResolutionAt: past,
+    },
+    {
+      ticketId: 'WEB-302', project: web._id, title: 'Past date but live',
+      createdBy: actor._id, status: 'live', estimatedResolutionAt: past,
+    },
+    {
+      ticketId: 'WEB-303', project: web._id, title: 'Past date but closed',
+      createdBy: actor._id, status: 'closed', estimatedResolutionAt: past,
+    },
+    {
+      ticketId: 'WEB-304', project: web._id, title: 'Future estimate',
+      createdBy: actor._id, status: 'pending', estimatedResolutionAt: future,
+    },
+  ]);
+
+  const page = await listTickets(actor, { overdue: true });
+  assert.deepEqual(page.results.map((t) => t.ticketId), ['WEB-301']);
 });
 
 test('the list projection omits the embedded arrays', async () => {

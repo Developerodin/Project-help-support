@@ -3,6 +3,7 @@ import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
 import Project from '../projects/project.model.js';
 import { assertModuleAndPage } from '../projects/project.service.js';
+import Team from '../teams/team.model.js';
 import { assertTeamUsable, assertActiveUsers } from '../teams/team.service.js';
 import Ticket from './ticket.model.js';
 
@@ -82,8 +83,9 @@ export async function resolveTicketDoc(idOrKey, { populate = [], lean = false } 
   return ticket;
 }
 
-export async function getTicket(idOrKey) {
+export async function getTicket(actor, idOrKey) {
   const ticket = await resolveTicketDoc(idOrKey, { populate: DETAIL_POPULATE });
+  await assertCanViewTicket(actor, ticket);
   return ticket.toJSON();
 }
 
@@ -96,7 +98,34 @@ function scopeFilter(scope, actorId) {
   }
 }
 
-export function buildTicketFilter(actor, query = {}) {
+async function actorTeamIds(actorId) {
+  return Team.find({
+    status: 'active',
+    $or: [{ members: actorId }, { lead: actorId }],
+  }).distinct('_id');
+}
+
+/** Same audience as assertCanViewTicket / getNotificationRecipients (minus broadcast rules). */
+function ticketVisibilityOr(actorId, teamIds = []) {
+  const clauses = [
+    { createdBy: actorId },
+    { assignedTo: actorId },
+    { watchers: actorId },
+  ];
+  if (teamIds.length) clauses.push({ team: { $in: teamIds } });
+  return clauses;
+}
+
+async function applyTicketVisibility(filter, actor) {
+  if (actor.role === 'admin' || actor.role === 'lead') return filter;
+
+  const teamIds = await actorTeamIds(actor._id);
+  const visibility = { $or: ticketVisibilityOr(actor._id, teamIds) };
+  if (Object.keys(filter).length === 0) return visibility;
+  return { $and: [filter, visibility] };
+}
+
+export async function buildTicketFilter(actor, query = {}) {
   const filter = {};
 
   if (query.project) filter.project = query.project;
@@ -111,7 +140,8 @@ export function buildTicketFilter(actor, query = {}) {
   if (query.reopened === 'true' || query.reopened === true) filter.reopenCount = { $gt: 0 };
   if (query.overdue === 'true' || query.overdue === true) {
     filter.estimatedResolutionAt = { $lt: new Date() };
-    if (!filter.status) filter.status = { $ne: 'closed' };
+    // Match frontend isOverdue(): closed and live tickets never count as overdue.
+    if (!filter.status) filter.status = { $nin: ['closed', 'live'] };
   }
 
   // Scope resolves against req.user, never against an id in the query string.
@@ -122,19 +152,22 @@ export function buildTicketFilter(actor, query = {}) {
     const term = String(query.q).trim();
     // A text index will never match "WEB-101" — the tokenizer splits it and the
     // hyphenated form is not a stored term. The exact-id clause is what makes
-    // pasting a ticket number work. Both clauses are indexed, which is what
-    // MongoDB requires of every branch of an $or that contains $text.
+    // pasting a ticket number work. Module uses regex because labels like
+    // "User Management" are not always tokenized usefully by $text.
+    // Both indexed clauses are required of every branch of an $or that contains $text.
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     filter.$or = [
       { $text: { $search: term } },
       { ticketId: term.toUpperCase() },
+      { module: { $regex: escaped, $options: 'i' } },
     ];
   }
 
-  return filter;
+  return applyTicketVisibility(filter, actor);
 }
 
 export async function listTickets(actor, query = {}) {
-  const page = await paginate(Ticket, buildTicketFilter(actor, query), {
+  const page = await paginate(Ticket, await buildTicketFilter(actor, query), {
     page: query.page,
     limit: query.limit,
     sortBy: query.sortBy || 'createdAt:desc',
@@ -161,6 +194,34 @@ const sameId = (a, b) => !!a && !!b && String(a._id ?? a) === String(b._id ?? b)
  * which is exactly how an ownership check ends up not checking ownership.
  * Identity comes from req.user; nothing here reads the request body.
  */
+async function isActorOnTicketTeam(actorId, ticket) {
+  const teamId = ticket.team?._id ?? ticket.team;
+  if (!teamId) return false;
+
+  const team = ticket.team?.members
+    ? ticket.team
+    : await Team.findById(teamId).select('members lead').lean();
+  if (!team) return false;
+
+  return sameId(team.lead, actorId)
+    || (team.members || []).some((member) => sameId(member, actorId));
+}
+
+export async function assertCanViewTicket(actor, ticket) {
+  if (actor.role === 'admin' || actor.role === 'lead') return;
+
+  if (sameId(ticket.createdBy, actor._id) || sameId(ticket.assignedTo, actor._id)) return;
+
+  if ((ticket.watchers || []).some((watcher) => sameId(watcher, actor._id))) return;
+
+  if (await isActorOnTicketTeam(actor._id, ticket)) return;
+
+  throw new ApiError(
+    403, 'FORBIDDEN',
+    'Only the reporter, assignee, watcher, team member, lead or admin may view this ticket',
+  );
+}
+
 export function assertCanEditTicket(actor, ticket) {
   const privileged = actor.role === 'admin' || actor.role === 'lead';
   const related = sameId(ticket.createdBy, actor._id) || sameId(ticket.assignedTo, actor._id);
@@ -266,13 +327,13 @@ export async function assignTicket(actor, idOrKey, { assignedTo, team, revision 
 export async function watchTicket(actor, idOrKey) {
   const ticket = await resolveTicketDoc(idOrKey);
   await Ticket.updateOne({ _id: ticket._id }, { $addToSet: { watchers: actor._id } });
-  return getTicket(String(ticket._id));
+  return getTicket(actor, String(ticket._id));
 }
 
 export async function unwatchTicket(actor, idOrKey) {
   const ticket = await resolveTicketDoc(idOrKey);
   await Ticket.updateOne({ _id: ticket._id }, { $pull: { watchers: actor._id } });
-  return getTicket(String(ticket._id));
+  return getTicket(actor, String(ticket._id));
 }
 
 /**

@@ -1,16 +1,17 @@
 {
-  "name": "@pms/shared",
-  "version": "1.0.0",
-  "type": "module",
-  "main": "index.js",
-  "exports": {
-    ".": "./index.js",
-    "./enums": "./enums.js",
-    "./notification-events": "./notification-events.js",
-    "./stages": "./stages.js",
-    "./module-catalog": "./module-catalog.js"
-  },
-  "scripts": {
-    "test": "node --test \"**/*.test.js\""
-  }
+    "name":  "@pms/shared",
+    "version":  "1.0.0",
+    "type":  "module",
+    "main":  "index.js",
+    "exports":  {
+                    ".":  "./index.js",
+                    "./enums":  "./enums.js",
+                    "./notification-events":  "./notification-events.js",
+                    "./stages":  "./stages.js",
+                    "./module-catalog":  "./module-catalog.js",
+                    "./email":  "./email/index.js"
+                },
+    "scripts":  {
+                    "test":  "node --test \"**/*.test.js\""
+                }
 }

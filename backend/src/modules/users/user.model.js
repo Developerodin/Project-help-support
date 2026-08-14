@@ -25,7 +25,18 @@ const consumedTokenSchema = new mongoose.Schema(
 
 const userSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true, trim: true },
+    name: {
+      type: String,
+      trim: true,
+      default: '',
+      validate: {
+        validator(v) {
+          if (this.status === 'active') return typeof v === 'string' && v.trim().length >= 1;
+          return true;
+        },
+        message: 'Name is required for active users',
+      },
+    },
     email: {
       type: String,
       required: true,
@@ -92,10 +103,13 @@ userSchema.methods.isPasswordMatch = async function isPasswordMatch(plain) {
   return bcrypt.compare(plain, this.password);
 };
 
-userSchema.statics.isEmailTaken = async function isEmailTaken(email, excludeUserId) {
+userSchema.statics.findByNormalisedEmail = async function findByNormalisedEmail(email, excludeUserId) {
   const normalised = String(email).trim().toLowerCase();
-  const found = await this.findOne({ email: normalised, _id: { $ne: excludeUserId } });
-  return !!found;
+  return this.findOne({ email: normalised, _id: { $ne: excludeUserId } });
+};
+
+userSchema.statics.isEmailTaken = async function isEmailTaken(email, excludeUserId) {
+  return !!(await this.findByNormalisedEmail(email, excludeUserId));
 };
 
 const User = mongoose.model('User', userSchema);

@@ -1,4 +1,4 @@
-﻿/** Strip origin so Next.js Link can navigate in-app. */
+/** Strip origin so Next.js Link can navigate in-app. */
 export function notificationHref(link) {
   if (!link) return '/notifications';
   try {

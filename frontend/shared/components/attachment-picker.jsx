@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useId, useRef, useState } from 'react';
 import Icon from '@/shared/components/icons.jsx';

@@ -9,8 +9,16 @@ export const loginSchema = {
   }),
 };
 
+export const previewInviteSchema = {
+  body: Joi.object({ token: Joi.string().required() }),
+};
+
 export const acceptInviteSchema = {
-  body: Joi.object({ token: Joi.string().required(), password }),
+  body: Joi.object({
+    token: Joi.string().required(),
+    name: Joi.string().trim().min(1).max(120).required(),
+    password,
+  }),
 };
 
 export const forgotPasswordSchema = {

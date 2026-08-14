@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 const DOT_COUNT = 12;
 

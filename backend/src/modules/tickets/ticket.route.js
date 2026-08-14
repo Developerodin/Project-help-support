@@ -7,7 +7,7 @@ import {
   listTicketsSchema, createTicketSchema, ticketIdSchema,
   patchTicketSchema, assignTicketSchema, bulkSchema,
   transitionSchema, addCommentSchema, commentIdSchema,
-  editCommentSchema, reactionSchema, attachmentIdSchema,
+  editCommentSchema, reactionSchema, attachmentIdSchema, addAttachmentsSchema,
   setBlockedSchema, clearBlockedSchema,
 } from './ticket.validation.js';
 
@@ -22,7 +22,7 @@ export default function ticketRoutes(config) {
   router.post('/bulk', validate(bulkSchema), controller.bulk);
 
   router.get('/:id', validate(ticketIdSchema), controller.get);
-  router.patch('/:id', validate(patchTicketSchema), controller.patch);
+  router.patch('/:id', validate(patchTicketSchema), controller.patch(config));
   router.delete('/:id', requireRole('admin'), validate(ticketIdSchema), controller.remove);
 
   router.post('/:id/assign', validate(assignTicketSchema), controller.assign(config));
@@ -39,7 +39,7 @@ export default function ticketRoutes(config) {
     validate(reactionSchema), controller.reactToComment);
 
   router.post('/:id/attachments', uploadMiddleware,
-    validate(ticketIdSchema), controller.addAttachments(config));
+    validate(addAttachmentsSchema), controller.addAttachments(config));
   router.delete('/:id/attachments/:attachmentId',
     validate(attachmentIdSchema), controller.removeAttachment(config));
   router.get('/:id/attachments/:attachmentId/download',

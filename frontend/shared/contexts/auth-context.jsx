@@ -57,7 +57,20 @@ export function AuthProvider({ children }) {
     }
   }, [router]);
 
-  const value = useMemo(() => ({ user, loading, login, logout }), [user, loading, login, logout]);
+  const refreshUser = useCallback(async (knownUser) => {
+    if (knownUser) {
+      setUser(knownUser);
+      return knownUser;
+    }
+    const session = await apiFetch('/auth/me');
+    setUser(session.user);
+    return session.user;
+  }, []);
+
+  const value = useMemo(
+    () => ({ user, loading, login, logout, refreshUser }),
+    [user, loading, login, logout, refreshUser],
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

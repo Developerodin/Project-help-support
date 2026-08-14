@@ -48,13 +48,10 @@ export async function deleteObject(config, key) {
  * Short-TTL and never stored. The presigned URL is the RESULT of an
  * authorization decision made by the caller — never a substitute for one.
  */
-export async function presignGet(config, key, { filename, ttlSeconds = PRESIGN_TTL_SECONDS } = {}) {
+export async function presignGet(config, key, { ttlSeconds = PRESIGN_TTL_SECONDS } = {}) {
   const command = new GetObjectCommand({
     Bucket: config.storage.bucket,
     Key: key,
-    ResponseContentDisposition: filename
-      ? `attachment; filename="${String(filename).replace(/["\r\n]/g, '')}"`
-      : undefined,
   });
   return getSignedUrl(getClient(config), command, { expiresIn: ttlSeconds });
 }

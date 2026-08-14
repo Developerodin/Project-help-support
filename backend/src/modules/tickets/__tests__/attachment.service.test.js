@@ -55,11 +55,11 @@ test('an upload stores a key built from the user id, never the filename', async 
     reporter, ticket.id, [file('../../etc/passwd.png')], enabled, { storage },
   );
 
-  assert.equal(result.length, 1);
-  assert.match(result[0].key, new RegExp(`^tickets/${reporter._id}/`));
-  assert.equal(result[0].name, '../../etc/passwd.png', 'the original name is kept as metadata');
-  assert.equal(result[0].mimeType, 'image/png');
-  assert.equal(putCalls[0].key, result[0].key);
+  assert.equal(result.attachments.length, 1);
+  assert.match(result.attachments[0].key, new RegExp(`^tickets/${reporter._id}/`));
+  assert.equal(result.attachments[0].name, '../../etc/passwd.png', 'the original name is kept as metadata');
+  assert.equal(result.attachments[0].mimeType, 'image/png');
+  assert.equal(putCalls[0].key, result.attachments[0].key);
 });
 
 test('no url is ever stored on the attachment', async () => {
@@ -106,7 +106,7 @@ test('an unrelated member cannot attach to a ticket they have no relationship to
 test('download presigns ONLY after authorization and ownership both pass', async () => {
   presignCalls.length = 0;
   const { reporter, ticket } = await seed();
-  const [attachment] = await addAttachments(reporter, ticket.id, [file()], enabled, { storage });
+  const [attachment] = (await addAttachments(reporter, ticket.id, [file()], enabled, { storage })).attachments;
 
   const url = await downloadUrl(reporter, ticket.id, attachment._id, enabled, { storage });
   assert.match(url, /^https:\/\/bucket\.example\//);
@@ -119,12 +119,25 @@ test('download presigns ONLY after authorization and ownership both pass', async
   assert.equal(presignCalls.length, 1, 'no URL was minted for the failed lookup');
 });
 
+test('an unrelated member cannot download attachments on a ticket they cannot view', async () => {
+  presignCalls.length = 0;
+  const { reporter, ticket } = await seed();
+  const stranger = await user('member');
+  const [attachment] = (await addAttachments(reporter, ticket.id, [file()], enabled, { storage })).attachments;
+
+  await assert.rejects(
+    () => downloadUrl(stranger, ticket.id, attachment._id, enabled, { storage }),
+    (err) => err.statusCode === 403 && err.code === 'FORBIDDEN',
+  );
+  assert.equal(presignCalls.length, 0, 'no URL was minted without authorization');
+});
+
 test('only the uploader or an admin may delete', async () => {
   deleteCalls.length = 0;
   const { reporter, ticket } = await seed();
   const stranger = await user('member');
   const admin = await user('admin');
-  const [attachment] = await addAttachments(reporter, ticket.id, [file()], enabled, { storage });
+  const [attachment] = (await addAttachments(reporter, ticket.id, [file()], enabled, { storage })).attachments;
 
   await assert.rejects(
     () => removeAttachment(stranger, ticket.id, attachment._id, enabled, { storage }),
@@ -143,4 +156,25 @@ test('with no storage group configured, attachment paths report 503', async () =
     () => addAttachments(reporter, ticket.id, [file()], disabled, { storage }),
     (err) => err.statusCode === 503 && err.code === 'CAPABILITY_DISABLED',
   );
+});
+
+test('commentContent creates a comment with inline attachments', async () => {
+  const { reporter, ticket } = await seed();
+
+  const result = await addAttachments(reporter, ticket.id, [file()], enabled, {
+    storage,
+    commentContent: 'See attached',
+    commentClientRef: 'cmt-1',
+  });
+
+  assert.equal(result.attachments.length, 1);
+  assert.equal(result.commentCreated, true);
+  assert.equal(result.comment.content, 'See attached');
+  assert.equal(result.comment.attachments.length, 1);
+  assert.equal(String(result.comment.attachments[0]._id), String(result.attachments[0]._id));
+
+  const stored = await Ticket.findById(ticket.id);
+  assert.equal(stored.comments.length, 1);
+  assert.equal(stored.comments[0].attachments.length, 1);
+  assert.equal(stored.attachments.length, 1);
 });

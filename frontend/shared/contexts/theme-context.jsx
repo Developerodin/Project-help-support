@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { applyTheme, readStoredTheme, THEME_STORAGE_KEY } from '../lib/theme.js';

@@ -1,6 +1,6 @@
-'use client';
+﻿'use client';
 
-import { Suspense, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiFetch } from '@/shared/api/client.js';
 import AuthFrame, { AuthBrand } from '@/shared/components/auth/auth-shell.jsx';
@@ -21,14 +21,42 @@ function AcceptInviteForm() {
   const params = useSearchParams();
   const router = useRouter();
   const token = params.get('token') || '';
-  const emailHint = params.get('email') || '';
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [expired, setExpired] = useState(false);
+  const [previewBusy, setPreviewBusy] = useState(Boolean(token));
 
-  const checks = useMemo(() => passwordChecks(password, emailHint), [password, emailHint]);
+  useEffect(() => {
+    if (!token) return undefined;
+
+    let cancelled = false;
+    setPreviewBusy(true);
+    setError(null);
+
+    apiFetch('/auth/invite/preview', { method: 'POST', body: { token } })
+      .then((result) => {
+        if (!cancelled) setEmail(result.email || '');
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        if (err?.code === 'INVALID_INVITE' || err?.status === 400) {
+          setExpired(true);
+          return;
+        }
+        setError(err);
+      })
+      .finally(() => {
+        if (!cancelled) setPreviewBusy(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [token]);
+
+  const checks = useMemo(() => passwordChecks(password, email), [password, email]);
 
   async function onSubmit(event) {
     event.preventDefault();
@@ -39,10 +67,10 @@ function AcceptInviteForm() {
     }
     setBusy(true);
     try {
-      await apiFetch('/auth/invite/accept', { method: 'POST', body: { token, password } });
+      await apiFetch('/auth/invite/accept', { method: 'POST', body: { token, name, password } });
       router.push('/login');
     } catch (err) {
-      if (err?.code === 'INVALID_TOKEN' || err?.status === 400) {
+      if (err?.code === 'INVALID_INVITE' || err?.status === 400) {
         const msg = String(err?.message || '').toLowerCase();
         if (msg.includes('expir') || msg.includes('invalid') || msg.includes('token')) {
           setExpired(true);
@@ -95,24 +123,44 @@ function AcceptInviteForm() {
     );
   }
 
+  if (previewBusy) {
+    return (
+      <AuthFrame>
+        <AuthBrand />
+        <p className="meta">Loading invite…</p>
+      </AuthFrame>
+    );
+  }
+
   return (
     <AuthFrame>
       <AuthBrand />
       <form className="form" onSubmit={onSubmit}>
-        <h1 id="heading">Set your password</h1>
-        <p className="sub">Setting a password is what accepts the invite.</p>
+        <h1 id="heading">Join your workspace</h1>
+        <p className="sub">Set your name and password to accept the invite.</p>
 
-        {emailHint ? (
-          <AuthField
-            icon="at"
-            id="invite-email"
-            label="Email"
-            type="email"
-            value={emailHint}
-            readOnly
-            onChange={() => {}}
-          />
-        ) : null}
+        <AuthField
+          icon="at"
+          id="invite-email"
+          label="Email"
+          type="email"
+          value={email}
+          readOnly
+          onChange={() => {}}
+        />
+
+        <AuthField
+          id="invite-name"
+          label="Name"
+          type="text"
+          autoComplete="name"
+          placeholder="Your name"
+          required
+          minLength={1}
+          bad={Boolean(error)}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
 
         <AuthField
           icon="lock"
@@ -163,11 +211,7 @@ function AcceptInviteForm() {
 
 export default function AcceptInvitePage() {
   return (
-    <Suspense fallback={(
-      <AuthFrame>
-        <div className="form"><p className="sub">Loading…</p></div>
-      </AuthFrame>
-    )}>
+    <Suspense fallback={<p className="meta">Loading…</p>}>
       <AcceptInviteForm />
     </Suspense>
   );

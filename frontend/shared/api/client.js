@@ -40,8 +40,8 @@ async function readError(response) {
   });
 }
 
-async function rawFetch(path, { method = 'GET', body, formData, signal } = {}) {
-  const headers = {};
+async function rawFetch(path, { method = 'GET', body, formData, signal, redirect, headers: extraHeaders, ...rest } = {}) {
+  const headers = { ...(extraHeaders || {}) };
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
   // FormData sets its own multipart boundary; setting Content-Type breaks it.
   if (body !== undefined && !formData) headers['Content-Type'] = 'application/json';
@@ -54,6 +54,8 @@ async function rawFetch(path, { method = 'GET', body, formData, signal } = {}) {
     credentials: 'include',
     body: formData ?? (body !== undefined ? JSON.stringify(body) : undefined),
     signal,
+    redirect,
+    ...rest,
   });
 }
 
@@ -66,7 +68,7 @@ async function refreshSession() {
   return true;
 }
 
-export async function apiFetch(path, options = {}) {
+async function fetchWithAuthRetry(path, options = {}) {
   let response = await rawFetch(path, options);
 
   // ONE refresh attempt, then give up. Retrying a failed refresh is how a
@@ -80,6 +82,26 @@ export async function apiFetch(path, options = {}) {
     }
     response = await rawFetch(path, options);
   }
+
+  return response;
+}
+
+function isRedirectResponse(response) {
+  return response.status === 301 || response.status === 302
+    || response.status === 303 || response.status === 307 || response.status === 308;
+}
+
+/** Like apiFetch but returns the raw Response (for redirects, blobs, etc.). */
+export async function apiFetchResponse(path, options = {}) {
+  const response = await fetchWithAuthRetry(path, options);
+
+  if (options.redirect === 'manual' && isRedirectResponse(response)) return response;
+  if (!response.ok) throw await readError(response);
+  return response;
+}
+
+export async function apiFetch(path, options = {}) {
+  const response = await fetchWithAuthRetry(path, options);
 
   if (!response.ok) throw await readError(response);
   if (response.status === 204) return null;

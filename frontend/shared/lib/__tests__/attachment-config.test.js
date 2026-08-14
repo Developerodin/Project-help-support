@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   formatFileSize,
   isAllowedAttachment,
@@ -16,6 +16,12 @@ describe('attachment-config', () => {
   it('allows common image and document types', () => {
     expect(isAllowedAttachment({ name: 'shot.png', type: 'image/png', size: 1 })).toBe(true);
     expect(isAllowedAttachment({ name: 'notes.txt', type: 'text/plain', size: 1 })).toBe(true);
+    expect(isAllowedAttachment({ name: 'report.docx', type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size: 1 })).toBe(true);
+    expect(isAllowedAttachment({ name: 'data.xlsx', type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size: 1 })).toBe(true);
+    expect(isAllowedAttachment({ name: 'photo.bmp', type: 'image/bmp', size: 1 })).toBe(true);
+    expect(isAllowedAttachment({ name: 'readme.md', type: 'text/markdown', size: 1 })).toBe(true);
+    expect(isAllowedAttachment({ name: 'config.yaml', type: 'text/yaml', size: 1 })).toBe(true);
+    expect(isAllowedAttachment({ name: 'archive.7z', type: 'application/x-7z-compressed', size: 1 })).toBe(true);
   });
 
   it('rejects blocked extensions', () => {

@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { Suspense, useState } from 'react';
 import Link from 'next/link';
@@ -107,11 +107,7 @@ function ResetPasswordForm() {
 
 export default function ResetPasswordPage() {
   return (
-    <Suspense fallback={(
-      <AuthFrame>
-        <div className="form"><p className="sub">Loading…</p></div>
-      </AuthFrame>
-    )}>
+    <Suspense fallback={<p className="meta">Loading…</p>}>
       <ResetPasswordForm />
     </Suspense>
   );

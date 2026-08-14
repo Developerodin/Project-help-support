@@ -1,4 +1,4 @@
-﻿export const ACTIVE_PROJECT_STORAGE_KEY = 'pms:activeProjectId';
+export const ACTIVE_PROJECT_STORAGE_KEY = 'pms:activeProjectId';
 
 /** @returns {string | null} project id, or null for all projects */
 export function readStoredProjectId() {

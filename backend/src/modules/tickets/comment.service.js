@@ -5,7 +5,7 @@ import { resolveTicketDoc } from './ticket.service.js';
 
 const sameId = (a, b) => !!a && !!b && String(a._id ?? a) === String(b._id ?? b);
 
-function findComment(ticket, commentId) {
+export function findComment(ticket, commentId) {
   const comment = ticket.comments.id(commentId);
   if (!comment) throw new ApiError(404, 'COMMENT_NOT_FOUND', 'Comment not found');
   return comment;

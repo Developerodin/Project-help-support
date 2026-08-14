@@ -4,7 +4,7 @@ import { withMemoryDb } from '../../../platform/__tests__/helpers/memoryDb.js';
 import User from '../../users/user.model.js';
 import { hashToken } from '../token.service.js';
 import {
-  login, refresh, logout, createInvite, acceptInvite,
+  login, refresh, logout, createInvite, previewInvite, acceptInvite,
   requestPasswordReset, resetPassword, INVITE_TTL_HOURS,
 } from '../auth.service.js';
 
@@ -93,11 +93,12 @@ test('logout invalidates the presented refresh token only', async () => {
 
 test('createInvite stores only the token hash and returns the raw token once', async () => {
   const { user, inviteToken } = await createInvite(admin, {
-    name: 'Grace', email: 'Grace@Example.com', role: 'developer',
+    email: 'Grace@Example.com', role: 'developer',
   });
 
   assert.ok(inviteToken.length >= 32);
   assert.equal(user.email, 'grace@example.com');
+  assert.equal(user.name, '');
   assert.equal(user.status, 'invited');
   assert.equal(user.role, 'developer');
 
@@ -109,21 +110,47 @@ test('createInvite stores only the token hash and returns the raw token once', a
   assert.ok(hoursOut > INVITE_TTL_HOURS - 1 && hoursOut <= INVITE_TTL_HOURS);
 });
 
-test('createInvite rejects a duplicate email', async () => {
-  await createInvite(admin, { name: 'Grace', email: 'grace@example.com', role: 'member' });
-  const err = await createInvite(admin, { name: 'Grace 2', email: 'GRACE@example.com', role: 'member' })
+test('createInvite rejects a duplicate invited email', async () => {
+  await createInvite(admin, { email: 'grace@example.com', role: 'member' });
+  const err = await createInvite(admin, { email: 'GRACE@example.com', role: 'member' })
+    .catch((e) => e);
+  assert.equal(err.statusCode, 400);
+  assert.equal(err.code, 'INVITE_PENDING');
+});
+
+test('createInvite rejects an active user email', async () => {
+  await activeUser();
+  const err = await createInvite(admin, { email: 'ada@example.com', role: 'member' })
     .catch((e) => e);
   assert.equal(err.statusCode, 400);
   assert.equal(err.code, 'EMAIL_TAKEN');
 });
 
-test('acceptInvite activates the user, sets the password and consumes the token', async () => {
+test('createInvite rejects an inactive user email with a distinct error', async () => {
+  await User.create({
+    name: 'Former', email: 'former@example.com', password: 'some-password-value', status: 'inactive',
+  });
+  const err = await createInvite(admin, { email: 'former@example.com', role: 'member' })
+    .catch((e) => e);
+  assert.equal(err.statusCode, 400);
+  assert.equal(err.code, 'USER_INACTIVE');
+  assert.match(err.message, /deactivated/i);
+});
+
+test('previewInvite returns the invite email from the token', async () => {
+  const { inviteToken } = await createInvite(admin, { email: 'grace@example.com', role: 'qa' });
+  const preview = await previewInvite(inviteToken);
+  assert.equal(preview.email, 'grace@example.com');
+});
+
+test('acceptInvite activates the user, sets the name and password and consumes the token', async () => {
   const { inviteToken } = await createInvite(admin, {
-    name: 'Grace', email: 'grace@example.com', role: 'qa',
+    email: 'grace@example.com', role: 'qa',
   });
 
-  const user = await acceptInvite(inviteToken, 'a-brand-new-password');
+  const user = await acceptInvite(inviteToken, 'Grace Hopper', 'a-brand-new-password');
   assert.equal(user.status, 'active');
+  assert.equal(user.name, 'Grace Hopper');
 
   const stored = await User.findById(user.id).select('+password +inviteTokenHash');
   assert.equal(stored.inviteTokenHash, undefined);
@@ -132,25 +159,25 @@ test('acceptInvite activates the user, sets the password and consumes the token'
 
 test('an invite token is single-use', async () => {
   const { inviteToken } = await createInvite(admin, {
-    name: 'Grace', email: 'grace@example.com', role: 'member',
+    email: 'grace@example.com', role: 'member',
   });
-  await acceptInvite(inviteToken, 'a-brand-new-password');
+  await acceptInvite(inviteToken, 'Grace Hopper', 'a-brand-new-password');
   await assert.rejects(
-    () => acceptInvite(inviteToken, 'another-password'),
+    () => acceptInvite(inviteToken, 'Grace Hopper', 'another-password'),
     (e) => e.code === 'INVALID_INVITE',
   );
 });
 
 test('an expired invite token is refused', async () => {
   const { user, inviteToken } = await createInvite(admin, {
-    name: 'Grace', email: 'grace@example.com', role: 'member',
+    email: 'grace@example.com', role: 'member',
   });
   await User.updateOne(
     { _id: user.id },
     { $set: { inviteTokenExpiresAt: new Date(Date.now() - 1000) } },
   );
   await assert.rejects(
-    () => acceptInvite(inviteToken, 'another-password'),
+    () => acceptInvite(inviteToken, 'Grace Hopper', 'another-password'),
     (e) => e.code === 'INVALID_INVITE',
   );
 });

@@ -9,6 +9,22 @@ export const NOTIFICATION_EVENTS = Object.freeze([
   'TICKET_ESTIMATE_SET',
 ]);
 
+/** Human-readable labels for UI display; API keys stay SCREAMING_SNAKE_CASE. */
+export const NOTIFICATION_EVENT_LABELS = Object.freeze({
+  TICKET_CREATED: 'Ticket created',
+  TICKET_ASSIGNED: 'Ticket assigned',
+  TICKET_STAGE_CHANGED: 'Ticket stage changed',
+  TICKET_REOPENED: 'Ticket reopened',
+  TICKET_CLOSED: 'Ticket closed',
+  TICKET_COMMENTED: 'Ticket commented',
+  TICKET_MENTIONED: 'Ticket mentioned',
+  TICKET_ESTIMATE_SET: 'Ticket estimate set',
+});
+
+export function notificationEventLabel(event) {
+  return NOTIFICATION_EVENT_LABELS[event] ?? event;
+}
+
 /**
  * An unset user preference resolves through this table — never to `true`.
  * Dharwin's tracker has no pref key at all, so `isChannelAllowed` returns true

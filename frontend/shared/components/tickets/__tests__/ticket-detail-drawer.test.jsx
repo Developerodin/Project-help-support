@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import TicketDetailDrawer from '../ticket-detail-drawer.jsx';
 
@@ -14,6 +14,7 @@ vi.mock('@/shared/api/tickets.js', () => ({
   addComment: vi.fn(),
   uploadAttachments: (...args) => uploadAttachments(...args),
   attachmentDownloadUrl: () => '/x',
+  resolveAttachmentDownloadUrl: vi.fn().mockResolvedValue('https://example.com/shot.png'),
   watchTicket: vi.fn(),
   unwatchTicket: vi.fn(),
   setBlocked: vi.fn(),
@@ -38,22 +39,48 @@ describe('TicketDetailDrawer', () => {
     uploadAttachments.mockReset().mockResolvedValue([]);
   });
 
-  it('loads the ticket by its human id and shows the drawer layout', async () => {
+  it('loads the ticket by its human id and shows the three-section drawer layout', async () => {
     render(<TicketDetailDrawer ticketId="WEB-101" onClose={() => {}} onChanged={() => {}} />);
 
     await waitFor(() => expect(getTicket).toHaveBeenCalledWith('WEB-101'));
     expect(await screen.findByText('WEB-101')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Stage', hidden: true })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Details', hidden: true })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /discussion/i })).toBeInTheDocument();
-    expect(screen.getByRole('complementary', { name: /ticket details/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /^details$/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /history/i })).toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: /ticket metadata/i })).toBeInTheDocument();
     expect(screen.getByText('Intake')).toBeInTheDocument();
     expect(screen.getByText('Development')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /attach/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/add a comment/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /move to under review/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('tab', { name: /^details$/i }));
+    expect(screen.getByRole('heading', { name: 'Details', hidden: true })).toBeInTheDocument();
+    expect(screen.getByText('Estimates')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('tab', { name: /history/i }));
     expect(screen.getByText(/no stage changes recorded yet/i)).toBeInTheDocument();
+  });
+
+  it('keeps metadata rail out of the discussion tab scroll area', async () => {
+    render(<TicketDetailDrawer ticketId="WEB-101" onClose={() => {}} onChanged={() => {}} />);
+    await screen.findByText('WEB-101');
+
+    const discussion = document.getElementById('panel-discussion');
+    expect(discussion).toBeTruthy();
+    const discussionScope = within(discussion);
+
+    expect(discussionScope.queryByText('Resolution estimate')).not.toBeInTheDocument();
+    expect(discussionScope.queryByText('Expected release')).not.toBeInTheDocument();
+    expect(discussionScope.queryByText('In current stage')).not.toBeInTheDocument();
+    expect(discussionScope.queryByLabelText(/add attachments/i)).not.toBeInTheDocument();
+    expect(discussionScope.getByRole('button', { name: /^attach$/i })).toBeInTheDocument();
+    expect(discussionScope.getByLabelText(/add a comment/i)).toBeInTheDocument();
+
+    const rail = screen.getByRole('complementary', { name: /ticket metadata/i });
+    expect(within(rail).getByText('Resolution estimate')).toBeInTheDocument();
+    expect(within(rail).getByText('Assignee')).toBeInTheDocument();
   });
 
   it('closing calls back — it does not navigate', async () => {
@@ -61,7 +88,7 @@ describe('TicketDetailDrawer', () => {
     render(<TicketDetailDrawer ticketId="WEB-101" onClose={onClose} onChanged={() => {}} />);
 
     await screen.findByText('WEB-101');
-    await userEvent.click(screen.getByRole('button', { name: /close/i }));
+    await userEvent.click(screen.getByRole('button', { name: /close ticket/i }));
 
     expect(onClose).toHaveBeenCalled();
   });
@@ -70,8 +97,7 @@ describe('TicketDetailDrawer', () => {
     render(<TicketDetailDrawer ticketId="WEB-101" onClose={() => {}} onChanged={() => {}} />);
     await screen.findByText('WEB-101');
 
-    await userEvent.click(screen.getByRole('button', { name: /move to/i }));
-    await userEvent.click(screen.getByRole('menuitem', { name: 'Under Review' }));
+    await userEvent.click(screen.getByRole('button', { name: /move to under review/i }));
 
     await waitFor(() => expect(transitionTicket).toHaveBeenCalledWith(
       'WEB-101', { to: 'under_review', revision: 3 },
@@ -89,8 +115,7 @@ describe('TicketDetailDrawer', () => {
     render(<TicketDetailDrawer ticketId="WEB-101" onClose={() => {}} onChanged={() => {}} />);
     await screen.findByText('WEB-101');
 
-    await userEvent.click(screen.getByRole('button', { name: /move to/i }));
-    await userEvent.click(screen.getByRole('menuitem', { name: 'Under Review' }));
+    await userEvent.click(screen.getByRole('button', { name: /move to under review/i }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/reload/i);
   });
@@ -110,8 +135,7 @@ describe('TicketDetailDrawer', () => {
     render(<TicketDetailDrawer ticketId="WEB-101" onClose={() => {}} onChanged={() => {}} />);
     await screen.findByText('WEB-101');
 
-    await userEvent.click(screen.getByRole('button', { name: /move to/i }));
-    await userEvent.click(screen.getByRole('menuitem', { name: 'In Progress' }));
+    await userEvent.click(screen.getByRole('listitem', { name: 'In Progress' }));
 
     expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /dates required/i })).toBeInTheDocument();
@@ -137,8 +161,7 @@ describe('TicketDetailDrawer', () => {
     render(<TicketDetailDrawer ticketId="WEB-101" onClose={() => {}} onChanged={() => {}} />);
     await screen.findByText('WEB-101');
 
-    await userEvent.click(screen.getByRole('button', { name: /move to/i }));
-    await userEvent.click(screen.getByRole('menuitem', { name: 'In Progress' }));
+    await userEvent.click(screen.getByRole('listitem', { name: 'In Progress' }));
     await screen.findByRole('alertdialog');
     await userEvent.click(screen.getByRole('button', { name: /got it/i }));
 

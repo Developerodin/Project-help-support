@@ -9,6 +9,7 @@ export const listUsers = (params = {}) => {
 
 export const inviteUser = (body) => apiFetch('/users', { method: 'POST', body });
 export const patchUser = (id, body) => apiFetch(`/users/${id}`, { method: 'PATCH', body });
+export const deleteUser = (id) => apiFetch(`/users/${id}`, { method: 'DELETE' });
 export const resendInvite = (id) => apiFetch(`/users/${id}/resend-invite`, { method: 'POST' });
 export const updateNotificationPrefs = (body) =>
   apiFetch('/users/me/notification-prefs', { method: 'PATCH', body });

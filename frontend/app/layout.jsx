@@ -1,4 +1,4 @@
-﻿import './globals.css';
+import './globals.css';
 import { ThemeProvider } from '@/shared/contexts/theme-context.jsx';
 import { BRAND_DESCRIPTION, BRAND_FULL } from '@/shared/lib/brand.js';
 import { themeInitScript } from '@/shared/lib/theme.js';

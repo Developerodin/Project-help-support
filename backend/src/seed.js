@@ -1,4 +1,4 @@
-﻿import { WEB_MODULE_TAXONOMY } from '@pms/shared';
+import { WEB_MODULE_TAXONOMY } from '@pms/shared';
 import User from './modules/users/user.model.js';
 import Project, { RESERVED_PROJECT_KEYS } from './modules/projects/project.model.js';
 import Notification from './modules/notifications/notification.model.js';

@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useRef, useState } from 'react';
 import Icon, { initials } from '../icons.jsx';
@@ -6,12 +6,17 @@ import AttachmentUploadLoader from '../attachment-upload-loader.jsx';
 import { attachmentErrorMessage } from '@/shared/lib/api-error.js';
 import {
   ATTACHMENT_ACCEPT,
+  ATTACHMENT_HINT,
   formatFileSize,
   validateAttachmentBatch,
   buildAttachmentFormData,
 } from '@/shared/lib/attachment-config.js';
+import {
+  TicketAttachmentImage,
+  TicketAttachmentLink,
+} from './ticket-attachment.jsx';
 
-const COMPOSER_HINT = 'PNG, JPG, PDF, TXT or LOG Â· 10 MB';
+const COMPOSER_HINT = ATTACHMENT_HINT;
 
 function formatWhen(iso) {
   if (!iso) return '';
@@ -21,6 +26,47 @@ function formatWhen(iso) {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function isImageAttachment(file) {
+  const mime = file.mimeType || file.type || '';
+  if (mime.startsWith('image/')) return true;
+  return /\.(png|jpe?g|gif|webp|bmp|tiff?|avif|ico)$/i.test(file.name || '');
+}
+
+function CommentAttachment({ ticketId, file }) {
+  const attachmentId = file._id || file.id;
+
+  if (isImageAttachment(file) && attachmentId) {
+    return (
+      <TicketAttachmentImage
+        ticketId={ticketId}
+        attachmentId={attachmentId}
+        alt={file.name}
+        className="attach attach-img"
+      >
+        <span className="nm">{file.name}</span>
+        {file.size != null && <span className="sz">{formatFileSize(file.size)}</span>}
+      </TicketAttachmentImage>
+    );
+  }
+
+  return (
+    <span className="attach">
+      <Icon name="clip" size={12} />
+      {attachmentId ? (
+        <TicketAttachmentLink ticketId={ticketId} attachmentId={attachmentId}>
+          {file.name}
+        </TicketAttachmentLink>
+      ) : file.name}
+      {file.size != null && <span className="sz">{formatFileSize(file.size)}</span>}
+    </span>
+  );
+}
+
+function attachOnlyContent(files) {
+  if (files.length === 1) return files[0].name;
+  return `Attached ${files.length} files`;
 }
 
 export default function TicketComments({ ticket, onAdd, onUpload }) {
@@ -42,10 +88,12 @@ export default function TicketComments({ ticket, onAdd, onUpload }) {
     setAttachError(null);
     try {
       if (pendingFiles.length && onUpload) {
-        await onUpload(buildAttachmentFormData(pendingFiles));
+        await onUpload(buildAttachmentFormData(pendingFiles, {
+          commentContent: content.trim() || attachOnlyContent(pendingFiles),
+        }));
         setPendingFiles([]);
-      }
-      if (content.trim()) {
+        setContent('');
+      } else if (content.trim()) {
         await onAdd({ content: content.trim(), clientRef: crypto.randomUUID() });
         setContent('');
       }
@@ -79,11 +127,11 @@ export default function TicketComments({ ticket, onAdd, onUpload }) {
             </div>
             <p>{comment.content}</p>
             {comment.attachments?.map((file) => (
-              <span key={file._id || file.id || file.name} className="attach">
-                <Icon name="clip" size={12} />
-                {file.name}
-                {file.size != null && <span className="sz">{formatFileSize(file.size)}</span>}
-              </span>
+              <CommentAttachment
+                key={file._id || file.id || file.name}
+                ticketId={ticket.ticketId}
+                file={file}
+              />
             ))}
           </div>
         </article>
@@ -134,9 +182,6 @@ export default function TicketComments({ ticket, onAdd, onUpload }) {
             Attach
           </button>
           <span className="meta">{COMPOSER_HINT}</span>
-          {pendingFiles.length > 0 && (
-            <span className="meta">Files appear in Details â†’ Files after posting</span>
-          )}
           {attachError && <span className="field-hint invalid" role="alert">{attachError}</span>}
           <input
             ref={inputRef}
@@ -165,4 +210,3 @@ export default function TicketComments({ ticket, onAdd, onUpload }) {
     </section>
   );
 }
-

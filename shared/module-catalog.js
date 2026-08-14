@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Web app module + page taxonomy for ticket location fields.
  * Ported from Dharwin Help & Support dev-ticket-modules.ts (sidebar nav catalog).
  * Keep in sync when Dharwin navigation changes.

@@ -1,13 +1,12 @@
-﻿import { BRAND_NAME, BRAND_TAGLINE, BRAND_DESCRIPTION } from '@/shared/lib/brand.js';
+import { BRAND_NAME, BRAND_TAGLINE, BRAND_DESCRIPTION } from '@/shared/lib/brand.js';
 import AuthBackground from './auth-background.jsx';
+import BrandMark from '@/shared/components/brand-mark.jsx';
 
 export function AuthBrand() {
   return (
     <header className="auth-header">
       <div className="brand">
-        <span className="mark" aria-hidden="true">
-          <span /><span /><span />
-        </span>
+        <BrandMark id="auth" />
         {/* Two spans, one wordmark: the phone stacks them, the desktop wraps
             them as the single line of prose it has always been. */}
         <b>

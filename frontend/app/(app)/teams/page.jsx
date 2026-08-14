@@ -1,10 +1,14 @@
-'use client';
+﻿'use client';
 
 import { useCallback, useEffect, useState } from 'react';
 import { listTeams, createTeam, updateMembers } from '@/shared/api/teams.js';
 import { listProjects } from '@/shared/api/projects.js';
 import { listUsers } from '@/shared/api/users.js';
 import FormError from '@/shared/components/form-error.jsx';
+import ConfirmDialog from '@/shared/components/confirm-dialog.jsx';
+import TeamCard from '@/shared/components/teams/team-card.jsx';
+import { normalizeApiError } from '@/shared/lib/api-error.js';
+import { showToast } from '@/shared/lib/toast.js';
 
 export default function TeamsPage() {
   const [teams, setTeams] = useState([]);
@@ -12,9 +16,19 @@ export default function TeamsPage() {
   const [users, setUsers] = useState([]);
   const [draft, setDraft] = useState({ name: '', project: '' });
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [createBusy, setCreateBusy] = useState(false);
+  const [addBusyTeamId, setAddBusyTeamId] = useState(null);
+  const [confirmRemove, setConfirmRemove] = useState(null);
+  const [removeBusy, setRemoveBusy] = useState(false);
+  const [removingMemberId, setRemovingMemberId] = useState(null);
 
   const reload = useCallback(() => {
-    listTeams().then((p) => setTeams(p.results)).catch(setError);
+    setLoading(true);
+    return listTeams()
+      .then((p) => setTeams(p.results))
+      .catch(setError)
+      .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
@@ -26,11 +40,60 @@ export default function TeamsPage() {
   async function create(event) {
     event.preventDefault();
     setError(null);
+    setCreateBusy(true);
     try {
-      await createTeam({ name: draft.name, project: draft.project || null });
+      await createTeam({ name: draft.name.trim(), project: draft.project || null });
       setDraft({ name: '', project: '' });
-      reload();
-    } catch (err) { setError(err); }
+      showToast('Team created');
+      await reload();
+    } catch (err) {
+      setError(err);
+    } finally {
+      setCreateBusy(false);
+    }
+  }
+
+  async function handleAddMembers(teamId, userIds) {
+    setError(null);
+    setAddBusyTeamId(teamId);
+    try {
+      await updateMembers(teamId, { add: userIds });
+      const count = userIds.length;
+      showToast(count === 1 ? 'Member added' : `${count} members added`);
+      await reload();
+    } catch (err) {
+      const message = normalizeApiError(err)?.message || 'Could not add members';
+      setError(err);
+      showToast(message);
+      throw err;
+    } finally {
+      setAddBusyTeamId(null);
+    }
+  }
+
+  function requestRemove(team, member) {
+    setConfirmRemove({ team, member });
+  }
+
+  async function confirmRemoveMember() {
+    if (!confirmRemove) return;
+    const { team, member } = confirmRemove;
+    setRemoveBusy(true);
+    setRemovingMemberId(member.id);
+    setError(null);
+    try {
+      await updateMembers(team.id, { remove: [member.id] });
+      showToast(`${member.name} removed from ${team.name}`);
+      setConfirmRemove(null);
+      await reload();
+    } catch (err) {
+      const message = normalizeApiError(err)?.message || 'Could not remove member';
+      setError(err);
+      showToast(message);
+    } finally {
+      setRemoveBusy(false);
+      setRemovingMemberId(null);
+    }
   }
 
   return (
@@ -43,50 +106,78 @@ export default function TeamsPage() {
       </div>
       <FormError error={error} />
 
-      <form className="toolbar" onSubmit={create}>
-        <label className="lbl" htmlFor="team-name">Team name</label>
-        <input id="team-name" required placeholder="Team name" value={draft.name}
-          onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-        <label className="lbl" htmlFor="team-project">Project scope</label>
-        <select id="team-project" value={draft.project}
-          onChange={(e) => setDraft({ ...draft, project: e.target.value })}>
-          <option value="">Global (all projects)</option>
-          {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-        <button type="submit" className="btn btn-primary">Create team</button>
-      </form>
+      <section className="panel panel-spaced team-create-panel">
+        <header>
+          <h3>Create team</h3>
+        </header>
+        <p className="note-line">Teams can be global or scoped to one project.</p>
+        <form className="toolbar team-create-form" onSubmit={create}>
+          <label htmlFor="team-name">Team name</label>
+          <input
+            id="team-name"
+            required
+            placeholder="e.g. Platform"
+            value={draft.name}
+            onChange={(e) => setDraft({ ...draft, project: draft.project, name: e.target.value })}
+          />
+          <label htmlFor="team-project">Project scope</label>
+          <select
+            id="team-project"
+            value={draft.project}
+            onChange={(e) => setDraft({ ...draft, name: draft.name, project: e.target.value })}
+          >
+            <option value="">Global (all projects)</option>
+            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <button type="submit" className="btn btn-primary" disabled={createBusy} aria-busy={createBusy || undefined}>
+            {createBusy ? (
+              <>
+                <span className="btn-spin" aria-hidden="true" />
+                Creating…
+              </>
+            ) : (
+              'Create team'
+            )}
+          </button>
+        </form>
+      </section>
 
-      {teams.length === 0 ? (
-        <div className="empty">
+      {loading ? (
+        <p className="meta" role="status">Loading teams…</p>
+      ) : teams.length === 0 ? (
+        <div className="empty-state">
           <h3>No teams yet</h3>
-          <p>Create a team to route tickets to a group. Teams can be global or scoped to one project.</p>
+          <p>Create a team above to route tickets to a group. Teams can be global or scoped to one project.</p>
         </div>
       ) : (
-      <div className="teamgrid">
-        {teams.map((team) => (
-          <section key={team.id} className="panel">
-            <header>
-              <h3>{team.name}</h3>
-              <span className="spacer" />
-              <span className="chip">{team.project ? team.project.key : 'global'}</span>
-            </header>
-            <p className="meta">{team.members.map((m) => m.name).join(', ') || 'No members'}</p>
-            <label className="lbl" htmlFor={`add-${team.id}`}>Add member</label>
-            <select
-              id={`add-${team.id}`} defaultValue=""
-              onChange={async (e) => {
-                if (!e.target.value) return;
-                await updateMembers(team.id, { add: [e.target.value] });
-                reload();
-              }}
-            >
-              <option value="">—</option>
-              {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
-          </section>
-        ))}
-      </div>
+        <div className="teams-cards-grid">
+          {teams.map((team) => (
+            <TeamCard
+              key={team.id}
+              team={team}
+              users={users}
+              onAddMembers={handleAddMembers}
+              onRequestRemove={requestRemove}
+              addBusy={addBusyTeamId === team.id}
+              removingMemberId={confirmRemove?.team.id === team.id ? removingMemberId : null}
+            />
+          ))}
+        </div>
       )}
+
+      <ConfirmDialog
+        open={Boolean(confirmRemove)}
+        title={confirmRemove ? `Remove ${confirmRemove.member.name}?` : ''}
+        message={confirmRemove
+          ? `They will no longer receive tickets routed to ${confirmRemove.team.name}.`
+          : ''}
+        confirmLabel="Remove"
+        cancelLabel="Cancel"
+        danger
+        busy={removeBusy}
+        onConfirm={confirmRemoveMember}
+        onCancel={() => { if (!removeBusy) setConfirmRemove(null); }}
+      />
     </>
   );
 }

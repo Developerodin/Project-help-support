@@ -1,4 +1,4 @@
-﻿export const THEME_STORAGE_KEY = 'pms-theme';
+export const THEME_STORAGE_KEY = 'pms-theme';
 
 /** @typedef {'light' | 'dark'} Theme */
 

@@ -5,6 +5,8 @@ import { withMemoryDb } from '../../../platform/__tests__/helpers/memoryDb.js';
 import User from '../../users/user.model.js';
 import Project from '../../projects/project.model.js';
 import { createApp } from '../../../app.js';
+import Ticket from '../ticket.model.js';
+import mongoose from 'mongoose';
 import { generateAccessToken } from '../../auth/token.service.js';
 
 withMemoryDb();
@@ -159,4 +161,126 @@ test('POST /v1/tickets/:id/comments rejects empty content', async () => {
 
   assert.equal(res.body.error.code, 'VALIDATION_ERROR');
   assert.ok(res.body.requestId);
+});
+
+test('an unauthenticated GET /v1/tickets/:id gets 401 carrying a requestId', async () => {
+  const { user, project } = await actorAndProject();
+  await request(app()).post('/v1/tickets').set('Authorization', bearer(user))
+    .send(createBody(project._id));
+
+  const res = await request(app()).get('/v1/tickets/WEB-1').expect(401);
+
+  assert.equal(res.body.error.code, 'UNAUTHENTICATED');
+  assert.ok(res.body.requestId);
+});
+
+test('GET /v1/tickets/:id returns 403 for a member with no relationship to the ticket', async () => {
+  const { user, project } = await actorAndProject();
+  await request(app()).post('/v1/tickets').set('Authorization', bearer(user))
+    .send(createBody(project._id));
+
+  const stranger = await User.create({
+    name: 'Bob', email: `${Math.random().toString(36).slice(2)}@example.com`,
+    password: 'a-long-enough-password', status: 'active', role: 'member',
+  });
+
+  const res = await request(app())
+    .get('/v1/tickets/WEB-1')
+    .set('Authorization', bearer(stranger))
+    .expect(403);
+
+  assert.equal(res.body.error.code, 'FORBIDDEN');
+});
+
+test('GET /v1/tickets/:id/attachments/:attachmentId/download returns a presigned URL as JSON', async () => {
+  const enabledConfig = {
+    ...config,
+    features: { attachments: true, email: false, seed: false },
+    storage: {
+      region: 'us-east-1',
+      accessKeyId: 'key',
+      secretAccessKey: 'secret',
+      bucket: 'test-bucket',
+    },
+  };
+  const enabledApp = () => createApp(enabledConfig);
+
+  const { user, project } = await actorAndProject();
+  await request(enabledApp()).post('/v1/tickets').set('Authorization', bearer(user))
+    .send(createBody(project._id));
+
+  const attachmentId = new mongoose.Types.ObjectId();
+  await Ticket.updateOne(
+    { ticketId: 'WEB-1' },
+    {
+      $push: {
+        attachments: {
+          _id: attachmentId,
+          key: `tickets/${user._id}/test.png`,
+          name: 'shot.png',
+          size: 128,
+          mimeType: 'image/png',
+          uploadedBy: user._id,
+          uploadedAt: new Date(),
+        },
+      },
+    },
+  );
+
+  const res = await request(enabledApp())
+    .get(`/v1/tickets/WEB-1/attachments/${attachmentId}/download`)
+    .set('Authorization', bearer(user))
+    .set('Accept', 'application/json')
+    .expect(200);
+
+  assert.match(res.body.url, /^https:\/\/test-bucket\.s3\.us-east-1\.amazonaws\.com\//);
+});
+
+test('GET /v1/tickets/:id/attachments/:attachmentId/download returns 403 for an unrelated member', async () => {
+  const enabledConfig = {
+    ...config,
+    features: { attachments: true, email: false, seed: false },
+    storage: {
+      region: 'us-east-1',
+      accessKeyId: 'key',
+      secretAccessKey: 'secret',
+      bucket: 'test-bucket',
+    },
+  };
+  const enabledApp = () => createApp(enabledConfig);
+
+  const { user, project } = await actorAndProject();
+  await request(enabledApp()).post('/v1/tickets').set('Authorization', bearer(user))
+    .send(createBody(project._id));
+
+  const attachmentId = new mongoose.Types.ObjectId();
+  await Ticket.updateOne(
+    { ticketId: 'WEB-1' },
+    {
+      $push: {
+        attachments: {
+          _id: attachmentId,
+          key: `tickets/${user._id}/test.png`,
+          name: 'shot.png',
+          size: 128,
+          mimeType: 'image/png',
+          uploadedBy: user._id,
+          uploadedAt: new Date(),
+        },
+      },
+    },
+  );
+
+  const stranger = await User.create({
+    name: 'Eve', email: `${Math.random().toString(36).slice(2)}@example.com`,
+    password: 'a-long-enough-password', status: 'active', role: 'member',
+  });
+
+  const res = await request(enabledApp())
+    .get(`/v1/tickets/WEB-1/attachments/${attachmentId}/download`)
+    .set('Authorization', bearer(stranger))
+    .set('Accept', 'application/json')
+    .expect(403);
+
+  assert.equal(res.body.error.code, 'FORBIDDEN');
 });

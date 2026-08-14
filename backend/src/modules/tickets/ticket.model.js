@@ -159,6 +159,7 @@ ticketSchema.index({ assignedTo: 1, status: 1 });
 ticketSchema.index({ team: 1, status: 1 });
 ticketSchema.index({ createdBy: 1 });
 ticketSchema.index({ createdAt: -1 });
+ticketSchema.index({ module: 1 });
 ticketSchema.index({ title: 'text', description: 'text' });
 
 ticketSchema.plugin(toJSON);

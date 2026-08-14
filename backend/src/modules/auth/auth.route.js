@@ -7,7 +7,7 @@ import {
 } from '../../platform/rateLimit.js';
 import * as controller from './auth.controller.js';
 import {
-  loginSchema, acceptInviteSchema, forgotPasswordSchema, resetPasswordSchema,
+  loginSchema, previewInviteSchema, acceptInviteSchema, forgotPasswordSchema, resetPasswordSchema,
 } from './auth.validation.js';
 
 /**
@@ -24,6 +24,7 @@ export default function authRoutes(config, deliverReset) {
   router.post('/logout', origin, controller.logout(config));
   router.get('/me', auth(config), controller.me);
 
+  router.post('/invite/preview', inviteAcceptLimiter, validate(previewInviteSchema), controller.previewInvite);
   router.post('/invite/accept', inviteAcceptLimiter, validate(acceptInviteSchema), controller.acceptInvite);
   router.post('/forgot-password', passwordResetLimiter, validate(forgotPasswordSchema),
     controller.forgotPassword(deliverReset));

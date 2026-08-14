@@ -1,4 +1,4 @@
-﻿/** Minimal toast using `.toast` from design-system.css */
+/** Minimal toast using `.toast` from design-system.css */
 export function showToast(message, durationMs = 3200) {
   if (typeof document === 'undefined') return;
 

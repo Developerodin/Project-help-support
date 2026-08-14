@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { apiFetch, setAccessToken, ApiClientError } from '../client.js';
+import { apiFetch, apiFetchResponse, setAccessToken, ApiClientError } from '../client.js';
 
 const jsonResponse = (status, body) => new Response(JSON.stringify(body), {
   status, headers: { 'Content-Type': 'application/json' },
@@ -75,5 +75,26 @@ describe('apiFetch', () => {
     await apiFetch('/auth/me');
 
     expect(global.fetch.mock.calls[0][1].credentials).toBe('include');
+  });
+});
+
+describe('apiFetchResponse', () => {
+  beforeEach(() => {
+    setAccessToken('token-abc');
+    global.fetch = vi.fn();
+  });
+
+  it('returns a manual redirect without treating it as an error', async () => {
+    global.fetch.mockResolvedValueOnce(new Response(null, {
+      status: 302,
+      headers: { Location: 'https://s3.example/presigned' },
+    }));
+
+    const response = await apiFetchResponse('/tickets/T-1/attachments/a1/download', {
+      redirect: 'manual',
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe('https://s3.example/presigned');
   });
 });

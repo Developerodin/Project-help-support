@@ -1,10 +1,11 @@
-﻿'use client';
+'use client';
 
 import Link from 'next/link';
 import useSWR from 'swr';
 import Icon from '@/shared/components/icons.jsx';
 import { listNotifications, markAllRead, markRead } from '@/shared/api/notifications.js';
 import { formatRelativeTime, notificationHref } from '@/shared/lib/notification-utils.js';
+import AppLoader from '@/shared/components/app-loader.jsx';
 
 const POLL_MS = 30_000;
 const PAGE_LIMIT = 30;
@@ -47,10 +48,10 @@ export default function NotificationsPage() {
         </Link>
       </div>
 
-      {isLoading && items.length === 0 && <p className="meta">Loading...</p>}
+      {isLoading && items.length === 0 && <AppLoader inline />}
 
       {!isLoading && items.length === 0 && (
-        <div className="empty">
+        <div className="empty-state">
           <h3>No notifications</h3>
           <p>When someone assigns you a ticket or mentions you in a comment, it will show up here.</p>
           <Link href="/tickets" className="btn btn-primary">Browse tickets</Link>

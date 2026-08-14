@@ -41,4 +41,16 @@ export const uploadAttachments = (id, formData) =>
   apiFetch(`/tickets/${encodeURIComponent(id)}/attachments`, { method: 'POST', formData });
 
 export const attachmentDownloadUrl = (id, attachmentId) =>
-  `/tickets/${encodeURIComponent(id)}/attachments/${attachmentId}/download`;
+  `/tickets/${encodeURIComponent(id)}/attachments/${encodeURIComponent(attachmentId)}/download`;
+
+/**
+ * The download route requires Bearer auth, then returns a short-lived presigned URL.
+ * Browser navigation and <img src> cannot send that header, so resolve it here.
+ */
+export async function resolveAttachmentDownloadUrl(ticketId, attachmentId) {
+  const { url } = await apiFetch(attachmentDownloadUrl(ticketId, attachmentId), {
+    headers: { Accept: 'application/json' },
+  });
+  if (!url) throw new Error('Attachment download did not return a URL');
+  return url;
+}

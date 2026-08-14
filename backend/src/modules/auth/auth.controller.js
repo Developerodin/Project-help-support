@@ -47,8 +47,12 @@ export const me = catchAsync(async (req, res) => {
   res.status(200).json({ user: req.user.toJSON() });
 });
 
+export const previewInvite = catchAsync(async (req, res) => {
+  res.status(200).json(await authService.previewInvite(req.body.token));
+});
+
 export const acceptInvite = catchAsync(async (req, res) => {
-  const user = await authService.acceptInvite(req.body.token, req.body.password);
+  const user = await authService.acceptInvite(req.body.token, req.body.name, req.body.password);
   res.status(200).json({ user });
 });
 

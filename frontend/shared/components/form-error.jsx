@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useEffect, useState } from 'react';
 import { copyErrorId, logApiError, normalizeApiError } from '@/shared/lib/api-error.js';

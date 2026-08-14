@@ -1,4 +1,4 @@
-﻿/** @typedef {{ id: string, label: string, path: string }} PageFormRow */
+/** @typedef {{ id: string, label: string, path: string }} PageFormRow */
 /** @typedef {{ id: string, label: string, pages: PageFormRow[] }} ModuleFormRow */
 
 let rowCounter = 0;

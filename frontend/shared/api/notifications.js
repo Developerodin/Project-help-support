@@ -1,4 +1,4 @@
-﻿import { apiFetch } from './client.js';
+import { apiFetch } from './client.js';
 
 export const listNotifications = (params = {}) => {
   const qs = new URLSearchParams();

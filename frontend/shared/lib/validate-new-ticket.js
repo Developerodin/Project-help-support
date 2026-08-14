@@ -1,4 +1,4 @@
-﻿export const NEW_TICKET_FIELD_IDS = {
+export const NEW_TICKET_FIELD_IDS = {
   project: 'np',
   title: 'nt',
   description: 'nd',

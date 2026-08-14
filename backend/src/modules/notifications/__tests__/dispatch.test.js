@@ -45,7 +45,7 @@ test('one dispatch produces one in-app row and one email row per recipient', asy
   assert.equal(await EmailLog.countDocuments({}), 1);
 });
 
-test('a mail failure is logged and swallowed â€” the caller never sees it', async () => {
+test('a mail failure is logged and swallowed Ã¢â‚¬â€ the caller never sees it', async () => {
   const { actor, ticket } = await fixture();
   const exploding = { sendMail: async () => { throw new Error('smtp down'); } };
 
@@ -88,16 +88,29 @@ test('a comment dispatch notifies the always-set, and a mention only the mention
   assert.deepEqual(byEvent.TICKET_COMMENTED, [String(reporter._id)]);
   assert.deepEqual(byEvent.TICKET_MENTIONED, [String(mentioned._id)]);
 });
+
+test('TICKET_ESTIMATE_SET dispatch produces an in-app row for the reporter', async () => {
+  const { actor, ticket } = await fixture();
+
+  await dispatchTicketEvent({
+    event: { type: 'TICKET_ESTIMATE_SET' },
+    ticket, actor, config, deps: { transport: transport() },
+  });
+
+  assert.equal(await Notification.countDocuments({ event: 'TICKET_ESTIMATE_SET' }), 1);
+});
 test('invite deliverer sends accept link with token', async () => {
   const sent = [];
   const transport = { sendMail: async (m) => { sent.push(m); return {}; } };
   const deliver = buildInviteDeliverer(config, { transport });
 
-  await deliver({ user: { email: 'ada@example.com' }, inviteToken: 'abc123' });
+  await deliver({ user: { email: 'ada@example.com', name: 'Ada' }, inviteToken: 'abc123' });
 
   assert.equal(sent.length, 1);
   assert.equal(sent[0].to, 'ada@example.com');
   assert.match(sent[0].text, /invite\/accept\?token=abc123/);
+  assert.match(sent[0].html, /Accept invite/);
+  assert.match(sent[0].subject, /invited to Dharwin PMS/i);
 });
 
 test('invite deliverer skips send when email is disabled', async () => {
@@ -112,4 +125,7 @@ test('invite deliverer skips send when email is disabled', async () => {
 
   assert.equal(sent.length, 0);
 });
+
+
+
 

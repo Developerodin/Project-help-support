@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -6,8 +6,8 @@ import {
   watchTicket, unwatchTicket, setBlocked, clearBlocked,
 } from '@/shared/api/tickets.js';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
-import FormError from '@/shared/components/form-error.jsx';
 import Icon from '@/shared/components/icons.jsx';
+import FormError from '@/shared/components/form-error.jsx';
 import ValidationDialog from '@/shared/components/validation-dialog.jsx';
 import {
   getTransitionFieldErrors,
@@ -17,10 +17,13 @@ import {
   normalizeApiError,
 } from '@/shared/lib/api-error.js';
 import TicketHeader from './ticket-header.jsx';
-import TicketFields from './ticket-fields.jsx';
+import TicketDetailsTab from './ticket-details-tab.jsx';
+import TicketMetadataRail from './ticket-metadata-rail.jsx';
 import TicketStageBar from './ticket-stage-bar.jsx';
 import TicketHistory from './ticket-history.jsx';
 import TicketComments from './ticket-comments.jsx';
+import TicketDrawerFooter from './ticket-drawer-footer.jsx';
+import AppLoader from '../app-loader.jsx';
 
 export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
   const { user } = useAuth();
@@ -30,13 +33,21 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
   const [validationDialog, setValidationDialog] = useState(null);
   const [tab, setTab] = useState('discussion');
   const [blockReason, setBlockReason] = useState('');
+  const [railCollapsed, setRailCollapsed] = useState(false);
   const discussionRef = useRef(null);
+  const detailsRef = useRef(null);
   const historyRef = useRef(null);
+
+  const panelRefs = {
+    discussion: discussionRef,
+    details: detailsRef,
+    history: historyRef,
+  };
 
   const selectTab = useCallback((next) => {
     setTab(next);
     requestAnimationFrame(() => {
-      (next === 'discussion' ? discussionRef : historyRef).current?.focus();
+      panelRefs[next]?.current?.focus();
     });
   }, []);
 
@@ -51,6 +62,15 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return undefined;
+    const mq = window.matchMedia('(max-width: 767px)');
+    const sync = () => setRailCollapsed(mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
 
   const clearFieldError = useCallback((key) => {
     setFieldErrors((prev) => {
@@ -105,7 +125,7 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
         aria-label={ticket ? `Ticket ${ticket.ticketId}` : 'Ticket detail'}
         className={`ticket-drawer drawer${ticket ? ' on' : ''}`}
       >
-        {!ticket && <div className="drawer-body"><p className="meta">Loading…</p></div>}
+        {!ticket && <div className="drawer-body"><AppLoader inline /></div>}
         {ticket && (
           <>
             <div className="drawer-head">
@@ -119,9 +139,7 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
               />
               <FormError error={error} />
               {ticket.blocked && (
-                <p className="blocknote">
-                  <Icon name="alert" size={14} />
-                  <span>{ticket.blockerReason || 'Blocked'}</span>
+                <p className="blocknote"><Icon name="alert" size={14} /><span>{ticket.blockerReason || 'Blocked'}</span>
                 </p>
               )}
               <div className="drawer-rail">
@@ -132,56 +150,78 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
                   onTransition={run((body) => transitionTicket(ticket.ticketId, body))}
                 />
               </div>
-              <div className="tabs" role="tablist" aria-label="Ticket detail">
-                <button
-                  type="button" className="tab" role="tab" id="tab-discussion"
-                  aria-selected={tab === 'discussion'}
-                  aria-controls="panel-discussion"
-                  onClick={() => selectTab('discussion')}
-                >
-                  Discussion
-                  <span className="n">{ticket.comments?.length || 0}</span>
-                </button>
-                <button
-                  type="button" className="tab" role="tab" id="tab-history"
-                  aria-selected={tab === 'history'}
-                  aria-controls="panel-history"
-                  onClick={() => selectTab('history')}
-                >
-                  History
-                </button>
-              </div>
             </div>
 
             <div className="drawer-body">
-              <div className="detail-split">
-                <div>
-                  <div
-                    id="panel-discussion"
-                    role="tabpanel"
-                    aria-labelledby="tab-discussion"
-                    tabIndex={-1}
-                    ref={discussionRef}
-                    hidden={tab !== 'discussion'}
-                  >
-                    <TicketComments
-                      ticket={ticket}
-                      onAdd={run((body) => addComment(ticket.ticketId, body), { rethrow: true })}
-                      onUpload={run((form) => uploadAttachments(ticket.ticketId, form), { rethrow: true })}
-                    />
+              <div className="ticket-workspace">
+                <main className="ticket-main">
+                  <div className="tabs" role="tablist" aria-label="Ticket detail">
+                    <button
+                      type="button" className="tab" role="tab" id="tab-discussion"
+                      aria-selected={tab === 'discussion'}
+                      aria-controls="panel-discussion"
+                      onClick={() => selectTab('discussion')}
+                    >
+                      Discussion
+                      <span className="n">{ticket.comments?.length || 0}</span>
+                    </button>
+                    <button
+                      type="button" className="tab" role="tab" id="tab-details"
+                      aria-selected={tab === 'details'}
+                      aria-controls="panel-details"
+                      onClick={() => selectTab('details')}
+                    >
+                      Details
+                    </button>
+                    <button
+                      type="button" className="tab" role="tab" id="tab-history"
+                      aria-selected={tab === 'history'}
+                      aria-controls="panel-history"
+                      onClick={() => selectTab('history')}
+                    >
+                      History
+                    </button>
                   </div>
-                  <div
-                    id="panel-history"
-                    role="tabpanel"
-                    aria-labelledby="tab-history"
-                    tabIndex={-1}
-                    ref={historyRef}
-                    hidden={tab !== 'history'}
-                  >
-                    <TicketHistory ticket={ticket} />
+
+                  <div className="drawer-main-scroll drawer-main-panels">
+                    <div
+                      id="panel-discussion"
+                      role="tabpanel"
+                      aria-labelledby="tab-discussion"
+                      tabIndex={-1}
+                      ref={discussionRef}
+                      hidden={tab !== 'discussion'}
+                    >
+                      <TicketComments
+                        ticket={ticket}
+                        onAdd={run((body) => addComment(ticket.ticketId, body), { rethrow: true })}
+                        onUpload={run((form) => uploadAttachments(ticket.ticketId, form), { rethrow: true })}
+                      />
+                    </div>
+                    <div
+                      id="panel-details"
+                      role="tabpanel"
+                      aria-labelledby="tab-details"
+                      tabIndex={-1}
+                      ref={detailsRef}
+                      hidden={tab !== 'details'}
+                    >
+                      <TicketDetailsTab ticket={ticket} />
+                    </div>
+                    <div
+                      id="panel-history"
+                      role="tabpanel"
+                      aria-labelledby="tab-history"
+                      tabIndex={-1}
+                      ref={historyRef}
+                      hidden={tab !== 'history'}
+                    >
+                      <TicketHistory ticket={ticket} />
+                    </div>
                   </div>
-                </div>
-                <TicketFields
+                </main>
+
+                <TicketMetadataRail
                   ticket={ticket}
                   fieldErrors={fieldErrors}
                   onFieldEdit={clearFieldError}
@@ -200,9 +240,17 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
                   }))}
                   blockReason={blockReason}
                   setBlockReason={setBlockReason}
+                  collapsed={railCollapsed}
+                  onToggleCollapsed={() => setRailCollapsed((prev) => !prev)}
                 />
               </div>
             </div>
+
+            <TicketDrawerFooter
+              ticket={ticket}
+              actor={user}
+              onTransition={run((body) => transitionTicket(ticket.ticketId, body))}
+            />
           </>
         )}
       </aside>
