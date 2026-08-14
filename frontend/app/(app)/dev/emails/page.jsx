@@ -56,7 +56,12 @@ function EmailPreviewFrame({ html, title, width }) {
 
 export default function EmailPreviewPage() {
   const { user } = useAuth();
-  const previews = useMemo(() => listEmailPreviews(), []);
+  // Sample links point at wherever this app is actually served from, so the
+  // previews never carry a hardcoded host. Same window guard as previewHtml.
+  const previews = useMemo(
+    () => listEmailPreviews(typeof window === 'undefined' ? undefined : window.location.origin),
+    [],
+  );
   const [activeId, setActiveId] = useState(previews[0]?.id ?? 'invite');
   const [viewport, setViewport] = useState('desktop');
   const active = previews.find((item) => item.id === activeId) ?? previews[0];

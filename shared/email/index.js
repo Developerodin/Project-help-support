@@ -11,7 +11,22 @@ import { renderInviteEmail } from './invite.js';
 import { renderPasswordResetEmail } from './password-reset.js';
 import { renderTicketEmail } from './ticket.js';
 
-const SAMPLE_BASE = 'http://localhost:3002';
+/**
+ * Where the sample links in the previews point. Real emails build every link
+ * from `config.frontendBaseUrl`, so the previews read the same variable rather
+ * than carrying a host of their own — this package hardcodes no URL.
+ *
+ * Callers that already know their origin pass it to `listEmailPreviews()`;
+ * this is only the fallback. The last resort is an IANA-reserved documentation
+ * domain, so a stray sample link can never resolve to somebody's real host.
+ */
+function previewBaseUrl() {
+  const fromEnv = globalThis.process?.env?.FRONTEND_BASE_URL;
+  if (typeof fromEnv === 'string' && fromEnv.trim() !== '') {
+    return fromEnv.trim().replace(/\/$/, '');
+  }
+  return 'https://app.example.com';
+}
 
 /** One realistic ticket, carrying every field a real one can carry. */
 const SAMPLE_TICKET = Object.freeze({
@@ -112,9 +127,13 @@ function titleCase(event) {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export function listEmailPreviews() {
-  const linkInvite = `${SAMPLE_BASE}/invite/accept?token=sample-invite-token`;
-  const linkReset = `${SAMPLE_BASE}/reset-password?token=sample-reset-token`;
+/** @param {string} [baseUrl] Origin for the sample links; see previewBaseUrl. */
+export function listEmailPreviews(baseUrl) {
+  const base = typeof baseUrl === 'string' && baseUrl.trim() !== ''
+    ? baseUrl.trim().replace(/\/$/, '')
+    : previewBaseUrl();
+  const linkInvite = `${base}/invite/accept?token=sample-invite-token`;
+  const linkReset = `${base}/reset-password?token=sample-reset-token`;
 
   const transactional = [
     {
@@ -147,7 +166,7 @@ export function listEmailPreviews() {
       event,
       { ...SAMPLE_TICKET, ...ticket },
       context,
-      { frontendBaseUrl: SAMPLE_BASE },
+      { frontendBaseUrl: base },
     ),
   }));
 
