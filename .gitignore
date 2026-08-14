@@ -1,12 +1,21 @@
 node_modules/
-.env
-.env.local
-.env.*.local
 dist/
 build/
 .next/
 coverage/
 *.log
+
+# Secrets. Every .env flavour stays local; only the example is versioned.
+.env
+.env.local
+.env.*.local
+.env.*
+!.env.example
+
+# Local-only: specs and plans live here but are never versioned, and the
+# operational scripts are run by hand rather than shipped.
+docs/
+scripts/
 
 # graphify
 graphify-out/
