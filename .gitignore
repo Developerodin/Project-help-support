@@ -15,7 +15,7 @@ coverage/
 # Local-only: specs and plans live here but are never versioned, and the
 # operational scripts are run by hand rather than shipped.
 docs/
-/scripts/
+scripts/
 
 # Local dev scratch: records whichever port the frontend last used. Nothing
 # reads it, and a committed copy just tracks one machine's state.
