@@ -25,7 +25,7 @@ export function findComment(ticket, commentId) {
  */
 export async function addComment(actor, idOrKey, { content, mentions = [], clientRef }) {
   const ticket = await resolveTicketDoc(idOrKey);
-  await assertActiveUsers(mentions);
+  await assertActiveUsers(mentions, { allowSuperAdmin: true });
 
   const entry = { content, commentedBy: actor._id, mentions, clientRef, createdAt: new Date() };
 

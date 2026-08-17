@@ -7,7 +7,7 @@ import Project from '../../projects/project.model.js';
 import Team from '../team.model.js';
 import Ticket from '../../tickets/ticket.model.js';
 import {
-  isTeamUsableOnProject, assertTeamUsable, createTeam, updateMembers, listTeams,
+  isTeamUsableOnProject, assertTeamUsable, createTeam, updateMembers, listTeams, assertActiveUsers,
 } from '../team.service.js';
 
 withMemoryDb();
@@ -59,6 +59,37 @@ test('assertTeamUsable throws 404 for a missing team', async () => {
     () => assertTeamUsable(new mongoose.Types.ObjectId(), web._id),
     (err) => err.statusCode === 404 && err.code === 'TEAM_NOT_FOUND',
   );
+});
+
+test('assertActiveUsers rejects a Super Admin reference by default', async () => {
+  const superAdmin = await User.create({
+    name: 'Root', email: 'root@example.com', password: 'a-long-enough-password',
+    status: 'active', role: 'super_admin',
+  });
+
+  await assert.rejects(
+    () => assertActiveUsers([superAdmin._id]),
+    (err) => err.statusCode === 400 && err.code === 'INACTIVE_USER_REFERENCE',
+  );
+});
+
+test('assertActiveUsers allows a Super Admin reference when allowSuperAdmin is set', async () => {
+  const superAdmin = await User.create({
+    name: 'Root', email: 'root2@example.com', password: 'a-long-enough-password',
+    status: 'active', role: 'super_admin',
+  });
+
+  await assert.doesNotReject(() => assertActiveUsers([superAdmin._id], { allowSuperAdmin: true }));
+});
+
+test('createTeam rejects a Super Admin as team lead', async () => {
+  const superAdmin = await User.create({
+    name: 'Root', email: 'root3@example.com', password: 'a-long-enough-password',
+    status: 'active', role: 'super_admin',
+  });
+  const actor = await admin();
+
+  await assert.rejects(() => createTeam(actor, { name: 'Ops', lead: superAdmin._id }));
 });
 
 test('createTeam rejects a lead who is not an active user', async () => {

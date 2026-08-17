@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { ROLE_IDS } from '@pms/shared';
 import { withMemoryDb } from '../../../platform/__tests__/helpers/memoryDb.js';
 import User from '../../users/user.model.js';
 import Project from '../../projects/project.model.js';
@@ -9,7 +10,7 @@ import { addComment, editComment, deleteComment, toggleReaction } from '../comme
 
 withMemoryDb();
 
-const user = (role = 'member') => User.create({
+const user = (role = ROLE_IDS.DEVELOPER) => User.create({
   name: role, email: `${Math.random().toString(36).slice(2)}@example.com`,
   password: 'a-long-enough-password', status: 'active', role,
 });
@@ -67,6 +68,21 @@ test('two different clientRefs are two comments', async () => {
   assert.equal((await Ticket.findById(ticket.id)).comments.length, 2);
 });
 
+test('a Super Admin CAN be @mentioned in a comment, unlike a ticket assignment', async () => {
+  const { author, ticket } = await seed();
+  const superAdmin = await User.create({
+    name: 'Root', email: 'root@example.com', password: 'a-long-enough-password',
+    status: 'active', role: 'super_admin',
+  });
+
+  const { comment, event } = await addComment(author, ticket.id, {
+    content: 'escalate', mentions: [superAdmin._id],
+  });
+
+  assert.equal(comment.content, 'escalate');
+  assert.deepEqual(event.mentions.map(String), [String(superAdmin._id)]);
+});
+
 test('mentions must resolve to active users', async () => {
   const { author, ticket } = await seed();
   const gone = await User.create({
@@ -113,8 +129,8 @@ test('only the author may edit, and the edit is recorded in activityLog', async 
 
 test('the author or an admin may delete; nobody else', async () => {
   const { author, ticket } = await seed();
-  const stranger = await user('member');
-  const admin = await user('admin');
+  const stranger = await user(ROLE_IDS.DEVELOPER);
+  const admin = await user(ROLE_IDS.ADMIN);
 
   const a = await addComment(author, ticket.id, { content: 'One' });
   const b = await addComment(author, ticket.id, { content: 'Two' });

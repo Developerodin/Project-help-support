@@ -1,3 +1,4 @@
+import { ROLE_IDS } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
 import Project from '../projects/project.model.js';
@@ -30,16 +31,25 @@ export async function assertTeamUsable(teamId, projectId) {
   return team;
 }
 
-/** Every User reference on a Team, Project or Ticket must resolve to an ACTIVE user. */
-export async function assertActiveUsers(ids) {
+/**
+ * Every User reference on a Team, Project or Ticket must resolve to an
+ * ACTIVE, non-Super-Admin user — the choke point every operational
+ * assignment surface calls through. `allowSuperAdmin: true` is the one
+ * carve-out, for comment.service.js's @mentions: a mention is not an
+ * operational commitment the way an assignment is.
+ */
+export async function assertActiveUsers(ids, { allowSuperAdmin = false } = {}) {
   const wanted = ids.filter(Boolean).map(String);
   if (wanted.length === 0) return;
 
-  const found = await User.find({ _id: { $in: wanted }, status: 'active' }).select('_id');
+  const roleFilter = allowSuperAdmin ? {} : { role: { $ne: ROLE_IDS.SUPER_ADMIN } };
+  const found = await User.find({ _id: { $in: wanted }, status: 'active', ...roleFilter }).select('_id');
   if (found.length !== new Set(wanted).size) {
     throw new ApiError(
       400, 'INACTIVE_USER_REFERENCE',
-      'Every referenced user must exist and be active',
+      allowSuperAdmin
+        ? 'Every referenced user must exist and be active'
+        : 'Every referenced user must exist, be active, and not be a Super Admin',
     );
   }
 }
