@@ -3,3 +3,4 @@ export * from './notification-events.js';
 export * from './stages.js';
 export * from './module-catalog.js';
 export * from './ticket-dates.js';
+export * from './permissions.js';
