@@ -53,9 +53,11 @@ Deferred, not rejected — see [§9](#9-deferred-sub-projects-and-how-phase-1-su
 | `reason` | String | **Required** when revoking, suspending, or when `environments` includes `Production` — optional otherwise |
 | `timestamps` | — | |
 
-Indexes: compound `{ user: 1, status: 1 }`, `{ client: 1, project: 1 }`.
+Indexes: compound `{ user: 1, status: 1 }`, `{ client: 1, project: 1, status: 1 }`; sparse `{ expiresAt: 1 }` (supports future expiry-sweep/reporting queries; most documents have `expiresAt: null` in Phase 1).
 
 `ENVIRONMENTS` (`@pms/shared/enums.js`) expands from `['Staging','Production']` to `['Development','Staging','Production']` — `Ticket.environment` keeps using the same enum, unchanged shape.
+
+**Global scope never implies environment access.** `client: null, project: null` (global) and `environments: []` are independent axes — a global `admin` assignment with `environments: []` can manage every client/project/user/team but cannot view or touch a single ticket, because environment access is always checked on its own, never inferred from how broad the client/project scope is. The Phase 1 migration avoids this trap by setting migrated assignments' `environments` explicitly (§10) rather than leaving them empty — but a *new* global grant created after migration could legitimately end up in this state, and that's correct behavior, not a bug, as long as it's not silently misread as "global means all-powerful."
 
 **Duplicate assignments** (same user/role/client/project/environments) aren't hard-prevented by a schema constraint — the union-of-active-assignments model makes a duplicate harmless (redundant, not incorrect), and adding a meaningful uniqueness constraint over an array field is more complexity than the actual risk (data clutter, not a security issue) justifies. The Grant Access UI pre-checks for an identical active assignment and offers to edit it instead of creating a second one.
 
@@ -72,9 +74,11 @@ Indexes: compound `{ user: 1, status: 1 }`, `{ client: 1, project: 1 }`.
 | `requestId` | String | Correlates with the existing `X-Request-Id` (`platform/requestId.js`) |
 | `createdAt` | Date, indexed | No `updatedAt` — the collection is never updated |
 
-Indexes: `{ actor: 1, createdAt: -1 }`, `{ client: 1, createdAt: -1 }`, `action`. No update/delete route is ever exposed for this collection.
+Indexes: `{ actor: 1, createdAt: -1 }`, `{ client: 1, createdAt: -1 }`, `{ targetType: 1, targetId: 1 }` (audit history for one specific assignment/client/user), `action`. No update/delete route is ever exposed for this collection.
 
 **Tamper resistance, layered**: application — no update/delete API; service — the repository exposes only an insert operation for this collection, no update/delete method exists to call; tests — assert the repository has no update/delete path. This is process-level integrity, not cryptographic immutability — a compromised DB admin could still edit the collection directly. An external immutable sink (SIEM/log-forwarding) and a retention policy are future governance concerns, out of scope here.
+
+**Every access/role/client mutation writes its `AuditLog` entry inside the same transaction as the mutation itself** — not just the last-admin case in §5.1. If the audit insert fails, the transaction rolls back and the mutation never took effect; there is no path where a grant/revoke/modify commits without a corresponding audit record.
 
 ### 4.4 Permission registry (static, code, not a collection)
 
@@ -186,7 +190,11 @@ Route middleware: `requirePermission(permission, scopeResolver)` wraps `can()`; 
 
 **Request pipeline order**, so a future change can't accidentally skip a layer: authenticate → resolve resource/scope → `can()`/`canDelegate()` → ownership/business check (§4.5) → mutation → audit write.
 
-**No caching in Phase 1**: every check is an authoritative DB read. Deliberate — permission caching is deferred until profiling actually shows it's needed, specifically to avoid a stale-permission bug from a cache someone adds later without also wiring invalidation on every assignment mutation.
+**No caching in Phase 1**: every check is an authoritative DB read. Deliberate — permission caching is deferred until profiling actually shows it's needed, specifically to avoid a stale-permission bug from a cache someone adds later without also wiring invalidation on every assignment mutation. A revocation is effective on the *next* request, immediately — never delayed by a cache TTL.
+
+**Authorization is checked once, at request start.** `can()`/`canDelegate()` run before the mutation/query executes; Phase 1 has no long-running privileged operation (bulk export, background job) where access could plausibly change mid-flight, so a second check partway through isn't built. If one is introduced later, it re-checks `can()` at its resumption point rather than assuming the request-start check still holds — noted here so it isn't silently assumed to already be handled.
+
+**Fail closed, always**: a missing assignment, a malformed scope, an unrecognized role/environment value, an inactive user, an archived client/project, or an unexpected error inside `can()`/`canDelegate()`/`resolveScope()` (a DB timeout, for instance) all produce a **deny** — never a permissive fallback. Concretely: these functions either return `false`/throw; the route middleware treats *any* thrown error, expected or not, as a rejection (403/500), never as an implicit allow. `ROLE_PERMISSIONS[a.role]` should never be `undefined` in practice (Joi validation only ever persists a value from `ROLES`), but if it somehow were, that resolves to an empty permission set, not a crash-to-allow.
 
 ### 5.1 Self-protection
 
@@ -215,6 +223,8 @@ Non-negotiable, not implementation suggestions:
 15. IDs supplied by the client are always resolved and scope-validated server-side.
 16. An archived `Client` or `Project` blocks every mutation permission (grants, creation, ticket writes) scoped under it; `.view` permissions and historical reads remain available.
 17. External/client-portal identities, when built, never inherit the internal `ROLE_PERMISSIONS` bundle — they get their own role family from day one.
+18. A global or client-wide scope on an assignment never implies environment access — `environments` is checked independently, at every scope breadth, with no exception for `client: null`.
+19. Any authorization-path failure (DB error, malformed scope, unrecognized role/environment) resolves to deny — never a fallback allow.
 
 ## 7. API
 
@@ -249,15 +259,19 @@ Ordered, with what Phase 1 gives each of them to build on:
 
 ## 10. Migration
 
-1. **Dry run**: script reports what it *would* create — one `Client` per distinct existing `Project.brand` value, one global `AccessAssignment` per existing `User` (`role: user.role, client: null, project: null, environments: ['Development','Staging','Production']`) — without writing anything. The report breaks this down by role and resulting environment access (e.g. "4 admins, 18 developers, 12 qa, 13 members — all 47 users temporarily retain Production access post-migration"), so the operational risk in step 2 is visible before anyone approves it, not discovered after.
-2. **Apply**: creates the `Client` docs, sets `Project.client` accordingly, creates the migrated `AccessAssignment`s. Documented explicitly as **transitional** — this preserves every existing user's current unrestricted access so nobody is locked out at cutover; admins narrow access afterward through the Grant Access UI.
-3. **Cutover**: `requireRole` call sites replaced route-by-route with `requirePermission`/`can()`, each route fully migrated in the same change.
-4. New users from this point forward get zero assignments (default deny).
-5. **Access review, operationally required, not a built feature**: immediately after cutover, an admin reviews the dry-run report and narrows access — starting with Production — through the Grant Access / modify-assignment UI. This is a rollout checklist item, not Phase 2's Access Reviews feature; nothing new is built for it.
+Data migration and enforcement cutover are **two separate, independently reversible steps** — not one irreversible deployment:
+
+1. **Dry run**: script reports what it *would* create — one `Client` per distinct existing `Project.brand` value, one global `AccessAssignment` per existing `User` (`role: user.role, client: null, project: null, environments: ['Development','Staging','Production']`) — without writing anything. The report breaks this down by role and resulting environment access (e.g. "4 admins, 18 developers, 12 qa, 13 members — all 47 users temporarily retain Production access post-migration"), so the operational risk is visible before anyone approves it, not discovered after.
+2. **Inspect + backup**: the dry-run output is reviewed by an admin; a database backup/snapshot is taken immediately before the apply step, specifically so the apply step can be undone if the generated `Client`/`AccessAssignment` data turns out wrong.
+3. **Apply**: creates the `Client` docs, sets `Project.client` accordingly, creates the migrated `AccessAssignment`s. At this point `requireRole` is **still** the live enforcement mechanism — the new data exists but authorizes nothing yet, so a bad migration run is a data-cleanup problem, not an outage or a security incident.
+4. **Enforcement cutover**, only after step 3 is verified: `requireRole` call sites replaced route-by-route with `requirePermission`/`can()`, each route fully migrated in the same change. Because this is a separate step from data creation, cutover can proceed gradually (or be reverted route-by-route) without touching the migrated data.
+5. New users from this point forward get zero assignments (default deny).
+6. **Access review, operationally required, not a built feature**: immediately after cutover, an admin reviews the dry-run report and narrows access — starting with Production — through the Grant Access / modify-assignment UI. This is a rollout checklist item, not Phase 2's Access Reviews feature; nothing new is built for it.
 
 ## 11. Testing
 
-- Unit tests for `can()`/`canDelegate()`: union-of-active-assignments, suspended/expired exclusion, empty-environments-means-none, client/project mismatch rejection, scope+permission containment (including escalation-prevention cases), last-admin transaction rollback.
-- Integration tests hit real routes via the existing `mongodb-memory-server` pattern, confirming enforcement at the HTTP layer, not just the unit-level function.
+- Unit tests for `can()`/`canDelegate()`: union-of-active-assignments, suspended/expired exclusion, empty-environments-means-none, client/project mismatch rejection, global scope not implying environment access, last-admin transaction rollback, every fail-closed case from §6 invariant 19 (DB error, malformed scope, unrecognized role/environment).
+- `canDelegate()` boundary tests, specifically: a project-scoped actor cannot grant client-wide access; a client-scoped actor cannot grant a *different* client access; an actor cannot grant a permission they don't themselves hold; `qa`/`developer`/`member` cannot grant `admin`; an actor cannot grant `Production` environment access without holding it themselves at a containing scope; an actor cannot modify/revoke an assignment outside their own delegation scope.
+- Integration tests hit real routes via the existing `mongodb-memory-server` pattern, confirming enforcement at the HTTP layer, not just the unit-level function. Every new/modified endpoint gets a negative cross-client test: authenticate as a user scoped to Client A, attempt to read/list/modify a Client B resource by ID, assert rejection — covering direct ID substitution, not just missing-permission cases.
 - Migration script tested against a snapshot of representative existing data (varied `brand` values, all five roles) in dry-run mode before any apply-mode test.
 - Concurrency integration test: two global admins, simultaneous requests each revoking the other — exactly one commits, one global admin always remains; the losing request observes the retry-and-reject path (§5.1), never a silent double-success that leaves zero admins.
