@@ -4,7 +4,7 @@ import { createInvite, reissueInvite } from '../auth/auth.service.js';
 import User from './user.model.js';
 
 export const list = catchAsync(async (req, res) => {
-  res.json(await userService.listUsers(req.query));
+  res.json(await userService.listUsers(req.user, req.query));
 });
 
 export const create = (deliverInvite) => catchAsync(async (req, res) => {
@@ -16,7 +16,7 @@ export const create = (deliverInvite) => catchAsync(async (req, res) => {
 });
 
 export const get = catchAsync(async (req, res) => {
-  res.json(await userService.getUser(req.params.id));
+  res.json(await userService.getUser(req.user, req.params.id));
 });
 
 export const update = catchAsync(async (req, res) => {

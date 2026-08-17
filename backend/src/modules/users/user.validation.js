@@ -1,5 +1,5 @@
 import Joi from 'joi';
-import { ROLES, NOTIFICATION_EVENTS } from '@pms/shared';
+import { ROLES, NOTIFICATION_EVENTS, ROLE_IDS, INTERNAL_ROLES } from '@pms/shared';
 
 const objectId = Joi.string().hex().length(24);
 // An unknown key is a 400 here, so a typo'd event never becomes a stored
@@ -18,10 +18,12 @@ export const listUsersSchema = {
   }),
 };
 
+const ASSIGNABLE_ROLES = INTERNAL_ROLES.filter((role) => role !== ROLE_IDS.SUPER_ADMIN);
+
 export const createUserSchema = {
   body: Joi.object({
     email: Joi.string().trim().lowercase().email().required(),
-    role: Joi.string().valid(...ROLES).default('member'),
+    role: Joi.string().valid(...ASSIGNABLE_ROLES).default(ROLE_IDS.READ_ONLY),
   }),
 };
 

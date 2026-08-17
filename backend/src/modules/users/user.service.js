@@ -1,4 +1,4 @@
-import { NOTIFICATION_EVENTS } from '@pms/shared';
+import { ROLE_IDS, NOTIFICATION_EVENTS } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
 import Notification from '../notifications/notification.model.js';
@@ -6,12 +6,18 @@ import Team from '../teams/team.model.js';
 import Ticket from '../tickets/ticket.model.js';
 import User from './user.model.js';
 
-export async function listUsers(query = {}) {
+/**
+ * Super Admin is hidden from normal user listing/search APIs for every caller.
+ * This endpoint is intentionally not a Super Admin management surface.
+ */
+export async function listUsers(actor, query = {}) {
   const filter = {};
-  if (query.role) filter.role = query.role;
+  if (query.role === ROLE_IDS.SUPER_ADMIN) filter._id = { $in: [] };
+  else if (query.role) filter.role = query.role;
+  else filter.role = { $ne: ROLE_IDS.SUPER_ADMIN };
+
   if (query.status) filter.status = query.status;
   if (query.q) {
-    // Escaped: a query string must not be able to inject regex metacharacters.
     const safe = String(query.q).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     filter.$or = [
       { name: { $regex: safe, $options: 'i' } },
@@ -25,21 +31,37 @@ export async function listUsers(query = {}) {
   return { ...page, results: page.results.map((u) => u.toJSON()) };
 }
 
-export async function getUser(id) {
+function assertVisibleToActor(actor, target) {
+  if (target.role === ROLE_IDS.SUPER_ADMIN) {
+    throw new ApiError(404, 'USER_NOT_FOUND', 'User not found');
+  }
+}
+
+export async function getUser(actor, id) {
   const user = await User.findById(id);
   if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found');
+  assertVisibleToActor(actor, user);
   return user.toJSON();
 }
 
 export async function updateUser(actor, id, body) {
-  // An admin locking themselves out of their own installation files a support
-  // ticket nobody can read, because filing it requires logging in.
   if (String(actor._id) === String(id) && (body.role || body.status)) {
     throw new ApiError(400, 'CANNOT_MODIFY_SELF', 'You cannot change your own role or status');
   }
 
+  if (body.role === ROLE_IDS.SUPER_ADMIN) {
+    throw new ApiError(
+      403,
+      'SUPER_ADMIN_PROTECTED',
+      'Super Admin role can only be granted via protected bootstrap/admin operations',
+    );
+  }
+
+  const existing = await User.findById(id);
+  if (!existing) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found');
+  assertVisibleToActor(actor, existing);
+
   const user = await User.findByIdAndUpdate(id, { $set: body }, { new: true, runValidators: true });
-  if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found');
   return user.toJSON();
 }
 
@@ -76,11 +98,20 @@ export async function deleteUser(actor, id) {
 
   const user = await User.findById(id);
   if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found');
+  assertVisibleToActor(actor, user);
 
-  if (user.role === 'admin') {
-    const otherAdmins = await User.countDocuments({ role: 'admin', _id: { $ne: user._id } });
+  if (user.role === ROLE_IDS.ADMIN) {
+    const otherAdmins = await User.countDocuments({ role: ROLE_IDS.ADMIN, _id: { $ne: user._id } });
     if (otherAdmins === 0) {
       throw new ApiError(400, 'LAST_ADMIN', 'Cannot delete the last admin');
+    }
+  }
+  if (user.role === ROLE_IDS.SUPER_ADMIN) {
+    const otherSuperAdmins = await User.countDocuments({
+      role: ROLE_IDS.SUPER_ADMIN, _id: { $ne: user._id },
+    });
+    if (otherSuperAdmins === 0) {
+      throw new ApiError(400, 'LAST_SUPER_ADMIN', 'Cannot delete the last Super Admin');
     }
   }
 
@@ -97,7 +128,6 @@ export async function deleteUser(actor, id) {
     ),
   ]);
 
-  // Scrub PII and revoke access instead of hard-delete — historical ticket refs stay valid.
   user.name = 'Deleted User';
   user.email = `deleted+${user._id}@internal`;
   user.status = 'inactive';
