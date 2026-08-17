@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import bcrypt from 'bcryptjs';
+import { ROLE_IDS } from '@pms/shared';
 import User from '../users/user.model.js';
 import { ApiError } from '../../platform/errors.js';
 import logger from '../../platform/logger.js';
@@ -71,7 +72,7 @@ export async function logout(presentedRaw) {
   if (presentedRaw) await revokeRefreshToken(presentedRaw);
 }
 
-export async function createInvite(_actor, { email, role = 'member' }) {
+export async function createInvite(_actor, { email, role = ROLE_IDS.READ_ONLY }) {
   const existing = await User.findByNormalisedEmail(email);
   if (existing) {
     if (existing.status === 'inactive') {
@@ -120,6 +121,12 @@ export async function impersonate(admin, targetId, adminRefreshRaw, config, meta
   if (!target) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found');
   if (target.status !== 'active') {
     throw new ApiError(400, 'USER_NOT_ACTIVE', 'Only active users can be impersonated');
+  }
+  if (target.role === ROLE_IDS.SUPER_ADMIN) {
+    throw new ApiError(403, 'SUPER_ADMIN_PROTECTED', 'Super Admin accounts cannot be impersonated');
+  }
+  if (admin.role === ROLE_IDS.ADMIN && target.role === ROLE_IDS.ADMIN) {
+    throw new ApiError(403, 'CANNOT_IMPERSONATE_PEER', 'Admins cannot impersonate other Admins');
   }
 
   const adminValid = await User.exists({

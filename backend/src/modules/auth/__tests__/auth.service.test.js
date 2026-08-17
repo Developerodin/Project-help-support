@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { ROLE_IDS } from '@pms/shared';
 import { withMemoryDb } from '../../../platform/__tests__/helpers/memoryDb.js';
 import User from '../../users/user.model.js';
 import { hashToken, verifyAccessToken } from '../token.service.js';
@@ -19,7 +20,7 @@ const config = {
   },
 };
 const meta = { userAgent: 'test', ip: '127.0.0.1' };
-const admin = { role: 'admin' };
+const admin = { role: ROLE_IDS.ADMIN };
 
 const activeUser = () => User.create({
   name: 'Ada', email: 'ada@example.com', password: 'correct-horse-battery', status: 'active',
@@ -111,9 +112,14 @@ test('createInvite stores only the token hash and returns the raw token once', a
   assert.ok(hoursOut > INVITE_TTL_HOURS - 1 && hoursOut <= INVITE_TTL_HOURS);
 });
 
+test('createInvite defaults to read_only when no role is given', async () => {
+  const { user } = await createInvite(admin, { email: 'plain@example.com' });
+  assert.equal(user.role, ROLE_IDS.READ_ONLY);
+});
+
 test('createInvite rejects a duplicate invited email', async () => {
-  await createInvite(admin, { email: 'grace@example.com', role: 'member' });
-  const err = await createInvite(admin, { email: 'GRACE@example.com', role: 'member' })
+  await createInvite(admin, { email: 'grace@example.com', role: ROLE_IDS.DEVELOPER });
+  const err = await createInvite(admin, { email: 'GRACE@example.com', role: ROLE_IDS.DEVELOPER })
     .catch((e) => e);
   assert.equal(err.statusCode, 400);
   assert.equal(err.code, 'INVITE_PENDING');
@@ -121,7 +127,7 @@ test('createInvite rejects a duplicate invited email', async () => {
 
 test('createInvite rejects an active user email', async () => {
   await activeUser();
-  const err = await createInvite(admin, { email: 'ada@example.com', role: 'member' })
+  const err = await createInvite(admin, { email: 'ada@example.com', role: ROLE_IDS.DEVELOPER })
     .catch((e) => e);
   assert.equal(err.statusCode, 400);
   assert.equal(err.code, 'EMAIL_TAKEN');
@@ -131,7 +137,7 @@ test('createInvite rejects an inactive user email with a distinct error', async 
   await User.create({
     name: 'Former', email: 'former@example.com', password: 'some-password-value', status: 'inactive',
   });
-  const err = await createInvite(admin, { email: 'former@example.com', role: 'member' })
+  const err = await createInvite(admin, { email: 'former@example.com', role: ROLE_IDS.DEVELOPER })
     .catch((e) => e);
   assert.equal(err.statusCode, 400);
   assert.equal(err.code, 'USER_INACTIVE');
@@ -139,14 +145,14 @@ test('createInvite rejects an inactive user email with a distinct error', async 
 });
 
 test('previewInvite returns the invite email from the token', async () => {
-  const { inviteToken } = await createInvite(admin, { email: 'grace@example.com', role: 'qa' });
+  const { inviteToken } = await createInvite(admin, { email: 'grace@example.com', role: ROLE_IDS.TESTER });
   const preview = await previewInvite(inviteToken);
   assert.equal(preview.email, 'grace@example.com');
 });
 
 test('acceptInvite activates the user, sets the name and password and consumes the token', async () => {
   const { inviteToken } = await createInvite(admin, {
-    email: 'grace@example.com', role: 'qa',
+    email: 'grace@example.com', role: ROLE_IDS.TESTER,
   });
 
   const user = await acceptInvite(inviteToken, 'Grace Hopper', 'a-brand-new-password');
@@ -160,7 +166,7 @@ test('acceptInvite activates the user, sets the name and password and consumes t
 
 test('an invite token is single-use', async () => {
   const { inviteToken } = await createInvite(admin, {
-    email: 'grace@example.com', role: 'member',
+    email: 'grace@example.com', role: ROLE_IDS.DEVELOPER,
   });
   await acceptInvite(inviteToken, 'Grace Hopper', 'a-brand-new-password');
   await assert.rejects(
@@ -171,7 +177,7 @@ test('an invite token is single-use', async () => {
 
 test('an expired invite token is refused', async () => {
   const { user, inviteToken } = await createInvite(admin, {
-    email: 'grace@example.com', role: 'member',
+    email: 'grace@example.com', role: ROLE_IDS.DEVELOPER,
   });
   await User.updateOne(
     { _id: user.id },
@@ -209,15 +215,18 @@ test('resetPassword sets the new password and revokes every existing session', a
 });
 
 const adminUser = () => User.create({
-  name: 'Admin', email: 'admin@example.com', password: 'admin-password-value', status: 'active', role: 'admin',
+  name: 'Admin', email: 'admin@example.com', password: 'admin-password-value', status: 'active', role: ROLE_IDS.ADMIN,
 });
-const memberUser = () => User.create({
-  name: 'Mem', email: 'mem@example.com', password: 'member-password-value', status: 'active', role: 'member',
+const superAdminUser = () => User.create({
+  name: 'Root', email: 'root@example.com', password: 'root-password-value', status: 'active', role: ROLE_IDS.SUPER_ADMIN,
+});
+const targetUser = () => User.create({
+  name: 'Target', email: 'target@example.com', password: 'target-password-value', status: 'active', role: ROLE_IDS.DEVELOPER,
 });
 
 test('impersonate issues a session for the target carrying the impersonatedBy claim', async () => {
   const admin = await adminUser();
-  const target = await memberUser();
+  const target = await targetUser();
   const adminSession = await login('admin@example.com', 'admin-password-value', config, meta);
 
   const result = await impersonate(admin, target._id, adminSession.refreshToken, config, meta);
@@ -239,15 +248,51 @@ test('impersonate rejects impersonating yourself', async () => {
   assert.equal(err.code, 'CANNOT_IMPERSONATE_SELF');
 });
 
-test('impersonate allows impersonating another admin', async () => {
+test('impersonate rejects an Admin impersonating another Admin', async () => {
   const admin = await adminUser();
   const otherAdmin = await User.create({
-    name: 'Other', email: 'other-admin@example.com', password: 'other-password-value', status: 'active', role: 'admin',
+    name: 'Other', email: 'other-admin@example.com', password: 'other-password-value',
+    status: 'active', role: ROLE_IDS.ADMIN,
   });
   const adminSession = await login('admin@example.com', 'admin-password-value', config, meta);
 
-  const result = await impersonate(admin, otherAdmin._id, adminSession.refreshToken, config, meta);
-  assert.equal(result.user.id, otherAdmin._id.toString());
+  const err = await impersonate(admin, otherAdmin._id, adminSession.refreshToken, config, meta)
+    .catch((e) => e);
+  assert.equal(err.statusCode, 403);
+  assert.equal(err.code, 'CANNOT_IMPERSONATE_PEER');
+});
+
+test('impersonate rejects a Super Admin target regardless of who is asking', async () => {
+  const admin = await adminUser();
+  const superAdmin = await superAdminUser();
+  const adminSession = await login('admin@example.com', 'admin-password-value', config, meta);
+
+  const err = await impersonate(admin, superAdmin._id, adminSession.refreshToken, config, meta)
+    .catch((e) => e);
+  assert.equal(err.statusCode, 403);
+  assert.equal(err.code, 'SUPER_ADMIN_PROTECTED');
+});
+
+test('impersonate rejects even when the ACTOR is a Super Admin targeting another Super Admin', async () => {
+  const actingSuperAdmin = await superAdminUser();
+  const otherSuperAdmin = await User.create({
+    name: 'Root Two', email: 'root2@example.com', password: 'root2-password-value',
+    status: 'active', role: ROLE_IDS.SUPER_ADMIN,
+  });
+  const session = await login('root@example.com', 'root-password-value', config, meta);
+
+  const err = await impersonate(actingSuperAdmin, otherSuperAdmin._id, session.refreshToken, config, meta)
+    .catch((e) => e);
+  assert.equal(err.code, 'SUPER_ADMIN_PROTECTED');
+});
+
+test('impersonate allows a Super Admin actor to impersonate an Admin', async () => {
+  const superAdmin = await superAdminUser();
+  const admin = await adminUser();
+  const session = await login('root@example.com', 'root-password-value', config, meta);
+
+  const result = await impersonate(superAdmin, admin._id, session.refreshToken, config, meta);
+  assert.equal(result.user.id, admin._id.toString());
 });
 
 test('impersonate rejects an inactive target', async () => {
@@ -264,7 +309,7 @@ test('impersonate rejects an inactive target', async () => {
 
 test('impersonate rejects a stale or invalid admin refresh token', async () => {
   const admin = await adminUser();
-  const target = await memberUser();
+  const target = await targetUser();
 
   const err = await impersonate(admin, target._id, 'not-a-real-refresh-token', config, meta)
     .catch((e) => e);
@@ -273,7 +318,7 @@ test('impersonate rejects a stale or invalid admin refresh token', async () => {
 
 test('stopImpersonation restores the admin session and ends impersonation', async () => {
   const admin = await adminUser();
-  const target = await memberUser();
+  const target = await targetUser();
   const adminSession = await login('admin@example.com', 'admin-password-value', config, meta);
   const impersonated = await impersonate(admin, target._id, adminSession.refreshToken, config, meta);
 
@@ -289,7 +334,7 @@ test('stopImpersonation restores the admin session and ends impersonation', asyn
 
 test('stopImpersonation revokes the impersonated session so it cannot be reused', async () => {
   const admin = await adminUser();
-  const target = await memberUser();
+  const target = await targetUser();
   const adminSession = await login('admin@example.com', 'admin-password-value', config, meta);
   const impersonated = await impersonate(admin, target._id, adminSession.refreshToken, config, meta);
 
