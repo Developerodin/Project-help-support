@@ -1,4 +1,4 @@
-import { DEFAULT_NOTIFICATION_PREFS } from '@pms/shared';
+import { DEFAULT_NOTIFICATION_PREFS, ROLE_IDS } from '@pms/shared';
 import User from '../users/user.model.js';
 import Team from '../teams/team.model.js';
 import Project from '../projects/project.model.js';
@@ -59,12 +59,13 @@ export async function getNotificationRecipients(event, ticket, actor, context = 
 
     const { to } = context;
     if (to && QA_BROADCAST_STAGES.has(to)) {
-      const qa = await User.find({ role: 'qa', status: 'active' }).select('_id');
-      for (const u of qa) ids.add(idStr(u._id));
+      const testers = await User.find({ role: ROLE_IDS.TESTER, status: 'active' }).select('_id');
+      for (const u of testers) ids.add(idStr(u._id));
     }
     if (to && RELEASE_BROADCAST_STAGES.has(to)) {
-      const leads = await User.find({ role: { $in: ['lead', 'admin'] }, status: 'active' })
-        .select('_id');
+      const leads = await User.find({
+        role: { $in: [ROLE_IDS.PROJECT_ADMIN, ROLE_IDS.ADMIN, ROLE_IDS.SUPER_ADMIN] }, status: 'active',
+      }).select('_id');
       for (const u of leads) ids.add(idStr(u._id));
     }
   }

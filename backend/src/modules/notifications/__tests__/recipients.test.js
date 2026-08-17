@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { ROLE_IDS } from '@pms/shared';
 import { withMemoryDb } from '../../../platform/__tests__/helpers/memoryDb.js';
 import User from '../../users/user.model.js';
 import Team from '../../teams/team.model.js';
@@ -11,7 +12,7 @@ import { createInAppNotifications } from '../notification.service.js';
 
 withMemoryDb();
 
-const user = (role = 'member', name = role) => User.create({
+const user = (role = ROLE_IDS.DEVELOPER, name = role) => User.create({
   name, email: `${Math.random().toString(36).slice(2)}@example.com`,
   password: 'a-long-enough-password', status: 'active', role,
 });
@@ -19,10 +20,10 @@ const user = (role = 'member', name = role) => User.create({
 test('the always-set is reporter, watchers, assignee, tester and team members', async () => {
   const reporter = await user();
   const watcher = await user();
-  const assignee = await user('developer');
-  const tester = await user('qa');
-  const member = await user('developer');
-  const actor = await user('admin');
+  const assignee = await user(ROLE_IDS.DEVELOPER);
+  const tester = await user(ROLE_IDS.TESTER);
+  const member = await user(ROLE_IDS.DEVELOPER);
+  const actor = await user(ROLE_IDS.ADMIN);
 
   const team = await Team.create({ name: 'Squad', members: [member._id], createdBy: actor._id });
   const project = await Project.create({ key: 'WEB', name: 'Web App', createdBy: actor._id });
@@ -45,8 +46,8 @@ test('the always-set is reporter, watchers, assignee, tester and team members', 
 
 test('the assignee still hears about it after stage 6 — they fixed the bug', async () => {
   const reporter = await user();
-  const assignee = await user('developer');
-  const actor = await user('admin');
+  const assignee = await user(ROLE_IDS.DEVELOPER);
+  const actor = await user(ROLE_IDS.ADMIN);
   const project = await Project.create({ key: 'WEB', name: 'Web App', createdBy: actor._id });
   const ticket = await Ticket.create({
     ticketId: 'WEB-1', project: project._id, title: 'x',
@@ -60,11 +61,12 @@ test('the assignee still hears about it after stage 6 — they fixed the bug', a
   assert.ok(recipients.some((r) => String(r.user._id) === String(assignee._id)));
 });
 
-test('QA stages broadcast to every qa user; release stages to leads and admins', async () => {
+test('QA stages broadcast to every Tester; release stages to Project Admins, Admins and Super Admins', async () => {
   const reporter = await user();
-  const qa = await user('qa');
-  const lead = await user('lead');
-  const actor = await user('admin');
+  const tester = await user(ROLE_IDS.TESTER);
+  const projectAdmin = await user(ROLE_IDS.PROJECT_ADMIN);
+  const superAdmin = await user(ROLE_IDS.SUPER_ADMIN);
+  const actor = await user(ROLE_IDS.ADMIN);
   const project = await Project.create({ key: 'WEB', name: 'Web App', createdBy: actor._id });
   const ticket = await Ticket.create({
     ticketId: 'WEB-1', project: project._id, title: 'x', createdBy: reporter._id,
@@ -73,18 +75,19 @@ test('QA stages broadcast to every qa user; release stages to leads and admins',
   const toQa = await getNotificationRecipients(
     'TICKET_STAGE_CHANGED', ticket, actor, { to: 'ready_qa' },
   );
-  assert.ok(toQa.some((r) => String(r.user._id) === String(qa._id)));
+  assert.ok(toQa.some((r) => String(r.user._id) === String(tester._id)));
 
   const toRelease = await getNotificationRecipients(
     'TICKET_STAGE_CHANGED', ticket, actor, { to: 'live' },
   );
-  assert.ok(toRelease.some((r) => String(r.user._id) === String(lead._id)));
-  assert.ok(!toRelease.some((r) => String(r.user._id) === String(qa._id)));
+  assert.ok(toRelease.some((r) => String(r.user._id) === String(projectAdmin._id)));
+  assert.ok(toRelease.some((r) => String(r.user._id) === String(superAdmin._id)));
+  assert.ok(!toRelease.some((r) => String(r.user._id) === String(tester._id)));
 });
 
 test('one person matching five rules appears exactly once', async () => {
-  const everyone = await user('lead', 'Polymath');
-  const actor = await user('admin');
+  const everyone = await user(ROLE_IDS.PROJECT_ADMIN, 'Polymath');
+  const actor = await user(ROLE_IDS.ADMIN);
   const team = await Team.create({ name: 'Squad', members: [everyone._id], createdBy: actor._id });
   const project = await Project.create({ key: 'WEB', name: 'Web App', createdBy: actor._id });
 
@@ -102,8 +105,8 @@ test('one person matching five rules appears exactly once', async () => {
 
 test('a team-less ticket falls back to the project\'s assigned team', async () => {
   const reporter = await user();
-  const teammate = await user('developer');
-  const actor = await user('admin');
+  const teammate = await user(ROLE_IDS.DEVELOPER);
+  const actor = await user(ROLE_IDS.ADMIN);
   const team = await Team.create({ name: 'Web Team', members: [teammate._id], createdBy: actor._id });
   const project = await Project.create({
     key: 'WEB', name: 'Web App', createdBy: actor._id, team: team._id,
@@ -120,7 +123,7 @@ test('a team-less ticket falls back to the project\'s assigned team', async () =
 });
 
 test('the actor is never told what they just did', async () => {
-  const actor = await user('admin');
+  const actor = await user(ROLE_IDS.ADMIN);
   const project = await Project.create({ key: 'WEB', name: 'Web App', createdBy: actor._id });
   const ticket = await Ticket.create({
     ticketId: 'WEB-1', project: project._id, title: 'x',
@@ -138,7 +141,7 @@ test('TICKET_MENTIONED reaches only the mentioned users', async () => {
   const reporter = await user();
   const watcher = await user();
   const mentioned = await user();
-  const actor = await user('admin');
+  const actor = await user(ROLE_IDS.ADMIN);
   const project = await Project.create({ key: 'WEB', name: 'Web App', createdBy: actor._id });
   const ticket = await Ticket.create({
     ticketId: 'WEB-1', project: project._id, title: 'x',
@@ -153,7 +156,7 @@ test('TICKET_MENTIONED reaches only the mentioned users', async () => {
 });
 
 test('inactive users are never notified', async () => {
-  const actor = await user('admin');
+  const actor = await user(ROLE_IDS.ADMIN);
   const gone = await User.create({
     name: 'Gone', email: 'gone@example.com', password: 'a-long-enough-password',
     status: 'inactive',
@@ -172,7 +175,6 @@ test('inactive users are never notified', async () => {
 test('an unset preference resolves through the defaults table, not to true', async () => {
   const someone = await user();
 
-  // The two high-volume events default email OFF.
   assert.equal(resolvePreference(someone, 'email', 'TICKET_COMMENTED'), false);
   assert.equal(resolvePreference(someone, 'email', 'TICKET_STAGE_CHANGED'), true);
   assert.equal(resolvePreference(someone, 'inApp', 'TICKET_COMMENTED'), true);
@@ -183,7 +185,7 @@ test('an explicit opt-out beats the default and is reported per channel', async 
   someone.notificationPrefs.email.set('TICKET_STAGE_CHANGED', false);
   await someone.save();
 
-  const actor = await user('admin');
+  const actor = await user(ROLE_IDS.ADMIN);
   const project = await Project.create({ key: 'WEB', name: 'Web App', createdBy: actor._id });
   const ticket = await Ticket.create({
     ticketId: 'WEB-1', project: project._id, title: 'x', createdBy: someone._id,
@@ -203,7 +205,7 @@ test('in-app rows are written once per recipient who allows the channel', async 
   muted.notificationPrefs.inApp.set('TICKET_STAGE_CHANGED', false);
   await muted.save();
 
-  const actor = await user('admin');
+  const actor = await user(ROLE_IDS.ADMIN);
   const project = await Project.create({ key: 'WEB', name: 'Web App', createdBy: actor._id });
   const ticket = await Ticket.create({
     ticketId: 'WEB-1', project: project._id, title: 'Broken login',
