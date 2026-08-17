@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import { updateMe } from '@/shared/api/users.js';
 import { listTeams } from '@/shared/api/teams.js';
@@ -23,6 +23,9 @@ import {
 } from '@/shared/lib/profile-utils.js';
 import { showToast } from '@/shared/lib/toast.js';
 
+const PERSONAL_INFORMATION_SECTION_ID = 'profile-personal-information';
+const PERSONAL_INFORMATION_TITLE_ID = 'profile-personal-information-title';
+
 function StatusChip({ status }) {
   const label = capStatus(status);
   const className = status === 'active' ? 'chip chip-on' : 'chip';
@@ -38,9 +41,11 @@ function DetailRow({ label, children }) {
   );
 }
 
-function Panel({ title, description, children, id }) {
+function Panel({
+  title, description, children, id, sectionId,
+}) {
   return (
-    <section className="panel profile-panel" aria-labelledby={id}>
+    <section id={sectionId} className="panel profile-panel" aria-labelledby={id}>
       <header className="profile-panel__head">
         <h2 id={id}>{title}</h2>
         {description ? <p>{description}</p> : null}
@@ -51,7 +56,6 @@ function Panel({ title, description, children, id }) {
 }
 
 export default function ProfilePage() {
-  const personalInfoId = useId();
   const { user, logout, refreshUser } = useAuth();
   const nameInputRef = useRef(null);
 
@@ -192,7 +196,8 @@ export default function ProfilePage() {
       <div className="profile-page__columns">
         <div className="profile-page__column">
           <Panel
-            id={personalInfoId}
+            id={PERSONAL_INFORMATION_TITLE_ID}
+            sectionId={PERSONAL_INFORMATION_SECTION_ID}
             title="Personal information"
             description="Update how your name appears across the app."
           >
