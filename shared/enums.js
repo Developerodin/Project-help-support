@@ -26,14 +26,24 @@ export const INTERNAL_ROLES = Object.freeze([
 ]);
 
 /**
- * Wired into User.role (per the design spec §1's revision). These roles are
- * excluded from internal role-assignment UI (People page/invite dialog), but
- * remain queryable/filterable for external-facing selectors/endpoints (for
- * example project client-tester management surfaces).
+ * Wired into User.role (per the design spec §1's revision). External
+ * capability is resolved via AccessAssignment, not internal permission bundles.
  */
 export const EXTERNAL_ROLES = Object.freeze([ROLE_IDS.CLIENT, ROLE_IDS.CLIENT_TESTER]);
 
 export const ROLES = Object.freeze([...INTERNAL_ROLES, ...EXTERNAL_ROLES]);
+
+/**
+ * Roles assignable via the People page (invite dialog and per-row role select).
+ * Excludes super_admin (never assignable) and read_only (hidden until
+ * production-ready). Includes external client roles — AccessAssignment sets scope.
+ */
+export const PEOPLE_ASSIGNABLE_ROLES = Object.freeze([
+  ...INTERNAL_ROLES.filter(
+    (role) => role !== ROLE_IDS.SUPER_ADMIN && role !== ROLE_IDS.READ_ONLY,
+  ),
+  ...EXTERNAL_ROLES,
+]);
 
 export const ROLE_LABELS = Object.freeze({
   [ROLE_IDS.SUPER_ADMIN]: 'Super Admin',
