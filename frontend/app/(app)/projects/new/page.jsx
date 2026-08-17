@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createProject, listBrands } from '@/shared/api/projects.js';
-import { listUsers } from '@/shared/api/users.js';
 import { listTeams } from '@/shared/api/teams.js';
 import FormError from '@/shared/components/form-error.jsx';
 import ProjectModulesEditor from '@/shared/components/project-modules-editor.jsx';
@@ -16,9 +15,7 @@ const INITIAL_DRAFT = {
   brand: '',
   name: '',
   description: '',
-  defaultAssignee: '',
-  defaultTester: '',
-  defaultTeam: '',
+  team: '',
 };
 
 export default function NewProjectPage() {
@@ -26,7 +23,6 @@ export default function NewProjectPage() {
   const [draft, setDraft] = useState(INITIAL_DRAFT);
   const [moduleRows, setModuleRows] = useState([]);
   const [brands, setBrands] = useState([]);
-  const [users, setUsers] = useState([]);
   const [teams, setTeams] = useState([]);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -36,7 +32,6 @@ export default function NewProjectPage() {
 
   useEffect(() => {
     listBrands().then(setBrands).catch(() => {});
-    listUsers({ status: 'active' }).then((p) => setUsers(p.results)).catch(() => {});
     listTeams().then((p) => setTeams(p.results)).catch(() => {});
   }, []);
 
@@ -80,9 +75,7 @@ export default function NewProjectPage() {
         brand: draft.brand.trim(),
         name: draft.name.trim(),
         description: draft.description.trim(),
-        defaultAssignee: draft.defaultAssignee || null,
-        defaultTester: draft.defaultTester || null,
-        defaultTeam: draft.defaultTeam || null,
+        team: draft.team || null,
         modules: formRowsToModules(moduleRows),
       };
       const created = await createProject(body);
@@ -173,45 +166,21 @@ export default function NewProjectPage() {
             </div>
           </section>
 
-          <section className="new-ticket-block" aria-labelledby="project-defaults-heading">
-            <h2 id="project-defaults-heading" className="form-section">Defaults</h2>
+          <section className="new-ticket-block" aria-labelledby="project-team-heading">
+            <h2 id="project-team-heading" className="form-section">Project team</h2>
             <p className="form-hint">
-              Pre-fill lead, tester, and team when someone files a ticket in this project.
+              Assign the team that owns work in this project. Set member roles after creation.
             </p>
 
             <div className="new-project-defaults-stack">
               <div className="form-row">
-                <label htmlFor="npda">Default lead</label>
-                <select
-                  id="npda"
-                  value={draft.defaultAssignee}
-                  onChange={set('defaultAssignee')}
-                >
-                  <option value="">None</option>
-                  {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-                </select>
-              </div>
-
-              <div className="form-row">
-                <label htmlFor="npdt">Default tester</label>
-                <select
-                  id="npdt"
-                  value={draft.defaultTester}
-                  onChange={set('defaultTester')}
-                >
-                  <option value="">None</option>
-                  {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-                </select>
-              </div>
-
-              <div className="form-row">
-                <label htmlFor="npdteam">Default team</label>
+                <label htmlFor="npdteam">Project team</label>
                 <select
                   id="npdteam"
-                  value={draft.defaultTeam}
-                  onChange={set('defaultTeam')}
+                  value={draft.team}
+                  onChange={set('team')}
                 >
-                  <option value="">None</option>
+                  <option value="">No team assigned</option>
                   {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
                 <span className="help">Only global teams can be chosen here. Add project teams after creation.</span>
@@ -259,9 +228,9 @@ export default function NewProjectPage() {
           </div>
 
           <div className="panel">
-            <header><h3>Defaults and modules</h3></header>
+            <header><h3>Project team and modules</h3></header>
             <p className="note-line">
-              Set lead, tester, team, and module catalog now, or adjust them anytime on the Projects page.
+              Assign a team now and set member roles after creation, or adjust them anytime on the Projects page.
             </p>
           </div>
         </aside>

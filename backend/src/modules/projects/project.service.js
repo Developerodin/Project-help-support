@@ -4,6 +4,14 @@ import { paginate } from '../../platform/paginate.js';
 import Team from '../teams/team.model.js';
 import { assertActiveUsers, assertTeamUsable } from '../teams/team.service.js';
 import Project, { RESERVED_PROJECT_KEYS } from './project.model.js';
+import {
+  assignProjectTeam,
+  ensureProjectMigrated,
+  getProjectTeamContext,
+  listProjectTeamMembers,
+  migrateProjectTeamFromLegacy,
+  replaceProjectTeamMemberRoles,
+} from './project-team-member.service.js';
 
 const PROJECT_KEY_PATTERN = /^[A-Z][A-Z0-9]{1,9}$/;
 
@@ -58,19 +66,26 @@ async function resolveAvailableProjectKey(name, explicitKey) {
   return candidate;
 }
 
-async function assertCreateDefaults(body) {
-  await assertActiveUsers([body.defaultAssignee, body.defaultTester]);
-  if (!body.defaultTeam) return;
-
-  const team = await Team.findById(body.defaultTeam);
+async function assertCreateTeam(body) {
+  if (!body.team) return;
+  const team = await Team.findById(body.team);
   if (!team) throw new ApiError(404, 'TEAM_NOT_FOUND', 'Team not found');
   if (team.project != null) {
     throw new ApiError(
       400,
       'TEAM_PROJECT_MISMATCH',
-      'Only global teams can be set as defaults when creating a project',
+      'Only global teams can be assigned when creating a project',
     );
   }
+}
+
+/** @deprecated Legacy defaults — prefer `team` on create. */
+async function assertCreateDefaults(body) {
+  await assertCreateTeam(body);
+  if (body.defaultTeam && body.defaultTeam !== body.team) {
+    await assertCreateTeam({ team: body.defaultTeam });
+  }
+  await assertActiveUsers([body.defaultAssignee, body.defaultTester]);
 }
 
 /**
@@ -96,9 +111,24 @@ export function assertModuleAndPage(project, moduleLabel, pageLabel) {
   }
 }
 
+async function assertTeamPatch(projectId, body) {
+  if (body.team === undefined) return;
+  if (body.team) await assertTeamUsable(body.team, projectId);
+}
+
+/** @deprecated Legacy defaults patch. */
 async function assertDefaults(projectId, body) {
+  await assertTeamPatch(projectId, body);
   await assertActiveUsers([body.defaultAssignee, body.defaultTester]);
   if (body.defaultTeam) await assertTeamUsable(body.defaultTeam, projectId);
+}
+
+async function attachTeamContext(projectJson) {
+  if (!projectJson?.id && !projectJson?._id) return projectJson;
+  const projectId = projectJson.id || projectJson._id;
+  await ensureProjectMigrated(projectId);
+  const { team, teamMembers } = await getProjectTeamContext(projectId);
+  return { ...projectJson, team, teamMembers };
 }
 
 export async function createProject(actor, body) {
@@ -123,15 +153,24 @@ export async function createProject(actor, body) {
     name: body.name,
     description: body.description,
     modules: body.modules ?? [],
-    defaultAssignee: body.defaultAssignee || undefined,
-    defaultTester: body.defaultTester || undefined,
-    defaultTeam: body.defaultTeam || undefined,
+    team: body.team || body.defaultTeam || undefined,
     createdBy: actor._id,
   });
 
-  const populated = await Project.findById(project._id)
-    .populate(['defaultAssignee', 'defaultTester', 'defaultTeam']);
-  return populated.toJSON();
+  if (project.team) {
+    await assignProjectTeam(project._id, project.team);
+  } else if (body.defaultAssignee || body.defaultTester) {
+    await Project.findByIdAndUpdate(project._id, {
+      $set: {
+        defaultAssignee: body.defaultAssignee || undefined,
+        defaultTester: body.defaultTester || undefined,
+      },
+    });
+    await migrateProjectTeamFromLegacy(await Project.findById(project._id));
+  }
+
+  const populated = await Project.findById(project._id).populate('team');
+  return attachTeamContext(populated.toJSON());
 }
 
 export async function listBrands() {
@@ -145,16 +184,16 @@ export async function listProjects(query = {}) {
     page: query.page,
     limit: query.limit,
     sortBy: query.sortBy || 'brand:asc,key:asc',
-    populate: ['defaultAssignee', 'defaultTester', 'defaultTeam'],
+    populate: ['team'],
   });
-  return { ...page, results: page.results.map((p) => p.toJSON()) };
+  const results = await Promise.all(page.results.map(async (p) => attachTeamContext(p.toJSON())));
+  return { ...page, results };
 }
 
 export async function getProject(id) {
-  const project = await Project.findById(id)
-    .populate(['defaultAssignee', 'defaultTester', 'defaultTeam']);
+  const project = await Project.findById(id).populate('team');
   if (!project) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
-  return project.toJSON();
+  return attachTeamContext(project.toJSON());
 }
 
 export async function updateProject(id, body) {
@@ -162,17 +201,40 @@ export async function updateProject(id, body) {
     throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
   }
 
+  if (body.team !== undefined) {
+    await assignProjectTeam(id, body.team);
+    const { team, defaultAssignee, defaultTester, defaultTeam, ...rest } = body;
+    if (Object.keys(rest).length === 0) {
+      return getProject(id);
+    }
+    body = rest;
+  }
+
+  if (Object.keys(body).length === 0) return getProject(id);
+
   await assertDefaults(id, body);
 
-  // `key` and `nextTicketSeq` are never patchable. `key` is immutable in the
-  // schema as well; stripping here makes the intent visible at the call site.
-  const { key: _ignoredKey, nextTicketSeq: _ignoredSeq, ...patch } = body;
+  const { key: _ignoredKey, nextTicketSeq: _ignoredSeq, team: _ignoredTeam, ...patch } = body;
 
   const project = await Project.findByIdAndUpdate(
     id, { $set: patch }, { new: true, runValidators: true },
-  ).populate(['defaultAssignee', 'defaultTester', 'defaultTeam']);
+  ).populate('team');
 
-  return project.toJSON();
+  if (body.defaultAssignee || body.defaultTester || body.defaultTeam) {
+    await migrateProjectTeamFromLegacy(project);
+  }
+
+  return attachTeamContext(project.toJSON());
+}
+
+export async function setProjectTeamMembers(id, members) {
+  const rows = await replaceProjectTeamMemberRoles(id, members);
+  return { teamMembers: rows };
+}
+
+export async function getProjectTeamMembers(id) {
+  await ensureProjectMigrated(id);
+  return { teamMembers: await listProjectTeamMembers(id) };
 }
 
 export async function replaceModules(id, modules) {

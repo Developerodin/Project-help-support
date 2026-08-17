@@ -1,15 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import AuthFrame, { AuthBrand } from '@/shared/components/auth/auth-shell.jsx';
 import AuthField from '@/shared/components/auth/auth-field.jsx';
 import AuthError from '@/shared/components/auth/auth-error.jsx';
+import { resolveLoginRedirect } from '@/shared/lib/login-redirect.js';
 
 export default function LoginPage() {
   const { login } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
@@ -21,7 +23,7 @@ export default function LoginPage() {
     setBusy(true);
     try {
       await login(email, password);
-      router.push('/tickets');
+      router.push(resolveLoginRedirect(searchParams?.get('redirect')));
     } catch (err) {
       setError(err);
     } finally {

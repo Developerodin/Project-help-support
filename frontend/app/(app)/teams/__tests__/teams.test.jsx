@@ -82,9 +82,62 @@ describe('TeamsPage', () => {
     await userEvent.click(screen.getByRole('button', { name: /add members/i }));
     const picker = screen.getByRole('listbox', { name: /select members to add/i });
     await userEvent.click(within(picker).getByRole('checkbox', { name: /grace hopper/i }));
-    await userEvent.click(within(picker).getByRole('button', { name: /^add 1$/i }));
+    await userEvent.click(within(picker).getByRole('button', { name: /^add members$/i }));
 
     await waitFor(() => expect(updateMembers).toHaveBeenCalledWith('t1', { add: ['u2'] }));
+  });
+
+  it('summarises the roster and filters cards by scope and search', async () => {
+    listTeams.mockResolvedValue({
+      results: [
+        {
+          id: 't1',
+          name: 'Platform',
+          project: null,
+          members: [{ id: 'u1', name: 'Ada Lovelace' }],
+          stats: { total: 5, open: 4, overdue: 2 },
+        },
+        {
+          id: 't2',
+          name: 'Web Squad',
+          project: { id: 'p1', key: 'WEB', name: 'Web App' },
+          members: [],
+          stats: { total: 1, open: 1, overdue: 0 },
+        },
+      ],
+    });
+
+    render(<TeamsPage />);
+    await screen.findByRole('heading', { name: 'Platform' });
+
+    // 2 teams, 1 person on a team, 5 open tickets, 1 of 2 active users unassigned.
+    const metrics = screen.getByText('People on a team').closest('dl');
+    const tile = (label) => within(metrics).getByText(label).parentElement;
+    expect(within(tile('Teams')).getByText('2')).toBeInTheDocument();
+    expect(within(tile('People on a team')).getByText('1')).toBeInTheDocument();
+    expect(within(tile('Open tickets')).getByText('5')).toBeInTheDocument();
+    expect(within(tile('Overdue')).getByText('2')).toBeInTheDocument();
+    expect(within(tile('Not on a team')).getByText('1')).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText(/scope/i), 'empty');
+    expect(screen.queryByRole('heading', { name: 'Platform' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Web Squad' })).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText(/scope/i), 'all');
+    await userEvent.type(screen.getByLabelText(/search teams/i), 'ada');
+    expect(screen.getByRole('heading', { name: 'Platform' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Web Squad' })).not.toBeInTheDocument();
+  });
+
+  it('offers a way out when filters match nothing', async () => {
+    render(<TeamsPage />);
+    await screen.findByRole('heading', { name: 'Platform' });
+
+    await userEvent.type(screen.getByLabelText(/search teams/i), 'zzz');
+    expect(screen.getByRole('heading', { name: /no teams match/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /clear filters/i }));
+    expect(screen.getByRole('heading', { name: 'Platform' })).toBeInTheDocument();
   });
 
   it('removing a member goes through PATCH after confirmation', async () => {

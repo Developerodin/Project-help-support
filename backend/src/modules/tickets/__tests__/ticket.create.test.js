@@ -64,7 +64,7 @@ test('project defaults are applied at creation', async () => {
   const dev = await user();
   const tester = await user();
   const web = await project();
-  const team = await Team.create({ name: 'Platform', createdBy: actor._id });
+  const team = await Team.create({ name: 'Platform', members: [dev._id, tester._id], createdBy: actor._id });
 
   await Project.updateOne({ _id: web._id }, {
     $set: { defaultAssignee: dev._id, defaultTester: tester._id, defaultTeam: team._id },

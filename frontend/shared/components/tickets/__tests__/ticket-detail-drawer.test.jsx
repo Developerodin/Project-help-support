@@ -8,7 +8,7 @@ const transitionTicket = vi.fn();
 const uploadAttachments = vi.fn();
 const assignTicket = vi.fn();
 const listTeams = vi.fn();
-const listUsers = vi.fn();
+const getProject = vi.fn();
 const showToast = vi.fn();
 
 vi.mock('@/shared/api/tickets.js', () => ({
@@ -28,8 +28,8 @@ vi.mock('@/shared/api/tickets.js', () => ({
 vi.mock('@/shared/api/teams.js', () => ({
   listTeams: (...args) => listTeams(...args),
 }));
-vi.mock('@/shared/api/users.js', () => ({
-  listUsers: (...args) => listUsers(...args),
+vi.mock('@/shared/api/projects.js', () => ({
+  getProject: (...args) => getProject(...args),
 }));
 vi.mock('@/shared/lib/toast.js', () => ({
   showToast: (...args) => showToast(...args),
@@ -41,8 +41,23 @@ vi.mock('@/shared/contexts/auth-context.jsx', () => ({
 const ticket = {
   id: 't1', ticketId: 'WEB-101', title: 'Broken login', description: 'Nothing happens',
   status: 'pending', revision: 3, createdBy: { id: 'u-admin', name: 'Root' },
+  project: { id: 'p1', key: 'WEB', name: 'Web App' },
   comments: [], attachments: [], stageHistory: [], activityLog: [], labels: [],
   createdAt: '2026-08-01T00:00:00.000Z',
+};
+
+const projectTeamFixture = {
+  team: { id: 'team-1', name: 'Platform' },
+  teamMembers: [{
+    user: { id: 'u-dev', name: 'Dev User', email: 'dev@example.com' },
+    role: 'developer',
+    roleLabel: 'Developer',
+  }],
+};
+
+const projectWithoutTeamFixture = {
+  team: null,
+  teamMembers: [],
 };
 
 describe('TicketDetailDrawer', () => {
@@ -55,9 +70,7 @@ describe('TicketDetailDrawer', () => {
     listTeams.mockReset().mockResolvedValue({
       results: [{ id: 'team-1', _id: 'team-1', name: 'Platform', project: { key: 'WEB' } }],
     });
-    listUsers.mockReset().mockResolvedValue({
-      results: [{ id: 'u-dev', _id: 'u-dev', name: 'Dev User', email: 'dev@example.com' }],
-    });
+    getProject.mockReset().mockResolvedValue(projectTeamFixture);
     showToast.mockReset();
   });
 
@@ -285,12 +298,13 @@ describe('TicketDetailDrawer', () => {
     const rail = screen.getByRole('complementary', { name: /ticket metadata/i });
     await userEvent.click(within(rail).getByRole('button', { name: /assign assignee/i }));
 
-    await waitFor(() => expect(listUsers).toHaveBeenCalledWith({ status: 'active' }));
+    await waitFor(() => expect(getProject).toHaveBeenCalledWith('p1'));
     await userEvent.click(await screen.findByRole('option', { name: /dev user/i }));
 
     await waitFor(() => expect(assignTicket).toHaveBeenCalledWith('WEB-101', {
       revision: 3,
       assignedTo: 'u-dev',
+      team: 'team-1',
     }));
     expect(showToast).toHaveBeenCalledWith('Assignee updated');
   });
@@ -303,6 +317,8 @@ describe('TicketDetailDrawer', () => {
   });
 
   it('assigns a team from the details tab dropdown', async () => {
+    getProject.mockResolvedValue(projectWithoutTeamFixture);
+
     render(<TicketDetailDrawer ticketId="WEB-101" onClose={() => {}} onChanged={() => {}} />);
     await screen.findByText('WEB-101');
 
@@ -322,7 +338,7 @@ describe('TicketDetailDrawer', () => {
     render(<TicketDetailDrawer ticketId="WEB-101" onClose={() => {}} onChanged={() => {}} />);
     await screen.findByText('WEB-101');
 
-    await waitFor(() => expect(listUsers).toHaveBeenCalledWith({ status: 'active' }));
+    await waitFor(() => expect(getProject).toHaveBeenCalledWith('p1'));
     await waitFor(() => expect(listTeams).toHaveBeenCalled());
 
     await userEvent.click(screen.getByRole('tab', { name: /^details$/i }));
@@ -335,6 +351,8 @@ describe('TicketDetailDrawer', () => {
   });
 
   it('assigns a team from the Details tab dropdown', async () => {
+    getProject.mockResolvedValue(projectWithoutTeamFixture);
+
     render(<TicketDetailDrawer ticketId="WEB-101" onClose={() => {}} onChanged={() => {}} />);
     await screen.findByText('WEB-101');
     await waitFor(() => expect(listTeams).toHaveBeenCalled());
@@ -364,7 +382,7 @@ describe('TicketDetailDrawer', () => {
 
     render(<TicketDetailDrawer ticketId="WEB-101" onClose={() => {}} onChanged={() => {}} />);
     await screen.findByText('WEB-101');
-    await waitFor(() => expect(listUsers).toHaveBeenCalledWith({ status: 'active' }));
+    await waitFor(() => expect(getProject).toHaveBeenCalledWith('p1'));
 
     await userEvent.click(screen.getByRole('tab', { name: /^details$/i }));
 
@@ -377,11 +395,13 @@ describe('TicketDetailDrawer', () => {
     await waitFor(() => expect(assignTicket).toHaveBeenCalledWith('WEB-101', {
       revision: 3,
       assignedTo: 'u-dev',
+      team: 'team-1',
     }));
     expect(showToast).toHaveBeenCalledWith('Assignee updated');
   });
 
   it('reverts Details tab dropdown and toasts on assignment failure', async () => {
+    getProject.mockResolvedValue(projectWithoutTeamFixture);
     assignTicket.mockRejectedValueOnce({
       status: 409,
       message: 'Ticket was updated elsewhere. Reload and try again.',

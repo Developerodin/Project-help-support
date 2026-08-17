@@ -4,7 +4,7 @@ import { validate } from '../../platform/validate.js';
 import * as controller from './project.controller.js';
 import {
   listProjectsSchema, createProjectSchema, projectIdSchema,
-  updateProjectSchema, replaceModulesSchema,
+  updateProjectSchema, replaceModulesSchema, projectTeamMembersSchema,
 } from './project.validation.js';
 
 export default function projectRoutes(config) {
@@ -18,6 +18,9 @@ export default function projectRoutes(config) {
   router.patch('/:id', requireRole('admin'), validate(updateProjectSchema), controller.update);
   router.put('/:id/modules', requireRole('admin'),
     validate(replaceModulesSchema), controller.modules);
+  router.get('/:id/team-members', validate(projectIdSchema), controller.teamMembers);
+  router.put('/:id/team-members', requireRole('admin'),
+    validate(projectTeamMembersSchema), controller.replaceTeamMembers);
 
   return router;
 }

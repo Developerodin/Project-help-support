@@ -6,17 +6,14 @@ import ProjectsPage from '../page.jsx';
 const listProjects = vi.fn();
 const patchProject = vi.fn();
 const replaceModules = vi.fn();
-const listUsers = vi.fn();
+const replaceProjectTeamMembers = vi.fn();
 const listTeams = vi.fn();
 
 vi.mock('@/shared/api/projects.js', () => ({
   listProjects: (...a) => listProjects(...a),
   patchProject: (...a) => patchProject(...a),
   replaceModules: (...a) => replaceModules(...a),
-}));
-
-vi.mock('@/shared/api/users.js', () => ({
-  listUsers: (...a) => listUsers(...a),
+  replaceProjectTeamMembers: (...a) => replaceProjectTeamMembers(...a),
 }));
 
 vi.mock('@/shared/api/teams.js', () => ({
@@ -39,9 +36,8 @@ const sampleProjects = [
     name: 'Web App',
     status: 'active',
     modules: [],
-    defaultAssignee: null,
-    defaultTester: null,
-    defaultTeam: null,
+    team: null,
+    teamMembers: [],
   },
   {
     id: 'p2',
@@ -50,9 +46,8 @@ const sampleProjects = [
     name: 'Mobile App',
     status: 'active',
     modules: [],
-    defaultAssignee: null,
-    defaultTester: null,
-    defaultTeam: null,
+    team: null,
+    teamMembers: [],
   },
 ];
 
@@ -62,7 +57,6 @@ describe('ProjectsPage', () => {
     listProjects.mockReset().mockResolvedValue({ results: sampleProjects, totalResults: 2 });
     patchProject.mockReset().mockResolvedValue({});
     replaceModules.mockReset().mockResolvedValue({});
-    listUsers.mockReset().mockResolvedValue({ results: [] });
     listTeams.mockReset().mockResolvedValue({ results: [] });
   });
 
@@ -72,7 +66,7 @@ describe('ProjectsPage', () => {
     expect(await screen.findByRole('button', { name: /collapse dharwin/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /WEB — Web App/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /MOB — Mobile App/i })).toBeInTheDocument();
-    expect(screen.getAllByText('Defaults')).toHaveLength(2);
+    expect(screen.getAllByRole('heading', { name: 'Project team', level: 5 })).toHaveLength(2);
     expect(screen.getAllByText('Module catalog')).toHaveLength(2);
   });
 

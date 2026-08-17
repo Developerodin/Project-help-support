@@ -24,3 +24,11 @@ export const update = catchAsync(async (req, res) => {
 export const modules = catchAsync(async (req, res) => {
   res.json(await projectService.replaceModules(req.params.id, req.body.modules));
 });
+
+export const teamMembers = catchAsync(async (req, res) => {
+  res.json(await projectService.getProjectTeamMembers(req.params.id));
+});
+
+export const replaceTeamMembers = catchAsync(async (req, res) => {
+  res.json(await projectService.setProjectTeamMembers(req.params.id, req.body.members));
+});

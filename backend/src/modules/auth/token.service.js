@@ -8,12 +8,10 @@ export function hashToken(raw) {
   return createHash('sha256').update(String(raw)).digest('hex');
 }
 
-export function generateAccessToken(user, config) {
-  return jwt.sign(
-    { sub: user._id.toString(), role: user.role },
-    config.jwt.secret,
-    { expiresIn: `${config.jwt.accessExpirationMinutes}m` },
-  );
+export function generateAccessToken(user, config, opts = {}) {
+  const payload = { sub: user._id.toString(), role: user.role };
+  if (opts.impersonatedBy) payload.impersonatedBy = opts.impersonatedBy.toString();
+  return jwt.sign(payload, config.jwt.secret, { expiresIn: `${config.jwt.accessExpirationMinutes}m` });
 }
 
 export function verifyAccessToken(token, config) {
@@ -35,6 +33,7 @@ export async function issueRefreshToken(user, config, meta = {}) {
             createdAt: new Date(),
             userAgent: meta.userAgent,
             ip: meta.ip,
+            ...(meta.impersonatedBy ? { impersonatedBy: meta.impersonatedBy } : {}),
           }],
           // Negative $slice keeps the tail — the most recent N.
           $slice: -MAX_REFRESH_TOKENS,
@@ -92,8 +91,11 @@ export async function rotateRefreshToken(presentedRaw, config, meta = {}) {
     },
   );
 
-  const issued = await issueRefreshToken(user, config, meta);
-  return { user, ...issued };
+  const issued = await issueRefreshToken(user, config, {
+    ...meta,
+    impersonatedBy: entry.impersonatedBy,
+  });
+  return { user, ...issued, impersonatedBy: entry.impersonatedBy };
 }
 
 export async function revokeRefreshToken(presentedRaw) {

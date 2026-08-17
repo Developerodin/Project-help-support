@@ -1,12 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { getTeam, patchTeam } from '@/shared/api/teams.js';
+import { getTeam, patchTeam, updateMembers } from '@/shared/api/teams.js';
 import { listProjects } from '@/shared/api/projects.js';
+import { listUsers } from '@/shared/api/users.js';
 import FormError from '@/shared/components/form-error.jsx';
-import ValidationDialog from '@/shared/components/validation-dialog.jsx';
-import { validateNewTeamDraft } from '@/shared/lib/validate-new-team.js';
+import TeamForm from '@/shared/components/teams/team-form.jsx';
+import { normalizeApiError } from '@/shared/lib/api-error.js';
 import { showToast } from '@/shared/lib/toast.js';
 
 export default function EditTeamPage() {
@@ -14,65 +15,89 @@ export default function EditTeamPage() {
   const params = useParams();
   const teamId = params.id;
 
-  const [draft, setDraft] = useState({ name: '', project: '' });
-  const [teamName, setTeamName] = useState('');
+  const [team, setTeam] = useState(null);
   const [projects, setProjects] = useState([]);
+  const [projectsError, setProjectsError] = useState(false);
+  const [users, setUsers] = useState([]);
+  const [usersLoading, setUsersLoading] = useState(true);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [showValidation, setShowValidation] = useState(false);
-  const [validationDialogOpen, setValidationDialogOpen] = useState(false);
-  const [validationItems, setValidationItems] = useState([]);
+  const [memberBusy, setMemberBusy] = useState(null);
+  const [memberNotice, setMemberNotice] = useState(null);
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([getTeam(teamId), listProjects()])
-      .then(([team, projectsPage]) => {
-        setTeamName(team.name);
-        setDraft({
-          name: team.name,
-          project: team.project?.id ?? '',
-        });
-        setProjects(projectsPage.results.filter((proj) => proj.status === 'active'));
-      })
+    getTeam(teamId)
+      .then(setTeam)
       .catch(setError)
       .finally(() => setLoading(false));
   }, [teamId]);
 
-  const nameLen = draft.name.trim().length;
-  const validation = useMemo(() => validateNewTeamDraft(draft), [draft]);
-  const nameInvalid = showValidation && validation.errors.some((e) => e.field === 'name');
-  const nameError = validation.errors.find((e) => e.field === 'name');
-
-  const focusFirstInvalid = useCallback((result) => {
-    const id = result?.firstFieldId;
-    if (!id) return;
-    window.setTimeout(() => document.getElementById(id)?.focus(), 0);
+  useEffect(() => {
+    listProjects()
+      .then((p) => setProjects(p.results.filter((proj) => proj.status === 'active')))
+      .catch(() => setProjectsError(true));
   }, []);
 
-  const set = (key) => (event) => {
-    setDraft((prev) => ({ ...prev, [key]: event.target.value }));
-  };
+  useEffect(() => {
+    listUsers({ status: 'active' })
+      .then((p) => setUsers(p.results))
+      .catch(() => {})
+      .finally(() => setUsersLoading(false));
+  }, []);
 
-  function closeValidationDialog() {
-    setValidationDialogOpen(false);
-    focusFirstInvalid(validateNewTeamDraft(draft));
+  /**
+   * Membership edits are their own PATCH, applied optimistically and rolled
+   * back on failure — the roster never silently diverges from the server, and
+   * nothing here reloads the page.
+   */
+  async function runMemberChange({ optimistic, request, busyKey, failure, success }) {
+    const previous = team;
+    setMemberNotice(null);
+    setMemberBusy(busyKey);
+    setTeam((prev) => ({ ...prev, members: optimistic(prev.members) }));
+    try {
+      const updated = await request();
+      setTeam(updated);
+      showToast(success);
+    } catch (err) {
+      setTeam(previous);
+      setMemberNotice({
+        message: normalizeApiError(err)?.message || failure,
+        onRetry: () => runMemberChange({ optimistic, request, busyKey, failure, success }),
+      });
+    } finally {
+      setMemberBusy(null);
+    }
   }
 
-  async function onSubmit(event) {
-    event.preventDefault();
-    setShowValidation(true);
-    const result = validateNewTeamDraft(draft);
-    if (!result.valid) {
-      setValidationItems(result.summaryItems);
-      setValidationDialogOpen(true);
-      return;
-    }
+  function handleAddMembers(ids) {
+    const added = users.filter((u) => ids.includes(u.id));
+    return runMemberChange({
+      busyKey: 'add',
+      optimistic: (current) => [...current, ...added],
+      request: () => updateMembers(teamId, { add: ids }),
+      failure: `Could not add ${ids.length === 1 ? 'that member' : `those ${ids.length} members`}.`,
+      success: ids.length === 1 ? 'Member added' : `${ids.length} members added`,
+    });
+  }
 
+  function handleRemoveMember(member) {
+    return runMemberChange({
+      busyKey: member.id,
+      optimistic: (current) => current.filter((m) => m.id !== member.id),
+      request: () => updateMembers(teamId, { remove: [member.id] }),
+      failure: `Could not remove ${member.name}.`,
+      success: `${member.name} removed`,
+    });
+  }
+
+  async function handleSubmit(payload) {
     setBusy(true);
     setError(null);
     try {
-      await patchTeam(teamId, { name: draft.name.trim(), project: draft.project || null });
+      await patchTeam(teamId, payload);
       showToast('Team updated');
       router.push('/teams');
     } catch (err) {
@@ -83,122 +108,38 @@ export default function EditTeamPage() {
   }
 
   if (loading) {
-    return <p className="meta" role="status">Loading team…</p>;
+    return (
+      <div className="team-form-page">
+        <p className="loading-skeleton meta" role="status">Loading team…</p>
+      </div>
+    );
+  }
+
+  if (!team) {
+    return (
+      <div className="team-form-page">
+        <FormError error={error} />
+      </div>
+    );
   }
 
   return (
-    <>
-      <div className="page-head">
-        <div>
-          <h1>Edit team</h1>
-          <p className="sub">
-            {teamName ? `Update ${teamName}. Members are managed from the Teams page.` : 'Update team details.'}
-          </p>
-        </div>
-      </div>
-
-      <FormError error={error} />
-
-      <div className="formgrid new-ticket-grid">
-        <form className="form new-ticket-form" id="editTeam" onSubmit={onSubmit} noValidate>
-          <section className="new-ticket-block" aria-labelledby="team-details-heading">
-            <h2 id="team-details-heading" className="form-section">Team details</h2>
-            <p className="form-hint">Name the team and choose whether it applies to all projects or one.</p>
-
-            <div className={`form-row${nameInvalid ? ' bad' : ''}`}>
-              <label htmlFor="ntn">Team name <span className="req" aria-hidden="true">*</span></label>
-              <input
-                id="ntn"
-                required
-                maxLength={120}
-                placeholder="e.g. Platform"
-                value={draft.name}
-                onChange={set('name')}
-                aria-invalid={nameInvalid}
-                aria-describedby="ntn-hint"
-              />
-              <p id="ntn-hint" className={`field-hint${nameInvalid ? ' invalid' : ''}`}>
-                {nameInvalid
-                  ? (nameError?.message ?? 'Required.')
-                  : `${nameLen}/120 characters`}
-              </p>
-              <span className="help">Shown on team cards and ticket routing pickers.</span>
-            </div>
-
-            <div className="form-row">
-              <label htmlFor="ntp">Project scope</label>
-              <select
-                id="ntp"
-                value={draft.project}
-                onChange={set('project')}
-                aria-describedby="ntp-hint"
-              >
-                <option value="">Global (all projects)</option>
-                {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-              <p id="ntp-hint" className="field-hint">Optional</p>
-              <span className="help">
-                Global teams can be assigned on any project. Project teams only appear for that project.
-              </span>
-            </div>
-          </section>
-
-          <div className="form-foot new-ticket-foot">
-            <button type="submit" className="btn btn-primary" disabled={busy}>
-              {busy ? 'Saving…' : 'Save changes'}
-            </button>
-            <button type="button" className="btn" onClick={() => router.back()} disabled={busy}>
-              Cancel
-            </button>
-          </div>
-        </form>
-
-        <aside className="formside" aria-label="Team setup notes">
-          <div className="panel">
-            <header><h3>Global vs project teams</h3></header>
-            <p className="note-line">
-              Global teams work across every project. Use them for groups like Platform or QA that
-              handle work from multiple products.
-            </p>
-          </div>
-
-          <div className="panel">
-            <header><h3>Project teams</h3></header>
-            <p className="note-line">
-              Project-scoped teams only show up when filing or routing tickets in that project.
-              Use them when a squad owns one product exclusively.
-            </p>
-          </div>
-
-          <div className="panel">
-            <header><h3>Members</h3></header>
-            <p className="note-line">
-              Add or remove people from the Teams page. Changing scope does not remove existing members.
-            </p>
-          </div>
-        </aside>
-      </div>
-
-      {showValidation && !validation.valid ? (
-        <div
-          role="alert"
-          aria-live="assertive"
-          style={{
-            position: 'absolute', width: 1, height: 1, padding: 0, margin: -1,
-            overflow: 'hidden', clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap', border: 0,
-          }}
-        >
-          {validation.liveMessage}
-        </div>
-      ) : null}
-
-      <ValidationDialog
-        open={validationDialogOpen}
-        title="Fill in required fields"
-        message="Complete the highlighted fields before saving this team."
-        items={validationItems}
-        onClose={closeValidationDialog}
-      />
-    </>
+    <TeamForm
+      key={team.id}
+      mode="edit"
+      team={team}
+      projects={projects}
+      projectsError={projectsError}
+      users={users}
+      usersLoading={usersLoading}
+      busy={busy}
+      error={error}
+      memberBusy={memberBusy}
+      memberNotice={memberNotice}
+      onSubmit={handleSubmit}
+      onCancel={() => router.back()}
+      onAddMembers={handleAddMembers}
+      onRemoveMember={handleRemoveMember}
+    />
   );
 }

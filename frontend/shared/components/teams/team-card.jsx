@@ -1,16 +1,9 @@
 ﻿'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo } from 'react';
 import Link from 'next/link';
 import { initials } from '@/shared/components/icons.jsx';
-
-function ChevronDown() {
-  return (
-    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
-      <path d="m4 6 4 4 4-4" />
-    </svg>
-  );
-}
+import MemberPicker from '@/shared/components/teams/member-picker.jsx';
 
 export default function TeamCard({
   team,
@@ -26,47 +19,6 @@ export default function TeamCard({
     [users, memberIds],
   );
 
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [search, setSearch] = useState('');
-  const [selected, setSelected] = useState([]);
-  const wrapRef = useRef(null);
-
-  useEffect(() => {
-    if (!pickerOpen) return undefined;
-    function onPointerDown(event) {
-      if (!wrapRef.current?.contains(event.target)) setPickerOpen(false);
-    }
-    function onKeyDown(event) {
-      if (event.key === 'Escape') setPickerOpen(false);
-    }
-    document.addEventListener('pointerdown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [pickerOpen]);
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return available;
-    return available.filter(
-      (u) => u.name.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q),
-    );
-  }, [available, search]);
-
-  function toggleUser(id) {
-    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  }
-
-  async function submitAdd() {
-    if (selected.length === 0 || addBusy) return;
-    await onAddMembers(team.id, selected);
-    setSelected([]);
-    setSearch('');
-    setPickerOpen(false);
-  }
-
   return (
     <section className="panel team-panel">
       <header>
@@ -75,6 +27,47 @@ export default function TeamCard({
         <Link href={`/teams/${team.id}/edit`} className="btn btn-ghost btn-sm">Edit</Link>
         <span className="chip">{team.project ? team.project.key : 'global'}</span>
       </header>
+
+      <dl className="team-panel__stats">
+        <div>
+          <dt>Members</dt>
+          <dd>{team.members.length}</dd>
+        </div>
+        <div>
+          <dt>Open tickets</dt>
+          <dd>{team.stats?.open ?? 0}</dd>
+        </div>
+        <div>
+          <dt>Overdue</dt>
+          <dd className={team.stats?.overdue ? 'team-panel__overdue' : undefined}>
+            {team.stats?.overdue ?? 0}
+          </dd>
+        </div>
+        <div>
+          <dt>Projects</dt>
+          <dd>{team.projects?.length ?? (team.project ? 1 : 0)}</dd>
+        </div>
+      </dl>
+
+      {team.lead ? (
+        <p className="team-panel__lead">
+          <span className="avatar sm">{initials(team.lead.name)}</span>
+          <span>{team.lead.name}<span className="meta"> · lead</span></span>
+        </p>
+      ) : null}
+
+      {team.projects?.length ? (
+        <div className="team-panel__projects">
+          <span className="lbl">Projects</span>
+          <ul>
+            {team.projects.map((project) => (
+              <li key={project.id}>{project.name}</li>
+            ))}
+          </ul>
+        </div>
+      ) : team.project ? (
+        <p className="team-panel__scope meta">Scoped to {team.project.name}</p>
+      ) : null}
 
       <div className="team-members">
         <div className="team-panel__members-head">
@@ -117,83 +110,11 @@ export default function TeamCard({
       </div>
 
       <div className="team-panel__add">
-        <div className="menuwrap" ref={wrapRef}>
-          <button
-            type="button"
-            className="btn btn-sm"
-            aria-haspopup="listbox"
-            aria-expanded={pickerOpen}
-            disabled={addBusy || available.length === 0}
-            onClick={() => setPickerOpen((v) => !v)}
-          >
-            {addBusy ? (
-              <>
-                <span className="btn-spin" aria-hidden="true" />
-                Adding…
-              </>
-            ) : (
-              <>
-                Add members
-                <ChevronDown />
-              </>
-            )}
-          </button>
-
-          {pickerOpen && (
-            <div className="menu on left wide member-picker-menu" role="listbox" aria-label="Select members to add">
-              <input
-                type="search"
-                className="menusearch"
-                placeholder="Search people…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                aria-label="Search people"
-              />
-              <div className="menuscroll">
-                {filtered.length === 0 ? (
-                  <p className="menucap meta">No matching people</p>
-                ) : (
-                  filtered.map((user) => {
-                    const checked = selected.includes(user.id);
-                    return (
-                      <label key={user.id} className="menuitem menuitem--check">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleUser(user.id)}
-                        />
-                        <span className="avatar sm">{initials(user.name)}</span>
-                        <span className="member-picker__label">
-                          <b>{user.name}</b>
-                          {user.email ? <span>{user.email}</span> : null}
-                        </span>
-                      </label>
-                    );
-                  })
-                )}
-              </div>
-              <div className="member-picker-foot">
-                <span className="meta">{selected.length} selected</span>
-                <span className="spacer" />
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  onClick={() => { setSelected([]); setPickerOpen(false); }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-primary"
-                  disabled={selected.length === 0 || addBusy}
-                  onClick={submitAdd}
-                >
-                  Add {selected.length || ''}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+        <MemberPicker
+          available={available}
+          busy={addBusy}
+          onConfirm={(ids) => onAddMembers(team.id, ids)}
+        />
         {available.length === 0 && team.members.length > 0 && (
           <p className="field-hint">Everyone active is already on this team.</p>
         )}

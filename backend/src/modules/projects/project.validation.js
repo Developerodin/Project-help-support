@@ -1,4 +1,5 @@
 import Joi from 'joi';
+import { PROJECT_TEAM_ROLES } from '@pms/shared';
 
 const objectId = Joi.string().hex().length(24);
 
@@ -25,6 +26,7 @@ export const createProjectSchema = {
     key: Joi.string().trim().uppercase().pattern(/^[A-Z][A-Z0-9]{1,9}$/),
     name: Joi.string().trim().min(1).max(120).required(),
     description: Joi.string().trim().max(1000).allow(''),
+    team: objectId.allow(null),
     defaultAssignee: objectId.allow(null),
     defaultTester: objectId.allow(null),
     defaultTeam: objectId.allow(null),
@@ -44,6 +46,7 @@ export const updateProjectSchema = {
     name: Joi.string().trim().min(1).max(120),
     description: Joi.string().trim().max(1000).allow(''),
     status: Joi.string().valid('active', 'archived'),
+    team: objectId.allow(null),
     defaultAssignee: objectId.allow(null),
     defaultTester: objectId.allow(null),
     defaultTeam: objectId.allow(null),
@@ -53,4 +56,14 @@ export const updateProjectSchema = {
 export const replaceModulesSchema = {
   params: Joi.object({ id: objectId.required() }),
   body: Joi.object({ modules: Joi.array().items(moduleItem).required() }),
+};
+
+export const projectTeamMembersSchema = {
+  params: Joi.object({ id: objectId.required() }),
+  body: Joi.object({
+    members: Joi.array().items(Joi.object({
+      userId: objectId.required(),
+      role: Joi.string().valid(...PROJECT_TEAM_ROLES).required(),
+    })).required(),
+  }),
 };

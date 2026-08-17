@@ -46,19 +46,18 @@ test('createProject accepts defaults and modules on create', async () => {
   const assignee = await User.create({
     name: 'Dev', email: 'dev@example.com', password: 'a-long-enough-password', status: 'active',
   });
-  const team = await Team.create({ name: 'Platform', createdBy: actor._id });
+  const team = await Team.create({ name: 'Platform', members: [assignee._id], createdBy: actor._id });
 
   const project = await createProject(actor, {
     brand: 'Dharwin',
     name: 'Analytics',
-    defaultAssignee: assignee._id,
-    defaultTeam: team._id,
+    team: team._id,
     modules: [{ label: 'Reports', pages: [{ label: 'Overview', path: '/reports' }] }],
   });
 
   assert.equal(project.key, 'ANA');
-  assert.equal(String(project.defaultAssignee.id ?? project.defaultAssignee), String(assignee._id));
-  assert.equal(String(project.defaultTeam.id ?? project.defaultTeam), String(team._id));
+  assert.equal(String(project.team.id ?? project.team), String(team._id));
+  assert.ok(project.teamMembers.some((m) => m.user.id === String(assignee._id)));
   assert.equal(project.modules[0].label, 'Reports');
 });
 
@@ -108,18 +107,18 @@ test('updateProject rejects a default team belonging to another project', async 
   const foreign = await Team.create({ name: 'Mobile Squad', project: mob.id, createdBy: actor._id });
 
   await assert.rejects(
-    () => updateProject(web.id, { defaultTeam: foreign._id }),
+    () => updateProject(web.id, { team: foreign._id }),
     (err) => err.statusCode === 400 && err.code === 'TEAM_PROJECT_MISMATCH',
   );
 });
 
-test('updateProject accepts a global team as a default', async () => {
+test('updateProject accepts a global team assignment', async () => {
   const actor = await admin();
   const web = await createProject(actor, { brand: 'Dharwin', key: 'WEB', name: 'Web App' });
   const global = await Team.create({ name: 'Platform', createdBy: actor._id });
 
-  const updated = await updateProject(web.id, { defaultTeam: global._id });
-  assert.equal(String(updated.defaultTeam.id ?? updated.defaultTeam), String(global._id));
+  const updated = await updateProject(web.id, { team: global._id });
+  assert.equal(String(updated.team.id ?? updated.team), String(global._id));
 });
 
 test('updateProject cannot change the key', async () => {

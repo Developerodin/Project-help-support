@@ -7,7 +7,6 @@ const push = vi.fn();
 const back = vi.fn();
 const createProject = vi.fn();
 const listBrands = vi.fn();
-const listUsers = vi.fn();
 const listTeams = vi.fn();
 const showToast = vi.fn();
 
@@ -18,10 +17,6 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/shared/api/projects.js', () => ({
   createProject: (...a) => createProject(...a),
   listBrands: (...a) => listBrands(...a),
-}));
-
-vi.mock('@/shared/api/users.js', () => ({
-  listUsers: (...a) => listUsers(...a),
 }));
 
 vi.mock('@/shared/api/teams.js', () => ({
@@ -38,7 +33,6 @@ describe('NewProjectPage', () => {
     back.mockReset();
     createProject.mockReset().mockResolvedValue({ id: 'p3', key: 'OPS', name: 'Operations', brand: 'Acme' });
     listBrands.mockReset().mockResolvedValue(['Dharwin']);
-    listUsers.mockReset().mockResolvedValue({ results: [{ id: 'u1', name: 'Alex Dev' }] });
     listTeams.mockReset().mockResolvedValue({ results: [{ id: 't1', name: 'Platform' }] });
     showToast.mockReset();
   });
@@ -51,8 +45,8 @@ describe('NewProjectPage', () => {
     expect(screen.getByRole('complementary', { name: /project setup notes/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /brand vs project/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /ticket ids/i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /defaults and modules/i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Defaults', level: 2 })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /project team and modules/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /project team/i, level: 2 })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /module catalog/i })).toBeInTheDocument();
     expect(screen.queryByLabelText(/ticket key/i)).not.toBeInTheDocument();
   });
@@ -91,7 +85,6 @@ describe('NewProjectPage', () => {
     await user.type(document.getElementById('npb'), 'Acme');
     await user.type(document.getElementById('npn'), 'Operations');
     await user.type(document.getElementById('npd'), 'Ops backlog');
-    await user.selectOptions(document.getElementById('npda'), 'u1');
     await user.selectOptions(document.getElementById('npdteam'), 't1');
     await user.click(screen.getByRole('button', { name: /create project/i }));
 
@@ -99,9 +92,7 @@ describe('NewProjectPage', () => {
       brand: 'Acme',
       name: 'Operations',
       description: 'Ops backlog',
-      defaultAssignee: 'u1',
-      defaultTester: null,
-      defaultTeam: 't1',
+      team: 't1',
       modules: [],
     }));
     expect(showToast).toHaveBeenCalledWith('Project OPS created');

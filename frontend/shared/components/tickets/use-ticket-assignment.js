@@ -1,8 +1,8 @@
 ﻿'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { getProject } from '@/shared/api/projects.js';
 import { listTeams } from '@/shared/api/teams.js';
-import { listUsers } from '@/shared/api/users.js';
 import { normalizeApiError } from '@/shared/lib/api-error.js';
 import { showToast } from '@/shared/lib/toast.js';
 
@@ -16,29 +16,38 @@ function entityRef(entity) {
 export function useTicketAssignment({ ticket, canAssign, onAssign, eagerLoad = false }) {
   const [assigneePickerOpen, setAssigneePickerOpen] = useState(false);
   const [teamPickerOpen, setTeamPickerOpen] = useState(false);
-  const [users, setUsers] = useState([]);
+  const [projectTeam, setProjectTeam] = useState(null);
+  const [teamMembers, setTeamMembers] = useState([]);
   const [teams, setTeams] = useState([]);
-  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [loadingMembers, setLoadingMembers] = useState(false);
   const [loadingTeams, setLoadingTeams] = useState(false);
-  const [usersError, setUsersError] = useState(null);
+  const [membersError, setMembersError] = useState(null);
   const [teamsError, setTeamsError] = useState(null);
   const [assigningField, setAssigningField] = useState(null);
 
   const projectId = ticket?.project?.id || ticket?.project?._id;
 
   useEffect(() => {
-    if (!canAssign || (!eagerLoad && !assigneePickerOpen)) return undefined;
+    if (!canAssign || !projectId || (!eagerLoad && !assigneePickerOpen && !teamPickerOpen)) {
+      return undefined;
+    }
     let cancelled = false;
-    setLoadingUsers(true);
-    setUsersError(null);
-    listUsers({ status: 'active' })
-      .then((page) => { if (!cancelled) setUsers(page.results || []); })
-      .catch((err) => {
-        if (!cancelled) setUsersError(normalizeApiError(err)?.message || 'Could not load people');
+    setLoadingMembers(true);
+    setMembersError(null);
+    getProject(projectId)
+      .then((project) => {
+        if (cancelled) return;
+        setProjectTeam(project.team || null);
+        setTeamMembers(project.teamMembers || []);
       })
-      .finally(() => { if (!cancelled) setLoadingUsers(false); });
+      .catch((err) => {
+        if (!cancelled) {
+          setMembersError(normalizeApiError(err)?.message || 'Could not load project team');
+        }
+      })
+      .finally(() => { if (!cancelled) setLoadingMembers(false); });
     return () => { cancelled = true; };
-  }, [canAssign, assigneePickerOpen, eagerLoad]);
+  }, [canAssign, assigneePickerOpen, teamPickerOpen, projectId, eagerLoad]);
 
   useEffect(() => {
     if (!canAssign || (!eagerLoad && !teamPickerOpen)) return undefined;
@@ -55,28 +64,38 @@ export function useTicketAssignment({ ticket, canAssign, onAssign, eagerLoad = f
   }, [canAssign, teamPickerOpen, projectId, eagerLoad]);
 
   const userOptions = useMemo(
-    () => users.map((user) => ({
-      id: String(user.id || user._id),
-      name: user.name,
-      subtitle: user.email,
+    () => teamMembers.map((member) => ({
+      id: String(member.user.id),
+      name: member.user.name,
+      subtitle: member.roleLabel || member.role,
     })),
-    [users],
+    [teamMembers],
   );
 
-  const teamOptions = useMemo(
-    () => teams.map((team) => ({
+  const teamOptions = useMemo(() => {
+    if (projectTeam) {
+      return [{
+        id: String(projectTeam.id),
+        name: projectTeam.name,
+        meta: ticket?.project?.key || 'project',
+      }];
+    }
+    return teams.map((team) => ({
       id: String(team.id || team._id),
       name: team.name,
       meta: team.project?.key || (team.project ? team.project.name : 'global'),
-    })),
-    [teams],
-  );
+    }));
+  }, [teams, projectTeam, ticket?.project?.key]);
 
   async function submitAssignment(field, patch, successMessage) {
     if (!onAssign || assigningField) return;
     setAssigningField(field);
     try {
-      await onAssign(patch);
+      const payload = { ...patch };
+      if (field === 'assignee' && projectTeam && !payload.team) {
+        payload.team = projectTeam.id;
+      }
+      await onAssign(payload);
       showToast(successMessage);
       if (field === 'assignee') setAssigneePickerOpen(false);
       if (field === 'team') setTeamPickerOpen(false);
@@ -95,13 +114,14 @@ export function useTicketAssignment({ ticket, canAssign, onAssign, eagerLoad = f
     setTeamPickerOpen,
     userOptions,
     teamOptions,
-    loadingUsers,
+    loadingUsers: loadingMembers,
     loadingTeams,
-    usersError,
+    usersError: membersError,
     teamsError,
     assigningField,
     assigneeValue: entityRef(ticket?.assignedTo),
-    teamValue: entityRef(ticket?.team),
+    teamValue: entityRef(ticket?.team || projectTeam),
     submitAssignment,
+    projectTeamLocked: Boolean(projectTeam),
   };
 }

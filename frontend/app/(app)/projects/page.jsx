@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { listProjects, patchProject, replaceModules } from '@/shared/api/projects.js';
-import { listUsers } from '@/shared/api/users.js';
 import { listTeams } from '@/shared/api/teams.js';
 import FormError from '@/shared/components/form-error.jsx';
 import Icon from '@/shared/components/icons.jsx';
+import ProjectTeamPanel from '@/shared/components/projects/project-team-panel.jsx';
 import ProjectModulesEditor from '@/shared/components/project-modules-editor.jsx';
 import { groupProjectsByBrand } from '@/shared/lib/group-projects-by-brand.js';
 import { formRowsToModules, modulesToFormRows } from '@/shared/lib/project-modules.js';
@@ -51,7 +51,6 @@ function persistExpandedState(key, next) {
 
 function ProjectPanel({
   project,
-  users,
   teams,
   moduleRows,
   hasModuleDraft,
@@ -90,49 +89,13 @@ function ProjectPanel({
       <div className="project-form" id={`project-body-${project.id}`}>
         <div className="project-form-section">
           <div className="project-form-intro">
-            <h5 className="project-form-heading">Defaults</h5>
+            <h5 className="project-form-heading">Project team</h5>
             <p className="project-form-hint">
-              Pre-fill lead, tester, and team when someone files a ticket in this project.
+              Assign one team to this project and set each member&apos;s project role.
             </p>
           </div>
 
-          <div className="project-defaults-grid">
-            <div className="form-row">
-              <label htmlFor={`assignee-${project.id}`}>Default lead</label>
-              <select
-                id={`assignee-${project.id}`}
-                value={project.defaultAssignee?.id || ''}
-                onChange={(e) => onUpdate(project.id, { defaultAssignee: e.target.value || null })}
-              >
-                <option value="">—</option>
-                {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
-            </div>
-
-            <div className="form-row">
-              <label htmlFor={`tester-${project.id}`}>Default tester</label>
-              <select
-                id={`tester-${project.id}`}
-                value={project.defaultTester?.id || ''}
-                onChange={(e) => onUpdate(project.id, { defaultTester: e.target.value || null })}
-              >
-                <option value="">—</option>
-                {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
-            </div>
-
-            <div className="form-row">
-              <label htmlFor={`team-${project.id}`}>Default team</label>
-              <select
-                id={`team-${project.id}`}
-                value={project.defaultTeam?.id || ''}
-                onChange={(e) => onUpdate(project.id, { defaultTeam: e.target.value || null })}
-              >
-                <option value="">—</option>
-                {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </select>
-            </div>
-          </div>
+          <ProjectTeamPanel project={project} teams={teams} onUpdated={onUpdate} />
         </div>
 
         <div className="project-form-section project-form-section--catalog">
@@ -158,7 +121,6 @@ function ProjectPanel({
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState([]);
-  const [users, setUsers] = useState([]);
   const [teams, setTeams] = useState([]);
   const [modulesDraft, setModulesDraft] = useState({});
   const [expanded, setExpanded] = useState({});
@@ -196,7 +158,6 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     reload();
-    listUsers({ status: 'active' }).then((p) => setUsers(p.results)).catch(() => {});
     listTeams().then((p) => setTeams(p.results)).catch(() => {});
   }, [reload]);
 
@@ -248,7 +209,7 @@ export default function ProjectsPage() {
       <div className="page-head">
         <div>
           <h1>Projects</h1>
-          <p className="sub">Brands, module taxonomy, and default leads for each project.</p>
+          <p className="sub">Brands, project teams, and module taxonomy for each project.</p>
         </div>
         <span className="spacer" />
         <Link href="/projects/new" className="btn btn-primary">
@@ -262,7 +223,7 @@ export default function ProjectsPage() {
       ) : projects.length === 0 ? (
         <div className="empty-state">
           <h3>No projects yet</h3>
-          <p>Create a project to define its module catalog and ticket defaults.</p>
+          <p>Create a project to assign a team and define its module catalog.</p>
           <Link href="/projects/new" className="btn btn-primary">New project</Link>
         </div>
       ) : (
@@ -303,7 +264,6 @@ export default function ProjectsPage() {
                     <ProjectPanel
                       key={project.id}
                       project={project}
-                      users={users}
                       teams={teams}
                       moduleRows={moduleRows}
                       hasModuleDraft={hasModuleDraft}

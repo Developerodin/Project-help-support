@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import User from '../users/user.model.js';
 import { ApiError } from '../../platform/errors.js';
+import logger from '../../platform/logger.js';
 import {
   hashToken, generateAccessToken, issueRefreshToken,
   rotateRefreshToken, revokeRefreshToken, revokeAllRefreshTokens,
@@ -55,12 +56,14 @@ export async function login(email, password, config, meta = {}) {
 }
 
 export async function refresh(presentedRaw, config, meta = {}) {
-  const { user, raw, expiresAt } = await rotateRefreshToken(presentedRaw, config, meta);
+  const { user, raw, expiresAt, impersonatedBy } = await rotateRefreshToken(presentedRaw, config, meta);
+  const tokenOpts = impersonatedBy ? { impersonatedBy } : {};
   return {
     user: user.toJSON(),
-    accessToken: generateAccessToken(user, config),
+    accessToken: generateAccessToken(user, config, tokenOpts),
     refreshToken: raw,
     refreshExpiresAt: expiresAt,
+    impersonatedBy: impersonatedBy?.toString() ?? null,
   };
 }
 
@@ -100,6 +103,68 @@ export async function createInvite(_actor, { email, role = 'member' }) {
   });
 
   return { user: user.toJSON(), inviteToken };
+}
+
+/**
+ * Starts an impersonated session for `targetId`, keeping the admin's own
+ * refresh token untouched so stopImpersonation can hand it straight back to
+ * rotateRefreshToken later. Gated only by requireRole('admin') on the route —
+ * swap for can('users:impersonate') once the Phase 1 access-control system ships.
+ */
+export async function impersonate(admin, targetId, adminRefreshRaw, config, meta = {}) {
+  if (String(admin._id) === String(targetId)) {
+    throw new ApiError(400, 'CANNOT_IMPERSONATE_SELF', 'You are already signed in as this user');
+  }
+
+  const target = await User.findById(targetId);
+  if (!target) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found');
+  if (target.status !== 'active') {
+    throw new ApiError(400, 'USER_NOT_ACTIVE', 'Only active users can be impersonated');
+  }
+
+  const adminValid = await User.exists({
+    _id: admin._id,
+    refreshTokens: { $elemMatch: { tokenHash: hashToken(adminRefreshRaw), expiresAt: { $gt: new Date() } } },
+  });
+  if (!adminValid) {
+    throw new ApiError(401, 'INVALID_REFRESH_TOKEN', 'Refresh token is invalid or expired');
+  }
+
+  const { raw, expiresAt } = await issueRefreshToken(target, config, { ...meta, impersonatedBy: admin._id });
+  logger.info('user.impersonate.start', {
+    adminId: admin._id.toString(), targetId: target._id.toString(), ip: meta.ip,
+  });
+
+  return {
+    user: target.toJSON(),
+    accessToken: generateAccessToken(target, config, { impersonatedBy: admin._id }),
+    refreshToken: raw,
+    refreshExpiresAt: expiresAt,
+    adminRefreshToken: adminRefreshRaw,
+    impersonation: { by: admin._id.toString(), byName: admin.name || admin.email },
+  };
+}
+
+/**
+ * Ends an impersonated session: revokes the target's session and rotates the
+ * admin's stashed refresh token back into a normal (non-impersonated) one.
+ */
+export async function stopImpersonation(targetRefreshRaw, adminRefreshRaw, config, meta = {}) {
+  if (!adminRefreshRaw) {
+    throw new ApiError(400, 'REFRESH_REQUIRED', 'Admin session could not be restored');
+  }
+
+  if (targetRefreshRaw) await revokeRefreshToken(targetRefreshRaw);
+
+  const { user, raw, expiresAt } = await rotateRefreshToken(adminRefreshRaw, config, meta);
+  logger.info('user.impersonate.stop', { adminId: user._id.toString(), ip: meta.ip });
+
+  return {
+    user: user.toJSON(),
+    accessToken: generateAccessToken(user, config),
+    refreshToken: raw,
+    refreshExpiresAt: expiresAt,
+  };
 }
 
 export async function previewInvite(rawToken) {

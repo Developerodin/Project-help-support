@@ -1,13 +1,7 @@
 'use client';
 
-import { AuthProvider, useAuth } from '@/shared/contexts/auth-context.jsx';
-import AppLoader from '@/shared/components/app-loader.jsx';
-
-function AuthBootGate({ children }) {
-  const { loading } = useAuth();
-  if (loading) return <AppLoader />;
-  return children;
-}
+import { AuthProvider } from '@/shared/contexts/auth-context.jsx';
+import { AuthBootGate } from '@/shared/components/auth/auth-guard.jsx';
 
 export default function AuthLayout({ children }) {
   return (

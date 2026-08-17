@@ -1,11 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ROLES } from '@pms/shared';
 import { listUsers, inviteUser, patchUser, resendInvite, deleteUser } from '@/shared/api/users.js';
+import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import ConfirmDialog from '@/shared/components/confirm-dialog.jsx';
 import InviteDialog from '@/shared/components/invite-dialog.jsx';
-import { initials } from '@/shared/components/icons.jsx';
+import Icon, { initials } from '@/shared/components/icons.jsx';
 import { normalizeApiError } from '@/shared/lib/api-error.js';
 import { showToast } from '@/shared/lib/toast.js';
 
@@ -16,6 +18,7 @@ function capRole(role) {
 
 function ActionButton({
   label,
+  icon,
   busyLabel,
   busy,
   success,
@@ -27,17 +30,23 @@ function ActionButton({
     <span className="row-action">
       <button
         type="button"
-        className={`btn btn-sm${danger ? ' btn-danger' : ''}`}
+        className={`btn btn-sm${danger ? ' btn-danger' : ''}${icon ? ' btn-icon' : ''}`}
         onClick={onClick}
         disabled={busy}
         aria-busy={busy || undefined}
+        aria-label={icon ? (busy ? (busyLabel || `${label}…`) : label) : undefined}
+        title={icon ? label : undefined}
       >
         {busy ? (
-          <>
+          icon ? (
             <span className="btn-spin" aria-hidden="true" />
-            {busyLabel || `${label}…`}
-          </>
-        ) : label}
+          ) : (
+            <>
+              <span className="btn-spin" aria-hidden="true" />
+              {busyLabel || `${label}…`}
+            </>
+          )
+        ) : (icon ? <Icon name={icon} size={14} /> : label)}
       </button>
       {(success || error) && (
         <span
@@ -53,6 +62,9 @@ function ActionButton({
 }
 
 export default function UsersPage() {
+  const router = useRouter();
+  const { user: currentUser, startImpersonation } = useAuth();
+  const canImpersonate = currentUser?.role === 'admin';
   const [users, setUsers] = useState([]);
   const [draft, setDraft] = useState({ email: '', role: 'member' });
   const [error, setError] = useState(null);
@@ -205,6 +217,22 @@ export default function UsersPage() {
     }
   }
 
+  async function handleImpersonate(user) {
+    const actionKey = `${user.id}:impersonate`;
+    setRowActionBusy(actionKey, true);
+    setRowActionFeedback(actionKey, null);
+    try {
+      await startImpersonation(user.id);
+      router.push('/');
+    } catch (err) {
+      const message = normalizeApiError(err)?.message || 'Could not impersonate';
+      setRowActionFeedback(actionKey, { error: message });
+      showToast(message);
+    } finally {
+      setRowActionBusy(actionKey, false);
+    }
+  }
+
   return (
     <>
       <div className="page-head">
@@ -251,6 +279,7 @@ export default function UsersPage() {
               const reactivateKey = `${user.id}:reactivate`;
               const resendKey = `${user.id}:resend`;
               const deleteKey = `${user.id}:delete`;
+              const impersonateKey = `${user.id}:impersonate`;
 
               return (
                 <tr key={user.id}>
@@ -308,6 +337,17 @@ export default function UsersPage() {
                           success={rowFeedback[resendKey]?.success}
                           error={rowFeedback[resendKey]?.error}
                           onClick={() => handleResend(user)}
+                        />
+                      )}
+                      {canImpersonate && user.status === 'active' && user.id !== currentUser?.id && (
+                        <ActionButton
+                          label="Impersonate"
+                          icon="eye"
+                          busyLabel="Impersonating…"
+                          busy={Boolean(rowBusy[impersonateKey])}
+                          success={rowFeedback[impersonateKey]?.success}
+                          error={rowFeedback[impersonateKey]?.error}
+                          onClick={() => handleImpersonate(user)}
                         />
                       )}
                       <ActionButton

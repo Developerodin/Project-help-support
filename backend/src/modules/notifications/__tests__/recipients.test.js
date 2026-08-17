@@ -16,10 +16,11 @@ const user = (role = 'member', name = role) => User.create({
   password: 'a-long-enough-password', status: 'active', role,
 });
 
-test('the always-set is reporter, watchers, assignee and team members', async () => {
+test('the always-set is reporter, watchers, assignee, tester and team members', async () => {
   const reporter = await user();
   const watcher = await user();
   const assignee = await user('developer');
+  const tester = await user('qa');
   const member = await user('developer');
   const actor = await user('admin');
 
@@ -27,7 +28,8 @@ test('the always-set is reporter, watchers, assignee and team members', async ()
   const project = await Project.create({ key: 'WEB', name: 'Web App', createdBy: actor._id });
   const ticket = await Ticket.create({
     ticketId: 'WEB-1', project: project._id, title: 'x', createdBy: reporter._id,
-    watchers: [watcher._id], assignedTo: assignee._id, team: team._id, status: 'in_progress',
+    watchers: [watcher._id], assignedTo: assignee._id, testedBy: tester._id, team: team._id,
+    status: 'in_progress',
   });
 
   const recipients = await getNotificationRecipients(
@@ -35,7 +37,10 @@ test('the always-set is reporter, watchers, assignee and team members', async ()
   );
   const ids = recipients.map((r) => String(r.user._id)).sort();
 
-  assert.deepEqual(ids, [reporter._id, watcher._id, assignee._id, member._id].map(String).sort());
+  assert.deepEqual(
+    ids,
+    [reporter._id, watcher._id, assignee._id, tester._id, member._id].map(String).sort(),
+  );
 });
 
 test('the assignee still hears about it after stage 6 — they fixed the bug', async () => {
@@ -93,6 +98,25 @@ test('one person matching five rules appears exactly once', async () => {
   );
 
   assert.equal(recipients.filter((r) => String(r.user._id) === String(everyone._id)).length, 1);
+});
+
+test('a team-less ticket falls back to the project\'s assigned team', async () => {
+  const reporter = await user();
+  const teammate = await user('developer');
+  const actor = await user('admin');
+  const team = await Team.create({ name: 'Web Team', members: [teammate._id], createdBy: actor._id });
+  const project = await Project.create({
+    key: 'WEB', name: 'Web App', createdBy: actor._id, team: team._id,
+  });
+  const ticket = await Ticket.create({
+    ticketId: 'WEB-1', project: project._id, title: 'x', createdBy: reporter._id,
+  });
+
+  const recipients = await getNotificationRecipients(
+    'TICKET_STAGE_CHANGED', ticket, actor, { to: 'in_progress' },
+  );
+
+  assert.ok(recipients.some((r) => String(r.user._id) === String(teammate._id)));
 });
 
 test('the actor is never told what they just did', async () => {

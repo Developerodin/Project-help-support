@@ -1,5 +1,7 @@
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
+import Project from '../projects/project.model.js';
+import Ticket from '../tickets/ticket.model.js';
 import User from '../users/user.model.js';
 import Team from './team.model.js';
 
@@ -48,6 +50,49 @@ export async function createTeam(actor, { name, project = null, lead = null, mem
   return team.toJSON();
 }
 
+const ZERO_STATS = Object.freeze({ total: 0, open: 0, overdue: 0 });
+
+/**
+ * Ticket load for a whole page of teams in ONE aggregate, never a count per
+ * team. Served by the existing { team: 1, status: 1 } index.
+ *
+ * Overdue repeats buildTicketFilter()'s `overdue` clause and the client's
+ * isOverdue(): a past estimatedResolutionAt on a ticket that is neither closed
+ * nor live. The $type guard is load-bearing and must stay a $type check — a
+ * MISSING estimate compares as lower than any date, and `$ne: [field, null]`
+ * does NOT catch it (missing is not null in an aggregation expression), so a
+ * null-guard lets every estimate-less ticket read as overdue.
+ */
+async function ticketStatsByTeam(teamIds) {
+  if (teamIds.length === 0) return new Map();
+  const now = new Date();
+  const rows = await Ticket.aggregate([
+    { $match: { team: { $in: teamIds } } },
+    {
+      $group: {
+        _id: '$team',
+        total: { $sum: 1 },
+        open: { $sum: { $cond: [{ $eq: ['$status', 'closed'] }, 0, 1] } },
+        overdue: {
+          $sum: {
+            $cond: [{
+              $and: [
+                { $eq: [{ $type: '$estimatedResolutionAt' }, 'date'] },
+                { $lt: ['$estimatedResolutionAt', now] },
+                { $not: [{ $in: ['$status', ['closed', 'live']] }] },
+              ],
+            }, 1, 0],
+          },
+        },
+      },
+    },
+  ]);
+  return new Map(rows.map((r) => [
+    String(r._id),
+    { total: r.total, open: r.open, overdue: r.overdue },
+  ]));
+}
+
 export async function listTeams(query = {}) {
   const filter = {};
   if (query.status) filter.status = query.status;
@@ -63,7 +108,24 @@ export async function listTeams(query = {}) {
     populate: ['lead', 'members', 'project'],
   });
 
-  return { ...page, results: page.results.map((t) => t.toJSON()) };
+  const stats = await ticketStatsByTeam(page.results.map((t) => t._id));
+  const teamIds = page.results.map((t) => t._id);
+  const projectRows = teamIds.length
+    ? await Project.find({ team: { $in: teamIds }, status: 'active' }).select('key name team').lean()
+    : [];
+  const projectsByTeam = new Map(teamIds.map((id) => [String(id), []]));
+  for (const row of projectRows) {
+    projectsByTeam.get(String(row.team))?.push({ id: String(row._id), key: row.key, name: row.name });
+  }
+
+  return {
+    ...page,
+    results: page.results.map((t) => ({
+      ...t.toJSON(),
+      stats: stats.get(String(t._id)) ?? ZERO_STATS,
+      projects: projectsByTeam.get(String(t._id)) ?? [],
+    })),
+  };
 }
 
 export async function getTeam(id) {

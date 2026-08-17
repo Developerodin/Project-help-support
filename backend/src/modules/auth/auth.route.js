@@ -1,6 +1,6 @@
 import express from 'express';
 import { validate } from '../../platform/validate.js';
-import { auth } from '../../platform/auth.js';
+import { auth, requireRole } from '../../platform/auth.js';
 import { sameOrigin } from '../../platform/sameOrigin.js';
 import {
   loginLimiter, passwordResetLimiter, inviteAcceptLimiter, refreshLimiter,
@@ -9,6 +9,7 @@ import * as controller from './auth.controller.js';
 import {
   loginSchema, previewInviteSchema, acceptInviteSchema, forgotPasswordSchema, resetPasswordSchema,
 } from './auth.validation.js';
+import { userIdSchema } from '../users/user.validation.js';
 
 /**
  * @param {object} config
@@ -29,6 +30,10 @@ export default function authRoutes(config, deliverReset) {
   router.post('/forgot-password', passwordResetLimiter, validate(forgotPasswordSchema),
     controller.forgotPassword(deliverReset));
   router.post('/reset-password', passwordResetLimiter, validate(resetPasswordSchema), controller.resetPassword);
+
+  router.post('/impersonate/:id', auth(config), requireRole('admin'), validate(userIdSchema),
+    controller.impersonate(config));
+  router.post('/stop-impersonation', auth(config), origin, controller.stopImpersonation(config));
 
   return router;
 }

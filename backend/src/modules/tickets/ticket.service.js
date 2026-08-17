@@ -3,6 +3,11 @@ import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
 import Project from '../projects/project.model.js';
 import { assertModuleAndPage } from '../projects/project.service.js';
+import {
+  assertAssigneeOnProjectTeam,
+  ensureProjectMigrated,
+  findProjectMemberByRole,
+} from '../projects/project-team-member.service.js';
 import Team from '../teams/team.model.js';
 import { assertTeamUsable, assertActiveUsers } from '../teams/team.service.js';
 import Ticket from './ticket.model.js';
@@ -16,12 +21,27 @@ export async function createTicket(actor, body) {
 
   assertModuleAndPage(project, body.module, body.page);
 
-  const assignedTo = body.assignedTo ?? project.defaultAssignee ?? undefined;
-  const testedBy = body.testedBy ?? project.defaultTester ?? undefined;
-  const team = body.team ?? project.defaultTeam ?? undefined;
+  await ensureProjectMigrated(project._id);
+  const projectTeamId = project.team || project.defaultTeam || undefined;
+  const team = body.team ?? projectTeamId ?? undefined;
+
+  let assignedTo = body.assignedTo ?? undefined;
+  if (!assignedTo && team) {
+    const lead = await findProjectMemberByRole(project._id, team, 'team_lead');
+    if (lead) assignedTo = lead.user;
+    else if (project.defaultAssignee) assignedTo = project.defaultAssignee;
+  }
+
+  let testedBy = body.testedBy ?? undefined;
+  if (!testedBy && team) {
+    const qaMember = await findProjectMemberByRole(project._id, team, 'qa');
+    if (qaMember) testedBy = qaMember.user;
+    else if (project.defaultTester) testedBy = project.defaultTester;
+  }
 
   await assertActiveUsers([assignedTo, testedBy]);
   if (team) await assertTeamUsable(team, project._id);
+  if (assignedTo) await assertAssigneeOnProjectTeam(project._id, team, assignedTo);
 
   // Allocated LAST, after everything that can reject. A consumed sequence is
   // never returned, so validating first keeps the id space free of gaps caused
@@ -105,14 +125,24 @@ async function actorTeamIds(actorId) {
   }).distinct('_id');
 }
 
+/** Projects whose team is one of teamIds — a team-less ticket under one of these still belongs to the team. */
+async function projectIdsForTeams(teamIds) {
+  if (!teamIds.length) return [];
+  return Project.find({ team: { $in: teamIds } }).distinct('_id');
+}
+
 /** Same audience as assertCanViewTicket / getNotificationRecipients (minus broadcast rules). */
-function ticketVisibilityOr(actorId, teamIds = []) {
+function ticketVisibilityOr(actorId, teamIds = [], projectIds = []) {
   const clauses = [
     { createdBy: actorId },
     { assignedTo: actorId },
+    { testedBy: actorId },
     { watchers: actorId },
   ];
   if (teamIds.length) clauses.push({ team: { $in: teamIds } });
+  // Ticket has no team of its own — fall back to the project's team, so it
+  // isn't invisible to everyone but its creator until someone triages it.
+  if (projectIds.length) clauses.push({ team: null, project: { $in: projectIds } });
   return clauses;
 }
 
@@ -120,7 +150,8 @@ async function applyTicketVisibility(filter, actor) {
   if (actor.role === 'admin' || actor.role === 'lead') return filter;
 
   const teamIds = await actorTeamIds(actor._id);
-  const visibility = { $or: ticketVisibilityOr(actor._id, teamIds) };
+  const projectIds = await projectIdsForTeams(teamIds);
+  const visibility = { $or: ticketVisibilityOr(actor._id, teamIds, projectIds) };
   if (Object.keys(filter).length === 0) return visibility;
   return { $and: [filter, visibility] };
 }
@@ -195,8 +226,18 @@ const sameId = (a, b) => !!a && !!b && String(a._id ?? a) === String(b._id ?? b)
  * Identity comes from req.user; nothing here reads the request body.
  */
 async function isActorOnTicketTeam(actorId, ticket) {
-  const teamId = ticket.team?._id ?? ticket.team;
-  if (!teamId) return false;
+  let teamId = ticket.team?._id ?? ticket.team;
+
+  // No team of its own — fall back to the project's team, matching listTickets.
+  if (!teamId) {
+    const projectId = ticket.project?._id ?? ticket.project;
+    if (!projectId) return false;
+    const project = ticket.project?.team !== undefined
+      ? ticket.project
+      : await Project.findById(projectId).select('team').lean();
+    teamId = project?.team?._id ?? project?.team;
+    if (!teamId) return false;
+  }
 
   const team = ticket.team?.members
     ? ticket.team
@@ -212,13 +253,15 @@ export async function assertCanViewTicket(actor, ticket) {
 
   if (sameId(ticket.createdBy, actor._id) || sameId(ticket.assignedTo, actor._id)) return;
 
+  if (sameId(ticket.testedBy, actor._id)) return;
+
   if ((ticket.watchers || []).some((watcher) => sameId(watcher, actor._id))) return;
 
   if (await isActorOnTicketTeam(actor._id, ticket)) return;
 
   throw new ApiError(
     403, 'FORBIDDEN',
-    'Only the reporter, assignee, watcher, team member, lead or admin may view this ticket',
+    'Only the reporter, assignee, tester, watcher, team member, lead or admin may view this ticket',
   );
 }
 
@@ -301,15 +344,21 @@ export async function assignTicket(actor, idOrKey, { assignedTo, team, revision 
 
   const patch = {};
   const changes = [];
-  if (assignedTo !== undefined) {
-    await assertActiveUsers([assignedTo]);
-    patch.assignedTo = assignedTo;
-    changes.push({ field: 'assignedTo', from: ticket.assignedTo, to: assignedTo });
-  }
+  const projectId = ticket.project?._id ?? ticket.project;
+  await ensureProjectMigrated(projectId);
+
   if (team !== undefined) {
     if (team) await assertTeamUsable(team, ticket.project);
     patch.team = team;
     changes.push({ field: 'team', from: ticket.team, to: team });
+  }
+
+  if (assignedTo !== undefined) {
+    await assertActiveUsers([assignedTo]);
+    const teamId = patch.team ?? ticket.team?._id ?? ticket.team ?? undefined;
+    if (assignedTo) await assertAssigneeOnProjectTeam(projectId, teamId, assignedTo);
+    patch.assignedTo = assignedTo;
+    changes.push({ field: 'assignedTo', from: ticket.assignedTo, to: assignedTo });
   }
   if (changes.length === 0) {
     throw new ApiError(400, 'NOTHING_TO_UPDATE', 'Supply assignedTo or team');

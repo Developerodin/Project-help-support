@@ -39,6 +39,7 @@ function AssignmentSelect({
   error,
   assigning,
   onChange,
+  disabled = false,
 }) {
   return (
     <>
@@ -47,7 +48,7 @@ function AssignmentSelect({
         className="detail-select"
         aria-label={label}
         value={value}
-        disabled={assigning || loading}
+        disabled={disabled || assigning || loading}
         onChange={onChange}
       >
         <option value="">{emptyLabel}</option>
@@ -152,17 +153,23 @@ export default function TicketDetailsTab({
         </DetailField>
         <DetailField label="Team">
           {editable ? (
-            <AssignmentSelect
-              id="detail-team"
-              label="Team"
-              emptyLabel="No team"
-              value={teamId}
-              options={assignment.teamOptions}
-              loading={assignment.loadingTeams}
-              error={assignment.teamsError}
-              assigning={assignment.assigningField === 'team'}
-              onChange={handleTeamChange}
-            />
+            <>
+              <AssignmentSelect
+                id="detail-team"
+                label="Team"
+                emptyLabel="No team"
+                value={teamId}
+                options={assignment.teamOptions}
+                loading={assignment.loadingTeams}
+                error={assignment.teamsError}
+                assigning={assignment.assigningField === 'team'}
+                onChange={handleTeamChange}
+                disabled={assignment.projectTeamLocked}
+              />
+              {assignment.projectTeamLocked ? (
+                <span className="meta detail-select-hint">Set by project team</span>
+              ) : null}
+            </>
           ) : (
             ticket.team?.name || <EmptyValue>No team</EmptyValue>
           )}

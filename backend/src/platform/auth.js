@@ -24,6 +24,9 @@ export function auth(config) {
       if (!user || user.status !== 'active') return next(unauthenticated());
 
       req.user = user;
+      if (payload.impersonatedBy) {
+        req.impersonation = { by: payload.impersonatedBy };
+      }
       return next();
     } catch {
       return next(unauthenticated());

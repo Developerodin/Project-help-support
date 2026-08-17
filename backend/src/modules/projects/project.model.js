@@ -47,8 +47,13 @@ const projectSchema = new mongoose.Schema(
      */
     nextTicketSeq: { type: Number, default: 1, min: 1 },
     modules: { type: [moduleSchema], default: [] },
+    /** Assigned team for this project — source of eligible ticket assignees. */
+    team: { type: mongoose.Schema.Types.ObjectId, ref: 'Team' },
+    /** @deprecated Use `team` + ProjectTeamMember. Kept for migration reads only. */
     defaultAssignee: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    /** @deprecated Use ProjectTeamMember roles. Kept for migration reads only. */
     defaultTester: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    /** @deprecated Use `team`. Kept for migration reads only. */
     defaultTeam: { type: mongoose.Schema.Types.ObjectId, ref: 'Team' },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   },

@@ -1,6 +1,9 @@
 /** User roles. Authority in this product is this single field — there is no permission matrix. */
 export const ROLES = Object.freeze(['admin', 'lead', 'qa', 'developer', 'member']);
 
+/** Per-project role on a team assigned to a project. Distinct from global User.role. */
+export const PROJECT_TEAM_ROLES = Object.freeze(['team_lead', 'developer', 'qa', 'member']);
+
 /** Aligned with Dharwin devTicket.model.js severity enum. */
 export const SEVERITIES = Object.freeze(['Minor', 'Major', 'Critical', 'Blocker']);
 

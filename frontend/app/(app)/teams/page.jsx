@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { listTeams, updateMembers } from '@/shared/api/teams.js';
 import { listUsers } from '@/shared/api/users.js';
@@ -20,6 +20,8 @@ export default function TeamsPage() {
   const [confirmRemove, setConfirmRemove] = useState(null);
   const [removeBusy, setRemoveBusy] = useState(false);
   const [removingMemberId, setRemovingMemberId] = useState(null);
+  const [search, setSearch] = useState('');
+  const [scope, setScope] = useState('all');
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -33,6 +35,30 @@ export default function TeamsPage() {
     reload();
     listUsers({ status: 'active' }).then((p) => setUsers(p.results)).catch(() => {});
   }, [reload]);
+
+  const metrics = useMemo(() => {
+    const onATeam = new Set(teams.flatMap((t) => t.members.map((m) => m.id)));
+    return {
+      teams: teams.length,
+      people: onATeam.size,
+      openTickets: teams.reduce((sum, t) => sum + (t.stats?.open ?? 0), 0),
+      overdue: teams.reduce((sum, t) => sum + (t.stats?.overdue ?? 0), 0),
+      unassigned: users.filter((u) => !onATeam.has(u.id)).length,
+    };
+  }, [teams, users]);
+
+  const visibleTeams = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return teams.filter((t) => {
+      if (scope === 'global' && t.project) return false;
+      if (scope === 'project' && !t.project) return false;
+      if (scope === 'empty' && t.members.length > 0) return false;
+      if (!q) return true;
+      return t.name.toLowerCase().includes(q)
+        || t.project?.name?.toLowerCase().includes(q)
+        || t.members.some((m) => m.name.toLowerCase().includes(q));
+    });
+  }, [teams, search, scope]);
 
   async function handleAddMembers(teamId, userIds) {
     setError(null);
@@ -91,6 +117,37 @@ export default function TeamsPage() {
       </div>
       <FormError error={error} />
 
+      {!loading && teams.length > 0 && (
+        <>
+          <dl className="teams-metrics">
+            <div><dt>Teams</dt><dd>{metrics.teams}</dd></div>
+            <div><dt>People on a team</dt><dd>{metrics.people}</dd></div>
+            <div><dt>Open tickets</dt><dd>{metrics.openTickets}</dd></div>
+            <div>
+              <dt>Overdue</dt>
+              <dd className={metrics.overdue ? 'team-panel__overdue' : undefined}>{metrics.overdue}</dd>
+            </div>
+            <div><dt>Not on a team</dt><dd>{metrics.unassigned}</dd></div>
+          </dl>
+
+          <div className="teams-filters">
+            <input
+              type="search"
+              placeholder="Search teams, projects or people…"
+              aria-label="Search teams"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <select aria-label="Scope" value={scope} onChange={(e) => setScope(e.target.value)}>
+              <option value="all">All teams</option>
+              <option value="global">Global teams</option>
+              <option value="project">Project teams</option>
+              <option value="empty">Empty teams</option>
+            </select>
+          </div>
+        </>
+      )}
+
       {loading ? (
         <p className="meta" role="status">Loading teams…</p>
       ) : teams.length === 0 ? (
@@ -99,9 +156,17 @@ export default function TeamsPage() {
           <p>Create a team to route tickets to a group. Teams can be global or scoped to one project.</p>
           <Link href="/teams/new" className="btn btn-primary">New team</Link>
         </div>
+      ) : visibleTeams.length === 0 ? (
+        <div className="empty-state">
+          <h3>No teams match</h3>
+          <p>Nothing here fits that search and scope. Clear the filters to see all {teams.length} teams.</p>
+          <button type="button" className="btn" onClick={() => { setSearch(''); setScope('all'); }}>
+            Clear filters
+          </button>
+        </div>
       ) : (
         <div className="teams-cards-grid">
-          {teams.map((team) => (
+          {visibleTeams.map((team) => (
             <TeamCard
               key={team.id}
               team={team}

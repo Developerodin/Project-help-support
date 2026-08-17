@@ -9,7 +9,7 @@ import { useAuth } from '@/shared/contexts/auth-context.jsx';
  * contributes a URL segment and the bare origin 404'd.
  *
  * This belongs in (auth), not (app): the (app) layout's AuthGuard swaps
- * children for a "Please sign in" notice whenever there is no user, so a
+ * children for AuthRequiredScreen whenever there is no session, so a
  * redirect placed there would never mount for signed-out visitors — precisely
  * the case that needs it. The (auth) layout only gates on boot, then renders.
  *

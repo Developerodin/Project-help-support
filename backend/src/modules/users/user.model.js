@@ -14,6 +14,8 @@ const refreshTokenSchema = new mongoose.Schema(
     createdAt: { type: Date, default: Date.now },
     userAgent: { type: String, trim: true },
     ip: { type: String, trim: true },
+    /** Present only on refresh tokens issued during admin impersonation. */
+    impersonatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   },
   { _id: false },
 );

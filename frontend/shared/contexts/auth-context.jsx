@@ -4,24 +4,38 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { useRouter } from 'next/navigation';
 import { apiFetch, setAccessToken, setSessionLostHandler } from '../api/client.js';
 
+export const AUTH_BOOTING = 'AUTH_BOOTING';
+export const AUTHENTICATED = 'AUTHENTICATED';
+export const AUTH_REQUIRED = 'AUTH_REQUIRED';
+export const AUTH_EXPIRED = 'AUTH_EXPIRED';
+
 const AuthContext = createContext(null);
 
 /**
  * Carries `user.role` and nothing else. No permissions array, no route
  * permission map. Role is used ONLY to hide or disable navigation — server
  * enforcement is what actually protects every route.
+ *
+ * `status` is the session lifecycle. `user === null` is not enough: a cold
+ * visit and a session that died mid-work are different products.
  */
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState(AUTH_BOOTING);
+  const [impersonation, setImpersonation] = useState(null);
   const router = useRouter();
+  const loading = status === AUTH_BOOTING;
 
   useEffect(() => {
     setSessionLostHandler(() => {
-      setUser(null);
-      router.replace('/login');
+      setAccessToken(null);
+      setStatus((current) => (
+        current === AUTHENTICATED || current === AUTH_EXPIRED
+          ? AUTH_EXPIRED
+          : AUTH_REQUIRED
+      ));
     });
-  }, [router]);
+  }, []);
 
   useEffect(() => {
     // The access token is gone after a reload; the httpOnly refresh cookie is not.
@@ -30,11 +44,16 @@ export function AuthProvider({ children }) {
       try {
         const session = await apiFetch('/auth/refresh', { method: 'POST' });
         setAccessToken(session.accessToken);
-        if (!cancelled) setUser(session.user);
+        if (!cancelled) {
+          setUser(session.user);
+          setImpersonation(session.impersonation ?? null);
+          setStatus(AUTHENTICATED);
+        }
       } catch {
-        if (!cancelled) setUser(null);
-      } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setUser(null);
+          setStatus(AUTH_REQUIRED);
+        }
       }
     })();
     return () => { cancelled = true; };
@@ -44,6 +63,7 @@ export function AuthProvider({ children }) {
     const session = await apiFetch('/auth/login', { method: 'POST', body: { email, password } });
     setAccessToken(session.accessToken);
     setUser(session.user);
+    setStatus(AUTHENTICATED);
     return session.user;
   }, []);
 
@@ -53,9 +73,27 @@ export function AuthProvider({ children }) {
     } finally {
       setAccessToken(null);
       setUser(null);
+      setImpersonation(null);
+      setStatus(AUTH_REQUIRED);
       router.replace('/login');
     }
   }, [router]);
+
+  const startImpersonation = useCallback(async (userId) => {
+    const session = await apiFetch(`/auth/impersonate/${userId}`, { method: 'POST' });
+    setAccessToken(session.accessToken);
+    setUser(session.user);
+    setImpersonation(session.impersonation ?? null);
+    return session.user;
+  }, []);
+
+  const stopImpersonation = useCallback(async () => {
+    const session = await apiFetch('/auth/stop-impersonation', { method: 'POST' });
+    setAccessToken(session.accessToken);
+    setUser(session.user);
+    setImpersonation(null);
+    return session.user;
+  }, []);
 
   const refreshUser = useCallback(async (knownUser) => {
     if (knownUser) {
@@ -68,8 +106,14 @@ export function AuthProvider({ children }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, login, logout, refreshUser }),
-    [user, loading, login, logout, refreshUser],
+    () => ({
+      user, loading, status, impersonation, login, logout, refreshUser,
+      startImpersonation, stopImpersonation,
+    }),
+    [
+      user, loading, status, impersonation, login, logout, refreshUser,
+      startImpersonation, stopImpersonation,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

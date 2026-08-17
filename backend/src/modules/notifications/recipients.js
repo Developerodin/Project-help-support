@@ -1,6 +1,7 @@
 import { DEFAULT_NOTIFICATION_PREFS } from '@pms/shared';
 import User from '../users/user.model.js';
 import Team from '../teams/team.model.js';
+import Project from '../projects/project.model.js';
 
 /** Stages whose entry broadcasts to every qa user. */
 const QA_BROADCAST_STAGES = new Set(['ready_qa', 'deployed_staging', 'qa_approved']);
@@ -8,6 +9,12 @@ const QA_BROADCAST_STAGES = new Set(['ready_qa', 'deployed_staging', 'qa_approve
 const RELEASE_BROADCAST_STAGES = new Set(['ready_production', 'live']);
 
 const idStr = (v) => (v ? String(v._id ?? v) : null);
+
+async function addTeamMembers(ids, teamId) {
+  const team = await Team.findById(teamId).select('members lead');
+  for (const m of team?.members || []) ids.add(idStr(m));
+  if (team?.lead) ids.add(idStr(team.lead));
+}
 
 /**
  * An unset preference resolves through the DEFAULTS table — never to `true`.
@@ -38,11 +45,16 @@ export async function getNotificationRecipients(event, ticket, actor, context = 
     ids.add(idStr(ticket.createdBy));
     for (const w of ticket.watchers || []) ids.add(idStr(w));
     if (ticket.assignedTo) ids.add(idStr(ticket.assignedTo));
+    if (ticket.testedBy) ids.add(idStr(ticket.testedBy));
 
     if (ticket.team) {
-      const team = await Team.findById(ticket.team).select('members lead');
-      for (const m of team?.members || []) ids.add(idStr(m));
-      if (team?.lead) ids.add(idStr(team.lead));
+      await addTeamMembers(ids, ticket.team);
+    } else if (ticket.project) {
+      // No team of its own — fall back to the project's assigned team, same
+      // fallback as ticket visibility (ticket.service.js#applyTicketVisibility).
+      const projectId = ticket.project?._id ?? ticket.project;
+      const project = await Project.findById(projectId).select('team').lean();
+      if (project?.team) await addTeamMembers(ids, project.team);
     }
 
     const { to } = context;

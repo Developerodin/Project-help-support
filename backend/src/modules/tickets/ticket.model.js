@@ -116,7 +116,7 @@ const ticketSchema = new mongoose.Schema(
     assignedTo: { type: objectId, ref: 'User', index: true },
     testedBy: { type: objectId, ref: 'User' },
     watchers: { type: [{ type: objectId, ref: 'User' }], default: [] },
-    createdBy: { type: objectId, ref: 'User', required: true, index: true },
+    createdBy: { type: objectId, ref: 'User', required: true },
 
     /** Optimistic concurrency. Every mutation carries it; every read returns it. */
     revision: { type: Number, default: 0 },

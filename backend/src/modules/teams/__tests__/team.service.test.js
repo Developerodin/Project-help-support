@@ -5,6 +5,7 @@ import { withMemoryDb } from '../../../platform/__tests__/helpers/memoryDb.js';
 import User from '../../users/user.model.js';
 import Project from '../../projects/project.model.js';
 import Team from '../team.model.js';
+import Ticket from '../../tickets/ticket.model.js';
 import {
   isTeamUsableOnProject, assertTeamUsable, createTeam, updateMembers, listTeams,
 } from '../team.service.js';
@@ -96,4 +97,32 @@ test('listTeams filters by project and returns global teams too', async () => {
   const page = await listTeams({ project: String(web._id) });
   const names = page.results.map((t) => t.name).sort();
   assert.deepEqual(names, ['Global', 'Web Only']);
+});
+
+const DAY = 24 * 60 * 60 * 1000;
+
+test('listTeams counts open and overdue tickets per team', async () => {
+  const actor = await admin();
+  const web = await project('WEB');
+  const owner = await createTeam(actor, { name: 'Owner' });
+  await createTeam(actor, { name: 'Idle' });
+
+  const past = new Date(Date.now() - DAY);
+  const future = new Date(Date.now() + DAY);
+  const ticket = (seq, status, estimatedResolutionAt) => Ticket.create({
+    ticketId: `WEB-${seq}`, project: web._id, title: `T${seq}`,
+    team: owner.id, status, estimatedResolutionAt, createdBy: actor._id,
+  });
+
+  await ticket(1, 'pending', past); // overdue
+  await ticket(2, 'in_progress', past); // overdue
+  await ticket(3, 'pending', future); // open, on time
+  await ticket(4, 'pending', undefined); // no estimate — must NOT read as overdue
+  await ticket(5, 'live', past); // shipped, past estimate: not overdue
+  await ticket(6, 'closed', past); // closed: neither open nor overdue
+
+  const page = await listTeams();
+  const byName = Object.fromEntries(page.results.map((t) => [t.name, t.stats]));
+  assert.deepEqual(byName.Owner, { total: 6, open: 5, overdue: 2 });
+  assert.deepEqual(byName.Idle, { total: 0, open: 0, overdue: 0 });
 });

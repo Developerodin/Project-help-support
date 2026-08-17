@@ -15,7 +15,7 @@ export default function InviteDialog({
   onConfirm,
   onCancel,
 }) {
-  const cancelRef = useRef(null);
+  const emailRef = useRef(null);
   const dialogRef = useRef(null);
   const emailId = useId();
   const roleId = useId();
@@ -26,11 +26,11 @@ export default function InviteDialog({
   useEffect(() => {
     if (!open) return undefined;
     document.body.style.overflow = 'hidden';
-    const timer = window.setTimeout(() => cancelRef.current?.focus(), 50);
-    return () => {
-      document.body.style.overflow = '';
-      window.clearTimeout(timer);
-    };
+    // Focus the first FIELD, and do it in the same commit as the mount. A
+    // deferred focus() yanks the caret away from anyone who started typing
+    // inside the delay, and their keystrokes land on a button instead.
+    emailRef.current?.focus();
+    return () => { document.body.style.overflow = ''; };
   }, [open]);
 
   useEffect(() => {
@@ -98,6 +98,7 @@ export default function InviteDialog({
           <div className="form-row">
             <label htmlFor={emailId}>Email</label>
             <input
+              ref={emailRef}
               id={emailId}
               type="email"
               required
@@ -122,7 +123,6 @@ export default function InviteDialog({
         </form>
         <div className="dlg-foot">
           <button
-            ref={cancelRef}
             type="button"
             className="btn"
             onClick={onCancel}

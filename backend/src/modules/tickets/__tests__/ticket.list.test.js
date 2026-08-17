@@ -191,3 +191,182 @@ test('the list projection omits the embedded arrays', async () => {
   assert.equal(first.activityLog, undefined);
   assert.equal(first.stageHistory, undefined);
 });
+
+const roleUser = (role) => User.create({
+  name: `${role} user`,
+  email: `${role}-${Math.random().toString(36).slice(2)}@example.com`,
+  password: 'a-long-enough-password',
+  status: 'active',
+  role,
+});
+
+test('testedBy grants list and view access without team membership', async () => {
+  const reporter = await user();
+  const developer = await roleUser('developer');
+  const qa = await roleUser('qa');
+  const web = await Project.create({
+    key: 'WEB',
+    name: 'Web App',
+    createdBy: reporter._id,
+    defaultAssignee: developer._id,
+    defaultTester: qa._id,
+  });
+
+  await Ticket.create({
+    ticketId: 'WEB-401',
+    project: web._id,
+    title: 'Regression in checkout',
+    createdBy: reporter._id,
+    assignedTo: developer._id,
+    testedBy: qa._id,
+    status: 'ready_qa',
+  });
+
+  const page = await listTickets(qa, {});
+  assert.deepEqual(page.results.map((t) => t.ticketId), ['WEB-401']);
+  assert.equal((await getTicket(qa, 'WEB-401')).ticketId, 'WEB-401');
+});
+
+test('qa assignee can view via assignedTo without testedBy relationship', async () => {
+  const reporter = await user();
+  const qa = await roleUser('qa');
+  const web = await Project.create({ key: 'WEB', name: 'Web App', createdBy: reporter._id });
+
+  await Ticket.create({
+    ticketId: 'WEB-402',
+    project: web._id,
+    title: 'Hotfix verification',
+    createdBy: reporter._id,
+    assignedTo: qa._id,
+    status: 'in_progress',
+  });
+
+  assert.equal((await getTicket(qa, 'WEB-402')).ticketId, 'WEB-402');
+});
+
+test('qa team member sees team tickets without personal assignment', async () => {
+  const reporter = await user();
+  const developer = await roleUser('developer');
+  const qa = await roleUser('qa');
+  const web = await Project.create({ key: 'WEB', name: 'Web App', createdBy: reporter._id });
+  const team = await Team.create({
+    name: 'QA Squad',
+    project: web._id,
+    members: [qa._id, developer._id],
+    createdBy: reporter._id,
+  });
+
+  await Ticket.create({
+    ticketId: 'WEB-403',
+    project: web._id,
+    title: 'Shared backlog item',
+    createdBy: reporter._id,
+    assignedTo: developer._id,
+    team: team._id,
+    status: 'pending',
+  });
+
+  const page = await listTickets(qa, {});
+  assert.deepEqual(page.results.map((t) => t.ticketId), ['WEB-403']);
+});
+
+test('team lead on ticket team can view without assignee or testedBy', async () => {
+  const reporter = await user();
+  const teamLead = await roleUser('developer');
+  const web = await Project.create({ key: 'WEB', name: 'Web App', createdBy: reporter._id });
+  const team = await Team.create({
+    name: 'Platform',
+    project: web._id,
+    lead: teamLead._id,
+    createdBy: reporter._id,
+  });
+
+  await Ticket.create({
+    ticketId: 'WEB-404',
+    project: web._id,
+    title: 'Infra task',
+    createdBy: reporter._id,
+    team: team._id,
+    status: 'pending',
+  });
+
+  assert.equal((await getTicket(teamLead, 'WEB-404')).ticketId, 'WEB-404');
+});
+
+test('team member sees a team-less ticket via the project\'s assigned team', async () => {
+  const reporter = await user();
+  const teammate = await roleUser('developer');
+  const web = await Project.create({ key: 'WEB', name: 'Web App', createdBy: reporter._id });
+  const team = await Team.create({
+    name: 'Web Team',
+    project: web._id,
+    members: [reporter._id, teammate._id],
+    createdBy: reporter._id,
+  });
+  await Project.findByIdAndUpdate(web._id, { team: team._id });
+
+  await Ticket.create({
+    ticketId: 'WEB-406',
+    project: web._id,
+    title: 'Filed with no team set',
+    createdBy: reporter._id,
+    team: null,
+    status: 'pending',
+  });
+
+  const page = await listTickets(teammate, {});
+  assert.deepEqual(page.results.map((t) => t.ticketId), ['WEB-406']);
+  assert.equal((await getTicket(teammate, 'WEB-406')).ticketId, 'WEB-406');
+});
+
+test('developer outside project team cannot view unrelated tickets', async () => {
+  const reporter = await user();
+  const outsider = await roleUser('developer');
+  const web = await Project.create({ key: 'WEB', name: 'Web App', createdBy: reporter._id });
+  const mob = await Project.create({ key: 'MOB', name: 'Mobile App', createdBy: reporter._id });
+
+  await Ticket.create({
+    ticketId: 'MOB-9',
+    project: mob._id,
+    title: 'Mobile-only defect',
+    createdBy: reporter._id,
+    status: 'pending',
+  });
+
+  await assert.rejects(
+    () => getTicket(outsider, 'MOB-9'),
+    (err) => err.statusCode === 403 && err.code === 'FORBIDDEN',
+  );
+  assert.equal((await listTickets(outsider, {})).totalResults, 0);
+});
+
+test('qa testedBy on one ticket does not expose other tickets', async () => {
+  const reporter = await user();
+  const qa = await roleUser('qa');
+  const web = await Project.create({ key: 'WEB', name: 'Web App', createdBy: reporter._id });
+
+  await Ticket.create([
+    {
+      ticketId: 'WEB-405',
+      project: web._id,
+      title: 'QA-owned ticket',
+      createdBy: reporter._id,
+      testedBy: qa._id,
+      status: 'ready_qa',
+    },
+    {
+      ticketId: 'WEB-406',
+      project: web._id,
+      title: 'Unrelated ticket',
+      createdBy: reporter._id,
+      status: 'pending',
+    },
+  ]);
+
+  const page = await listTickets(qa, {});
+  assert.deepEqual(page.results.map((t) => t.ticketId), ['WEB-405']);
+  await assert.rejects(
+    () => getTicket(qa, 'WEB-406'),
+    (err) => err.statusCode === 403,
+  );
+});

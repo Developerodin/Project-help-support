@@ -5,16 +5,32 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { AuthProvider, useAuth } from '@/shared/contexts/auth-context.jsx';
 import { ProjectProvider, useProject } from '@/shared/contexts/project-context.jsx';
+import { AuthBootGate, AuthGuard } from '@/shared/components/auth/auth-guard.jsx';
 import Icon from '@/shared/components/icons.jsx';
 import ProfileMenu from '@/shared/components/profile-menu.jsx';
 import ProjectSwitcher from '@/shared/components/project-switcher.jsx';
 import NotificationBell from '@/shared/components/notification-bell.jsx';
 import ThemeToggle from '@/shared/components/theme-toggle.jsx';
-import AppLoader from '@/shared/components/app-loader.jsx';
 import AppSidebar from '@/shared/components/app-sidebar.jsx';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/shared/components/ui/sidebar';
 import { FOCUS_TICKET_SEARCH_KEY, focusTicketSearch } from '@/shared/lib/ticket-search-focus.js';
 import { readNavCollapsed, storeNavCollapsed } from '@/shared/lib/nav-preference.js';
+
+function ImpersonationBanner() {
+  const { impersonation, stopImpersonation } = useAuth();
+  if (!impersonation) return null;
+
+  return (
+    <div className="banner">
+      <Icon name="eye" size={14} />
+      <span>Viewing as this user, impersonated by {impersonation.byName}.</span>
+      <span className="spacer" />
+      <button type="button" className="btn btn-sm" onClick={stopImpersonation}>
+        Stop impersonating
+      </button>
+    </div>
+  );
+}
 
 function TopBar() {
   const { user } = useAuth();
@@ -71,24 +87,6 @@ function TopBar() {
   );
 }
 
-function AuthBootGate({ children }) {
-  const { loading } = useAuth();
-  if (loading) return <AppLoader />;
-  return children;
-}
-
-function AuthGuard({ children }) {
-  const { user } = useAuth();
-  if (!user) {
-    return (
-      <div className="page">
-        <p>Please <Link href="/login">sign in</Link>.</p>
-      </div>
-    );
-  }
-  return children;
-}
-
 function AppShell({ children }) {
   // Controlled, so the existing localStorage preference keeps working: the
   // provider's own cookie is read server-side, and this layout is a client
@@ -113,9 +111,10 @@ function AppShell({ children }) {
       <AppSidebar />
       <SidebarInset>
         <TopBar />
-        <AuthGuard>
-          <div className="page">{children}</div>
-        </AuthGuard>
+        <div className="page">
+          <ImpersonationBanner />
+          {children}
+        </div>
       </SidebarInset>
     </SidebarProvider>
   );
@@ -125,9 +124,11 @@ export default function AppLayout({ children }) {
   return (
     <AuthProvider>
       <AuthBootGate>
-        <ProjectProvider>
-          <AppShell>{children}</AppShell>
-        </ProjectProvider>
+        <AuthGuard>
+          <ProjectProvider>
+            <AppShell>{children}</AppShell>
+          </ProjectProvider>
+        </AuthGuard>
       </AuthBootGate>
     </AuthProvider>
   );

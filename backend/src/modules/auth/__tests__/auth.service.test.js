@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { withMemoryDb } from '../../../platform/__tests__/helpers/memoryDb.js';
 import User from '../../users/user.model.js';
-import { hashToken } from '../token.service.js';
+import { hashToken, verifyAccessToken } from '../token.service.js';
 import {
   login, refresh, logout, createInvite, previewInvite, acceptInvite,
   requestPasswordReset, resetPassword, INVITE_TTL_HOURS,
+  impersonate, stopImpersonation,
 } from '../auth.service.js';
 
 withMemoryDb();
@@ -205,4 +206,94 @@ test('resetPassword sets the new password and revokes every existing session', a
   await assert.rejects(() => refresh(session.refreshToken, config, meta), 'old session must die');
   const ok = await login('ada@example.com', 'a-totally-new-password', config, meta);
   assert.ok(ok.accessToken);
+});
+
+const adminUser = () => User.create({
+  name: 'Admin', email: 'admin@example.com', password: 'admin-password-value', status: 'active', role: 'admin',
+});
+const memberUser = () => User.create({
+  name: 'Mem', email: 'mem@example.com', password: 'member-password-value', status: 'active', role: 'member',
+});
+
+test('impersonate issues a session for the target carrying the impersonatedBy claim', async () => {
+  const admin = await adminUser();
+  const target = await memberUser();
+  const adminSession = await login('admin@example.com', 'admin-password-value', config, meta);
+
+  const result = await impersonate(admin, target._id, adminSession.refreshToken, config, meta);
+
+  assert.equal(result.user.id, target._id.toString());
+  assert.equal(result.impersonation.by, admin._id.toString());
+
+  const payload = verifyAccessToken(result.accessToken, config);
+  assert.equal(payload.sub, target._id.toString());
+  assert.equal(payload.impersonatedBy, admin._id.toString());
+});
+
+test('impersonate rejects impersonating yourself', async () => {
+  const admin = await adminUser();
+  const adminSession = await login('admin@example.com', 'admin-password-value', config, meta);
+
+  const err = await impersonate(admin, admin._id, adminSession.refreshToken, config, meta)
+    .catch((e) => e);
+  assert.equal(err.code, 'CANNOT_IMPERSONATE_SELF');
+});
+
+test('impersonate allows impersonating another admin', async () => {
+  const admin = await adminUser();
+  const otherAdmin = await User.create({
+    name: 'Other', email: 'other-admin@example.com', password: 'other-password-value', status: 'active', role: 'admin',
+  });
+  const adminSession = await login('admin@example.com', 'admin-password-value', config, meta);
+
+  const result = await impersonate(admin, otherAdmin._id, adminSession.refreshToken, config, meta);
+  assert.equal(result.user.id, otherAdmin._id.toString());
+});
+
+test('impersonate rejects an inactive target', async () => {
+  const admin = await adminUser();
+  const target = await User.create({
+    name: 'Gone', email: 'gone@example.com', password: 'gone-password-value', status: 'inactive',
+  });
+  const adminSession = await login('admin@example.com', 'admin-password-value', config, meta);
+
+  const err = await impersonate(admin, target._id, adminSession.refreshToken, config, meta)
+    .catch((e) => e);
+  assert.equal(err.code, 'USER_NOT_ACTIVE');
+});
+
+test('impersonate rejects a stale or invalid admin refresh token', async () => {
+  const admin = await adminUser();
+  const target = await memberUser();
+
+  const err = await impersonate(admin, target._id, 'not-a-real-refresh-token', config, meta)
+    .catch((e) => e);
+  assert.equal(err.code, 'INVALID_REFRESH_TOKEN');
+});
+
+test('stopImpersonation restores the admin session and ends impersonation', async () => {
+  const admin = await adminUser();
+  const target = await memberUser();
+  const adminSession = await login('admin@example.com', 'admin-password-value', config, meta);
+  const impersonated = await impersonate(admin, target._id, adminSession.refreshToken, config, meta);
+
+  const result = await stopImpersonation(
+    impersonated.refreshToken, impersonated.adminRefreshToken, config, meta,
+  );
+
+  assert.equal(result.user.id, admin._id.toString());
+  const payload = verifyAccessToken(result.accessToken, config);
+  assert.equal(payload.sub, admin._id.toString());
+  assert.equal(payload.impersonatedBy, undefined);
+});
+
+test('stopImpersonation revokes the impersonated session so it cannot be reused', async () => {
+  const admin = await adminUser();
+  const target = await memberUser();
+  const adminSession = await login('admin@example.com', 'admin-password-value', config, meta);
+  const impersonated = await impersonate(admin, target._id, adminSession.refreshToken, config, meta);
+
+  await stopImpersonation(impersonated.refreshToken, impersonated.adminRefreshToken, config, meta);
+
+  await assert.rejects(() => refresh(impersonated.refreshToken, config, meta));
 });
