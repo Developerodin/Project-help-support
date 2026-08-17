@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import mongoose from 'mongoose';
+import { ROLE_IDS } from '@pms/shared';
 import { withMemoryDb } from '../../../platform/__tests__/helpers/memoryDb.js';
 import User from '../../users/user.model.js';
 import Project from '../../projects/project.model.js';
@@ -203,7 +204,7 @@ const roleUser = (role) => User.create({
 test('testedBy grants list and view access without team membership', async () => {
   const reporter = await user();
   const developer = await roleUser('developer');
-  const qa = await roleUser('qa');
+  const qa = await roleUser(ROLE_IDS.TESTER);
   const web = await Project.create({
     key: 'WEB',
     name: 'Web App',
@@ -229,7 +230,7 @@ test('testedBy grants list and view access without team membership', async () =>
 
 test('qa assignee can view via assignedTo without testedBy relationship', async () => {
   const reporter = await user();
-  const qa = await roleUser('qa');
+  const qa = await roleUser(ROLE_IDS.TESTER);
   const web = await Project.create({ key: 'WEB', name: 'Web App', createdBy: reporter._id });
 
   await Ticket.create({
@@ -247,7 +248,7 @@ test('qa assignee can view via assignedTo without testedBy relationship', async 
 test('qa team member sees team tickets without personal assignment', async () => {
   const reporter = await user();
   const developer = await roleUser('developer');
-  const qa = await roleUser('qa');
+  const qa = await roleUser(ROLE_IDS.TESTER);
   const web = await Project.create({ key: 'WEB', name: 'Web App', createdBy: reporter._id });
   const team = await Team.create({
     name: 'QA Squad',
@@ -342,7 +343,7 @@ test('developer outside project team cannot view unrelated tickets', async () =>
 
 test('qa testedBy on one ticket does not expose other tickets', async () => {
   const reporter = await user();
-  const qa = await roleUser('qa');
+  const qa = await roleUser(ROLE_IDS.TESTER);
   const web = await Project.create({ key: 'WEB', name: 'Web App', createdBy: reporter._id });
 
   await Ticket.create([

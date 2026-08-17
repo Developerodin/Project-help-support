@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { ROLE_IDS } from '@pms/shared';
 import { withMemoryDb } from '../../../platform/__tests__/helpers/memoryDb.js';
 import User from '../../users/user.model.js';
 import Project from '../../projects/project.model.js';
@@ -11,7 +12,7 @@ import {
 
 withMemoryDb();
 
-const user = (role = 'member') => User.create({
+const user = (role = ROLE_IDS.DEVELOPER) => User.create({
   name: 'Person', email: `${Math.random().toString(36).slice(2)}@example.com`,
   password: 'a-long-enough-password', status: 'active', role,
 });
@@ -77,7 +78,7 @@ test('a patch records an activityLog entry with before and after values', async 
 
 test('a member who is neither reporter nor assignee cannot edit', async () => {
   const { ticket } = await seed();
-  const stranger = await user('member');
+  const stranger = await user(ROLE_IDS.DEVELOPER);
   const doc = await Ticket.findById(ticket.id);
 
   assert.throws(
@@ -88,7 +89,7 @@ test('a member who is neither reporter nor assignee cannot edit', async () => {
 
 test('a lead may edit any ticket; the assignee may edit their own', async () => {
   const { ticket } = await seed();
-  const lead = await user('lead');
+  const lead = await user(ROLE_IDS.PROJECT_ADMIN);
   const assignee = await user();
 
   await Ticket.updateOne({ _id: ticket.id }, { $set: { assignedTo: assignee._id } });
@@ -100,8 +101,8 @@ test('a lead may edit any ticket; the assignee may edit their own', async () => 
 
 test('assign is lead/admin only', async () => {
   const { ticket } = await seed();
-  const member = await user('member');
-  const lead = await user('lead');
+  const member = await user(ROLE_IDS.DEVELOPER);
+  const lead = await user(ROLE_IDS.PROJECT_ADMIN);
 
   await assert.rejects(
     () => assignTicket(member, ticket.id, { assignedTo: member._id, revision: 0 }),
@@ -125,7 +126,7 @@ test('watch and unwatch are idempotent', async () => {
 });
 
 test('bulk assign authorizes per ticket and returns per-item results', async () => {
-  const lead = await user('lead');
+  const lead = await user(ROLE_IDS.PROJECT_ADMIN);
   const reporter = await user();
   const web = await Project.create({ key: 'WEB', name: 'Web App', createdBy: lead._id });
 
@@ -144,7 +145,7 @@ test('bulk assign authorizes per ticket and returns per-item results', async () 
 });
 
 test('bulk never authorizes once and assumes the rest', async () => {
-  const member = await user('member');
+  const member = await user(ROLE_IDS.DEVELOPER);
   const reporter = await user();
   const web = await Project.create({ key: 'WEB', name: 'Web App', createdBy: reporter._id });
   const foreign = await createTicket(reporter, { project: web.id, title: 'Not yours' });
