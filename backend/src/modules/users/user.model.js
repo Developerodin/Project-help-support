@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
-import { ROLES, DEFAULT_NOTIFICATION_PREFS } from '@pms/shared';
+import { ROLES, ROLE_IDS, DEFAULT_NOTIFICATION_PREFS } from '@pms/shared';
 import toJSON from '../../platform/toJSON.plugin.js';
 
 export const MAX_REFRESH_TOKENS = 10;
@@ -48,7 +48,7 @@ const userSchema = new mongoose.Schema(
       set: (v) => (typeof v === 'string' ? v.trim().toLowerCase() : v),
     },
     password: { type: String, required: true, minlength: 8, private: true, select: false },
-    role: { type: String, enum: ROLES, default: 'member', index: true },
+    role: { type: String, enum: ROLES, default: ROLE_IDS.READ_ONLY, index: true },
     /** Reserved for a future open-intake path. Unused in build 1. */
     kind: { type: String, enum: ['internal', 'reporter'], default: 'internal' },
     status: {

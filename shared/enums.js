@@ -1,7 +1,69 @@
-/** User roles. Authority in this product is this single field — there is no permission matrix. */
-export const ROLES = Object.freeze(['admin', 'lead', 'qa', 'developer', 'member']);
+/**
+ * The stable, permission-bearing identifier for each role. Every permission
+ * check, route gate, and DB query references ROLE_IDS.* — never a re-typed
+ * string literal — so renaming how a role DISPLAYS (see ROLE_LABELS) never
+ * touches a permission check, and vice versa.
+ */
+export const ROLE_IDS = Object.freeze({
+  SUPER_ADMIN: 'super_admin',
+  ADMIN: 'admin',
+  PROJECT_ADMIN: 'project_admin',
+  DEVELOPER: 'developer',
+  TESTER: 'tester',
+  SUPPORT: 'support',
+  READ_ONLY: 'read_only',
+  CLIENT: 'client',
+  CLIENT_TESTER: 'client_tester',
+});
 
-/** Per-project role on a team assigned to a project. Distinct from global User.role. */
+/**
+ * Internal roles, most to least administratively senior for display — not a
+ * strict permission ladder, see docs/superpowers/specs/2026-08-17-role-model-v2-super-admin-isolation-design.md §1.
+ */
+export const INTERNAL_ROLES = Object.freeze([
+  ROLE_IDS.SUPER_ADMIN, ROLE_IDS.ADMIN, ROLE_IDS.PROJECT_ADMIN,
+  ROLE_IDS.DEVELOPER, ROLE_IDS.TESTER, ROLE_IDS.SUPPORT, ROLE_IDS.READ_ONLY,
+]);
+
+/**
+ * Wired into User.role (per the design spec §1's revision). These roles are
+ * excluded from internal role-assignment UI (People page/invite dialog), but
+ * remain queryable/filterable for external-facing selectors/endpoints (for
+ * example project client-tester management surfaces).
+ */
+export const EXTERNAL_ROLES = Object.freeze([ROLE_IDS.CLIENT, ROLE_IDS.CLIENT_TESTER]);
+
+export const ROLES = Object.freeze([...INTERNAL_ROLES, ...EXTERNAL_ROLES]);
+
+export const ROLE_LABELS = Object.freeze({
+  [ROLE_IDS.SUPER_ADMIN]: 'Super Admin',
+  [ROLE_IDS.ADMIN]: 'Admin',
+  [ROLE_IDS.PROJECT_ADMIN]: 'Project Admin',
+  [ROLE_IDS.DEVELOPER]: 'Developer',
+  [ROLE_IDS.TESTER]: 'Tester',
+  [ROLE_IDS.SUPPORT]: 'Support',
+  [ROLE_IDS.READ_ONLY]: 'Read Only',
+  [ROLE_IDS.CLIENT]: 'Client',
+  [ROLE_IDS.CLIENT_TESTER]: 'Client Tester',
+});
+
+/** Every route currently gated `requireRole('admin')` becomes `requireRole(...ADMIN_ROLES)` — see Task 4. */
+export const ADMIN_ROLES = Object.freeze([ROLE_IDS.SUPER_ADMIN, ROLE_IDS.ADMIN]);
+
+/**
+ * Gates who may INITIATE impersonation — a separate concept from ADMIN_ROLES
+ * even though the values are identical today. A future admin-tier role added
+ * to ADMIN_ROLES for route access must not silently also gain impersonation
+ * rights without that being its own deliberate decision. See design spec §4.
+ */
+export const IMPERSONATION_INITIATOR_ROLES = Object.freeze([ROLE_IDS.SUPER_ADMIN, ROLE_IDS.ADMIN]);
+
+/** Every route currently gated `requireRole('admin', 'lead')` becomes `requireRole(...PROJECT_ADMIN_ROLES)`. */
+export const PROJECT_ADMIN_ROLES = Object.freeze([
+  ROLE_IDS.SUPER_ADMIN, ROLE_IDS.ADMIN, ROLE_IDS.PROJECT_ADMIN,
+]);
+
+/** Per-project role on a team assigned to a project. Distinct from global User.role — do not conflate with ROLE_IDS. */
 export const PROJECT_TEAM_ROLES = Object.freeze(['team_lead', 'developer', 'qa', 'member']);
 
 /** Aligned with Dharwin devTicket.model.js severity enum. */
