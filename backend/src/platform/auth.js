@@ -1,6 +1,7 @@
 import { ApiError } from './errors.js';
 import User from '../modules/users/user.model.js';
 import { verifyAccessToken } from '../modules/auth/token.service.js';
+import { hasPermission } from '@pms/shared';
 
 const unauthenticated = () => new ApiError(401, 'UNAUTHENTICATED', 'Authentication required');
 
@@ -49,6 +50,21 @@ export function requireRole(...roles) {
       // 403, not 404: nothing is hidden in this product, so there is no
       // existence to conceal.
       return next(new ApiError(403, 'FORBIDDEN', `Requires one of: ${roles.join(', ')}`));
+    }
+    return next();
+  };
+}
+
+/**
+ * Layer 2, permission-bundle half. Flat and unscoped — no Client/Project/
+ * Environment axis, see shared/permissions.js. Same request-pipeline
+ * position as requireRole: role-only, before any document load.
+ */
+export function requirePermission(permission) {
+  return function checkPermission(req, _res, next) {
+    if (!req.user) return next(new ApiError(401, 'UNAUTHENTICATED', 'Authentication required'));
+    if (!hasPermission(req.user.role, permission)) {
+      return next(new ApiError(403, 'FORBIDDEN', `Requires permission: ${permission}`));
     }
     return next();
   };
