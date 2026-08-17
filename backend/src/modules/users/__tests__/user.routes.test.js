@@ -66,6 +66,39 @@ test('POST /v1/users creates an invited user and hands the token to the delivere
   assert.equal(sent[0].user.email, 'new@example.com');
 });
 
+test('POST /v1/users accepts client and client_tester invite roles', async () => {
+  sent.length = 0;
+  const admin = await make(ROLE_IDS.ADMIN);
+
+  const clientRes = await request(app()).post('/v1/users')
+    .set('Authorization', bearer(admin))
+    .send({ email: 'client@example.com', role: ROLE_IDS.CLIENT })
+    .expect(201);
+
+  assert.equal(clientRes.body.role, ROLE_IDS.CLIENT);
+
+  const testerRes = await request(app()).post('/v1/users')
+    .set('Authorization', bearer(admin))
+    .send({ email: 'tester@example.com', role: ROLE_IDS.CLIENT_TESTER })
+    .expect(201);
+
+  assert.equal(testerRes.body.role, ROLE_IDS.CLIENT_TESTER);
+});
+
+test('POST /v1/users rejects super_admin and read_only invite roles', async () => {
+  const admin = await make(ROLE_IDS.ADMIN);
+
+  await request(app()).post('/v1/users')
+    .set('Authorization', bearer(admin))
+    .send({ email: 'sa@example.com', role: ROLE_IDS.SUPER_ADMIN })
+    .expect(400);
+
+  await request(app()).post('/v1/users')
+    .set('Authorization', bearer(admin))
+    .send({ email: 'ro@example.com', role: ROLE_IDS.READ_ONLY })
+    .expect(400);
+});
+
 test('PATCH /v1/users/:id deactivates without removing the user', async () => {
   const admin = await make(ROLE_IDS.ADMIN);
   const target = await make(ROLE_IDS.DEVELOPER);

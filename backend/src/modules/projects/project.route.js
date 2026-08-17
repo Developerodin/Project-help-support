@@ -6,6 +6,7 @@ import * as controller from './project.controller.js';
 import {
   listProjectsSchema, createProjectSchema, projectIdSchema,
   updateProjectSchema, replaceModulesSchema, projectTeamMembersSchema,
+  replaceClientTestersSchema,
 } from './project.validation.js';
 
 export default function projectRoutes(config) {
@@ -20,6 +21,8 @@ export default function projectRoutes(config) {
     validate(replaceModulesSchema), controller.modules);
   router.get('/:id/team-members', validate(projectIdSchema), controller.teamMembers);
   router.get('/:id/client-testers', validate(projectIdSchema), controller.clientTesters);
+  router.put('/:id/client-testers', requireRole(...ADMIN_ROLES),
+    validate(replaceClientTestersSchema), controller.replaceClientTesters);
   router.put('/:id/team-members', requireRole(...ADMIN_ROLES),
     validate(projectTeamMembersSchema), controller.replaceTeamMembers);
 

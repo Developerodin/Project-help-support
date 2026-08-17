@@ -72,7 +72,7 @@ export async function logout(presentedRaw) {
   if (presentedRaw) await revokeRefreshToken(presentedRaw);
 }
 
-export async function createInvite(_actor, { email, role = ROLE_IDS.READ_ONLY }) {
+export async function createInvite(_actor, { email, role = ROLE_IDS.DEVELOPER }) {
   const existing = await User.findByNormalisedEmail(email);
   if (existing) {
     if (existing.status === 'inactive') {

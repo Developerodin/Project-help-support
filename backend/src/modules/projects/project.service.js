@@ -1,7 +1,10 @@
-import { resolveProjectModules } from '@pms/shared';
+import { ROLE_IDS, resolveProjectModules } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
+import AccessAssignment from '../access/accessAssignment.model.js';
 import Client from '../clients/client.model.js';
+import User from '../users/user.model.js';
+import Project, { RESERVED_PROJECT_KEYS } from './project.model.js';
 import Team from '../teams/team.model.js';
 import { assertActiveUsers, assertTeamUsable } from '../teams/team.service.js';
 import { listEffectiveClientTesters } from '../access/external-auth.service.js';
@@ -260,4 +263,78 @@ export async function getProjectClientTesters(id) {
     clientId: String(project.client),
     items,
   };
+}
+
+export async function setProjectClientTesters(actor, projectId, userIds) {
+  const project = await Project.findById(projectId).select('client');
+  if (!project) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
+  if (!project.client) {
+    throw new ApiError(400, 'CLIENT_REQUIRED', 'Project has no company');
+  }
+
+  const desiredIds = [...new Set((userIds || []).map(String))];
+
+  if (desiredIds.length) {
+    const users = await User.find({ _id: { $in: desiredIds } }).select('role status');
+    if (users.length !== desiredIds.length) {
+      throw new ApiError(400, 'USER_NOT_FOUND', 'One or more client testers were not found');
+    }
+    for (const user of users) {
+      if (user.status !== 'active') {
+        throw new ApiError(400, 'USER_NOT_ACTIVE', 'Only active users can be assigned as client testers');
+      }
+      if (user.role !== ROLE_IDS.CLIENT_TESTER) {
+        throw new ApiError(
+          400,
+          'INVALID_CLIENT_TESTER',
+          'Only users with the Client Tester role can be assigned here',
+        );
+      }
+    }
+  }
+
+  const companyWideIds = new Set(
+    (await AccessAssignment.find({
+      client: project.client,
+      project: null,
+      role: ROLE_IDS.CLIENT_TESTER,
+      status: 'active',
+      user: { $in: desiredIds },
+    }).distinct('user')).map(String),
+  );
+
+  const projectScoped = await AccessAssignment.find({
+    client: project.client,
+    project: projectId,
+    role: ROLE_IDS.CLIENT_TESTER,
+    status: 'active',
+  });
+
+  const desiredProjectScoped = new Set(
+    desiredIds.filter((userId) => !companyWideIds.has(userId)),
+  );
+
+  for (const row of projectScoped) {
+    const userId = String(row.user);
+    if (!desiredProjectScoped.has(userId)) {
+      row.status = 'revoked';
+      row.reason = 'project_client_testers_updated';
+      await row.save();
+    }
+  }
+
+  const existingProjectScoped = new Set(projectScoped.map((row) => String(row.user)));
+
+  for (const userId of desiredProjectScoped) {
+    if (existingProjectScoped.has(userId)) continue;
+    await AccessAssignment.create({
+      user: userId,
+      role: ROLE_IDS.CLIENT_TESTER,
+      client: project.client,
+      project: projectId,
+      grantedBy: actor._id,
+    });
+  }
+
+  return getProjectClientTesters(projectId);
 }

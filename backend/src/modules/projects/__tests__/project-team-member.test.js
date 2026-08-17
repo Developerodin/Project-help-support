@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { ROLE_IDS } from '@pms/shared';
 import { withMemoryDb } from '../../../platform/__tests__/helpers/memoryDb.js';
 import User from '../../users/user.model.js';
 import Client from '../../clients/client.model.js';
@@ -17,7 +18,7 @@ import { createTicket, assignTicket, getTicket } from '../../tickets/ticket.serv
 
 withMemoryDb();
 
-const user = (role = 'member', name = role) => User.create({
+const user = (role = ROLE_IDS.READ_ONLY, name = role) => User.create({
   name,
   email: `${role}-${Math.random().toString(36).slice(2)}@example.com`,
   password: 'a-long-enough-password',
@@ -26,10 +27,10 @@ const user = (role = 'member', name = role) => User.create({
 });
 
 async function seedProjectWithTeam() {
-  const admin = await user('admin', 'Admin');
-  const lead = await user('developer', 'Harsh Bansal');
-  const developer = await user('developer', 'Akshay Pareek');
-  const qa = await user('qa', 'Harsh QA');
+  const admin = await user(ROLE_IDS.ADMIN, 'Admin');
+  const lead = await user(ROLE_IDS.DEVELOPER, 'Harsh Bansal');
+  const developer = await user(ROLE_IDS.DEVELOPER, 'Akshay Pareek');
+  const qa = await user(ROLE_IDS.TESTER, 'Harsh QA');
   const team = await Team.create({
     name: 'Web Team',
     lead: lead._id,
@@ -61,8 +62,8 @@ test('migrates legacy defaults into project team members', async () => {
 });
 
 test('same user can have different roles on different projects', async () => {
-  const admin = await user('admin');
-  const person = await user('developer', 'Poly');
+  const admin = await user(ROLE_IDS.ADMIN);
+  const person = await user(ROLE_IDS.DEVELOPER, 'Poly');
   const team = await Team.create({ name: 'Shared', members: [person._id], createdBy: admin._id });
   const client = await Client.create({ name: 'A Co', status: 'active', createdBy: admin._id });
   const web = await Project.create({ key: 'WEB', client: client._id, name: 'Web', createdBy: admin._id, team: team._id });
@@ -81,7 +82,7 @@ test('same user can have different roles on different projects', async () => {
 
 test('ticket assignee must belong to the project team', async () => {
   const { admin, project, team, qa, developer } = await seedProjectWithTeam();
-  const outsider = await user('developer', 'Outsider');
+  const outsider = await user(ROLE_IDS.DEVELOPER, 'Outsider');
 
   const ticket = await createTicket(admin, { project: project._id, title: 'Bug' });
   assert.equal(String(ticket.team), String(team._id));
@@ -100,9 +101,9 @@ test('ticket assignee must belong to the project team', async () => {
 });
 
 test('changing project team resyncs eligible members', async () => {
-  const admin = await user('admin');
-  const userA = await user('developer', 'A');
-  const userB = await user('qa', 'B');
+  const admin = await user(ROLE_IDS.ADMIN);
+  const userA = await user(ROLE_IDS.DEVELOPER, 'A');
+  const userB = await user(ROLE_IDS.TESTER, 'B');
   const teamA = await Team.create({ name: 'Team A', members: [userA._id], createdBy: admin._id });
   const teamB = await Team.create({ name: 'Team B', members: [userB._id], createdBy: admin._id });
   const client = await Client.create({ name: 'X Co', status: 'active', createdBy: admin._id });

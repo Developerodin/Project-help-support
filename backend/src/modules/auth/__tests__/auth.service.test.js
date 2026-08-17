@@ -112,9 +112,9 @@ test('createInvite stores only the token hash and returns the raw token once', a
   assert.ok(hoursOut > INVITE_TTL_HOURS - 1 && hoursOut <= INVITE_TTL_HOURS);
 });
 
-test('createInvite defaults to read_only when no role is given', async () => {
+test('createInvite defaults to developer when no role is given', async () => {
   const { user } = await createInvite(admin, { email: 'plain@example.com' });
-  assert.equal(user.role, ROLE_IDS.READ_ONLY);
+  assert.equal(user.role, ROLE_IDS.DEVELOPER);
 });
 
 test('createInvite rejects a duplicate invited email', async () => {

@@ -32,3 +32,7 @@ export const replaceTeamMembers = catchAsync(async (req, res) => {
 export const clientTesters = catchAsync(async (req, res) => {
   res.json(await projectService.getProjectClientTesters(req.params.id));
 });
+
+export const replaceClientTesters = catchAsync(async (req, res) => {
+  res.json(await projectService.setProjectClientTesters(req.user, req.params.id, req.body.userIds));
+});

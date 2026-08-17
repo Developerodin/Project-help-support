@@ -67,3 +67,10 @@ export const projectTeamMembersSchema = {
     })).required(),
   }),
 };
+
+export const replaceClientTestersSchema = {
+  params: Joi.object({ id: objectId.required() }),
+  body: Joi.object({
+    userIds: Joi.array().items(objectId).default([]),
+  }),
+};
