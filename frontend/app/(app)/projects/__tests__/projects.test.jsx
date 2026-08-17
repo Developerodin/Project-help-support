@@ -7,7 +7,10 @@ const listClients = vi.fn();
 const listProjects = vi.fn();
 const patchProject = vi.fn();
 const replaceModules = vi.fn();
+const getProjectClientTesters = vi.fn();
+const replaceProjectClientTesters = vi.fn();
 const listTeams = vi.fn();
+const listUsers = vi.fn();
 
 vi.mock('@/shared/api/clients.js', () => ({
   listClients: (...a) => listClients(...a),
@@ -17,6 +20,12 @@ vi.mock('@/shared/api/projects.js', () => ({
   listProjects: (...a) => listProjects(...a),
   patchProject: (...a) => patchProject(...a),
   replaceModules: (...a) => replaceModules(...a),
+  getProjectClientTesters: (...a) => getProjectClientTesters(...a),
+  replaceProjectClientTesters: (...a) => replaceProjectClientTesters(...a),
+}));
+
+vi.mock('@/shared/api/users.js', () => ({
+  listUsers: (...a) => listUsers(...a),
 }));
 
 vi.mock('@/shared/api/teams.js', () => ({
@@ -68,7 +77,10 @@ describe('ProjectsPage', () => {
     listProjects.mockReset().mockResolvedValue({ results: sampleProjects, totalResults: 2 });
     patchProject.mockReset().mockResolvedValue({});
     replaceModules.mockReset().mockResolvedValue({});
+    getProjectClientTesters.mockReset().mockResolvedValue({ projectId: 'p1', clientId: 'c1', items: [] });
+    replaceProjectClientTesters.mockReset().mockResolvedValue({ projectId: 'p1', clientId: 'c1', items: [] });
     listTeams.mockReset().mockResolvedValue({ results: [] });
+    listUsers.mockReset().mockResolvedValue({ results: [], totalResults: 0 });
   });
 
   it('groups project cards under company sections', async () => {
@@ -78,6 +90,7 @@ describe('ProjectsPage', () => {
     expect(screen.getByRole('heading', { name: /WEB — Web App/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /MOB — Mobile App/i })).toBeInTheDocument();
     expect(screen.getAllByRole('heading', { name: 'Project team', level: 5 })).toHaveLength(2);
+    expect(screen.getAllByRole('heading', { name: 'Client testers', level: 5 })).toHaveLength(2);
     expect(screen.getAllByText('Module catalog')).toHaveLength(2);
   });
 

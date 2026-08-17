@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { listClients } from '@/shared/api/clients.js';
-import { createProject } from '@/shared/api/projects.js';
+import { createProject, replaceProjectClientTesters } from '@/shared/api/projects.js';
+import { listUsers } from '@/shared/api/users.js';
 import { listTeams } from '@/shared/api/teams.js';
+import { ROLE_IDS } from '@pms/shared';
 import CompanyLogo from '@/shared/components/companies/company-logo.jsx';
 import FormError from '@/shared/components/form-error.jsx';
 import ProjectModulesEditor from '@/shared/components/project-modules-editor.jsx';
@@ -18,6 +20,7 @@ const INITIAL_DRAFT = {
   name: '',
   description: '',
   team: '',
+  clientTesterIds: [],
 };
 
 export default function NewProjectPage() {
@@ -34,11 +37,30 @@ export default function NewProjectPage() {
   const [showValidation, setShowValidation] = useState(false);
   const [validationDialogOpen, setValidationDialogOpen] = useState(false);
   const [validationItems, setValidationItems] = useState([]);
+  const [clientTesters, setClientTesters] = useState([]);
 
   useEffect(() => {
     listClients({ status: 'active' }).then((p) => setCompanies(p.results)).catch(() => {});
     listTeams().then((p) => setTeams(p.results)).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!draft.clientId) {
+      setClientTesters([]);
+      return undefined;
+    }
+
+    let cancelled = false;
+    listUsers({ role: ROLE_IDS.CLIENT_TESTER, status: 'active', limit: 100 })
+      .then((page) => {
+        if (!cancelled) setClientTesters(page.results || []);
+      })
+      .catch(() => {
+        if (!cancelled) setClientTesters([]);
+      });
+
+    return () => { cancelled = true; };
+  }, [draft.clientId]);
 
   useEffect(() => {
     if (presetClientId) {
@@ -94,6 +116,9 @@ export default function NewProjectPage() {
         modules: formRowsToModules(moduleRows),
       };
       const created = await createProject(body);
+      if (draft.clientTesterIds.length) {
+        await replaceProjectClientTesters(created.id, draft.clientTesterIds);
+      }
       showToast(`Project ${created.key} created`);
       router.push('/projects');
     } catch (err) {
@@ -206,6 +231,44 @@ export default function NewProjectPage() {
                 <span className="help">Only global teams can be chosen here. Add project teams after creation.</span>
               </div>
             </div>
+          </section>
+
+          <section className="new-ticket-block" aria-labelledby="project-client-testers-heading">
+            <h2 id="project-client-testers-heading" className="form-section">Client testers</h2>
+            <p className="form-hint">
+              Optional project-scoped access for external Client Tester users under the selected company.
+            </p>
+
+            {!draft.clientId ? (
+              <p className="field-hint">Select a company first.</p>
+            ) : clientTesters.length === 0 ? (
+              <p className="field-hint">
+                No active Client Tester users yet. Invite them from People with the Client Tester role.
+              </p>
+            ) : (
+              <ul className="project-team-panel__list">
+                {clientTesters.map((user) => (
+                  <li key={user.id} className="project-team-panel__row">
+                    <label className="project-client-testers-panel__choice">
+                      <input
+                        type="checkbox"
+                        checked={draft.clientTesterIds.includes(user.id)}
+                        onChange={() => setDraft((prev) => ({
+                          ...prev,
+                          clientTesterIds: prev.clientTesterIds.includes(user.id)
+                            ? prev.clientTesterIds.filter((id) => id !== user.id)
+                            : [...prev.clientTesterIds, user.id],
+                        }))}
+                      />
+                      <span className="project-team-panel__who">
+                        <b>{user.name || user.email}</b>
+                        <span>{user.email}</span>
+                      </span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
 
           <section className="new-ticket-block" aria-labelledby="project-modules-heading">

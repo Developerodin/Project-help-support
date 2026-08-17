@@ -13,3 +13,6 @@ export const replaceProjectTeamMembers = (id, members) =>
   apiFetch(`/projects/${id}/team-members`, { method: 'PUT', body: { members } });
 export const replaceModules = (id, modules) =>
   apiFetch(`/projects/${id}/modules`, { method: 'PUT', body: { modules } });
+export const getProjectClientTesters = (id) => apiFetch(`/projects/${id}/client-testers`);
+export const replaceProjectClientTesters = (id, userIds) =>
+  apiFetch(`/projects/${id}/client-testers`, { method: 'PUT', body: { userIds } });

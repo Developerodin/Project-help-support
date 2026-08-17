@@ -50,17 +50,19 @@ describe('ProfileMenu', () => {
     expect(screen.getByRole('menuitem', { name: /profile overview/i })).toHaveAttribute('href', '/profile');
   });
 
-  it('shows admin panel toggle for admin-tier users only', async () => {
+  it('shows admin panel toggle in a separate section for admin-tier users only', async () => {
     const user = userEvent.setup();
     const { rerender } = render(<ProfileMenu />);
 
     await user.click(screen.getByRole('button', { name: /open profile menu/i }));
+    expect(screen.getByText('Administration')).toBeInTheDocument();
     expect(screen.getByRole('menuitemcheckbox', { name: /switch to admin panel/i })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /open profile menu/i }));
 
-    authUser.role = 'member';
+    authUser.role = 'developer';
     rerender(<ProfileMenu />);
     await user.click(screen.getByRole('button', { name: /open profile menu/i }));
+    expect(screen.queryByText('Administration')).not.toBeInTheDocument();
     expect(screen.queryByRole('menuitemcheckbox')).not.toBeInTheDocument();
   });
 
@@ -70,9 +72,9 @@ describe('ProfileMenu', () => {
 
     await user.click(screen.getByRole('button', { name: /open profile menu/i }));
     await user.click(screen.getByRole('menuitemcheckbox', { name: /switch to admin panel/i }));
-    expect(push).toHaveBeenCalledWith('/users');
+    expect(push).toHaveBeenCalledWith('/admin');
 
-    pathnameState.value = '/users';
+    pathnameState.value = '/admin';
     rerender(<ProfileMenu />);
     await user.click(screen.getByRole('button', { name: /open profile menu/i }));
     await user.click(screen.getByRole('menuitemcheckbox', { name: /switch to user panel/i }));

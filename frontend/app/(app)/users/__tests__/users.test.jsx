@@ -200,16 +200,16 @@ describe('UsersPage', () => {
     expect(screen.queryByRole('button', { name: /^impersonate$/i })).not.toBeInTheDocument();
   });
 
-  it('hides the Super Admin role option from a plain Admin actor', async () => {
+  it('hides protected roles but includes client roles for a plain Admin actor', async () => {
     render(<UsersPage />);
     await screen.findByText('ada@example.com');
 
     const select = screen.getByLabelText('Role for Ada');
     const optionValues = within(select).getAllByRole('option').map((o) => o.value);
     expect(optionValues).not.toContain('super_admin');
-    expect(optionValues).not.toContain('client');
-    expect(optionValues).not.toContain('client_tester');
     expect(optionValues).not.toContain('read_only');
+    expect(optionValues).toContain('client');
+    expect(optionValues).toContain('client_tester');
     expect(optionValues).toContain('admin');
     expect(optionValues).toContain('developer');
   });
@@ -239,7 +239,7 @@ describe('UsersPage', () => {
     expect(screen.getAllByRole('button', { name: /^impersonate$/i })).toHaveLength(1);
   });
 
-  it('the invite dialog role select excludes Super Admin and external roles, using human labels', async () => {
+  it('the invite dialog role select includes client roles with human labels', async () => {
     render(<UsersPage />);
     await screen.findByText('ada@example.com');
 
@@ -250,10 +250,27 @@ describe('UsersPage', () => {
 
     const values = options.map((o) => o.value);
     expect(values).not.toContain('super_admin');
-    expect(values).not.toContain('client');
     expect(values).not.toContain('read_only');
-    const developerOption = options.find((o) => o.value === 'developer');
-    expect(developerOption).toHaveTextContent('Developer');
+    expect(values).toContain('client');
+    expect(values).toContain('client_tester');
+    expect(options.find((o) => o.value === 'developer')).toHaveTextContent('Developer');
+    expect(options.find((o) => o.value === 'client')).toHaveTextContent('Client');
+    expect(options.find((o) => o.value === 'client_tester')).toHaveTextContent('Client Tester');
+  });
+
+  it('invites a user with the client_tester role', async () => {
+    render(<UsersPage />);
+    await screen.findByText('ada@example.com');
+
+    await userEvent.click(screen.getByRole('button', { name: /^invite$/i }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.type(within(dialog).getByLabelText(/^email$/i), 'client@example.com');
+    await userEvent.selectOptions(within(dialog).getByLabelText(/^role$/i), 'client_tester');
+    await userEvent.click(within(dialog).getByRole('button', { name: /send invite/i }));
+
+    await waitFor(() => expect(inviteUser).toHaveBeenCalledWith({
+      email: 'client@example.com', role: 'client_tester',
+    }));
   });
 
   it('shows a loading state on the Impersonate button while the request is in flight', async () => {

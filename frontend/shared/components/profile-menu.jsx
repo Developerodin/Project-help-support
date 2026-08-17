@@ -5,12 +5,12 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import { initials } from '@/shared/components/icons.jsx';
-import { canAccessProjects, capRole } from '@/shared/lib/profile-utils.js';
+import { canAccessAdminPanel, capRole } from '@/shared/lib/profile-utils.js';
 
 const PERSONAL_INFORMATION_HREF = '/profile#profile-personal-information';
-const ADMIN_PANEL_HOME = '/users';
+const ADMIN_PANEL_HOME = '/admin';
 const USER_PANEL_HOME = '/profile';
-const ADMIN_PANEL_PATHS = ['/users', '/projects'];
+const ADMIN_PANEL_PATHS = ['/admin', '/users', '/projects', '/teams', '/settings/notifications'];
 
 function isAdminPanelPath(pathname) {
   if (!pathname) return false;
@@ -23,7 +23,7 @@ export default function ProfileMenu() {
   const router = useRouter();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const isAdminTier = canAccessProjects(user?.role);
+  const isAdminTier = canAccessAdminPanel(user?.role);
   const adminPanelOn = isAdminTier && isAdminPanelPath(pathname);
 
   useEffect(() => {
@@ -93,17 +93,21 @@ export default function ProfileMenu() {
           Profile overview
         </Link>
         {isAdminTier ? (
-          <button
-            type="button"
-            className="menuitem profile-menu__toggle"
-            role="menuitemcheckbox"
-            aria-checked={adminPanelOn}
-            aria-label={adminPanelOn ? 'Switch to user panel' : 'Switch to admin panel'}
-            onClick={handleAdminPanelToggle}
-          >
-            <span>{adminPanelOn ? 'Exit admin panel' : 'Open admin panel'}</span>
-            <span className="k">{adminPanelOn ? 'On' : 'Off'}</span>
-          </button>
+          <>
+            <div className="menusep" />
+            <div className="menucap profile-menu__section-label">Administration</div>
+            <button
+              type="button"
+              className="menuitem profile-menu__toggle"
+              role="menuitemcheckbox"
+              aria-checked={adminPanelOn}
+              aria-label={adminPanelOn ? 'Switch to user panel' : 'Switch to admin panel'}
+              onClick={handleAdminPanelToggle}
+            >
+              <span>{adminPanelOn ? 'Exit admin panel' : 'Open admin panel'}</span>
+              <span className="k">{adminPanelOn ? 'On' : 'Off'}</span>
+            </button>
+          </>
         ) : null}
       </div>
     </div>

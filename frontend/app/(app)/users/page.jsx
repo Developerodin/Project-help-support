@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { INTERNAL_ROLES, ROLE_IDS, IMPERSONATION_INITIATOR_ROLES } from '@pms/shared';
+import { PEOPLE_ASSIGNABLE_ROLES, ROLE_IDS, IMPERSONATION_INITIATOR_ROLES } from '@pms/shared';
 import { listUsers, inviteUser, patchUser, resendInvite, deleteUser } from '@/shared/api/users.js';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import ConfirmDialog from '@/shared/components/confirm-dialog.jsx';
@@ -61,9 +61,7 @@ export default function UsersPage() {
   const router = useRouter();
   const { user: currentUser, startImpersonation } = useAuth();
   const canImpersonate = IMPERSONATION_INITIATOR_ROLES.includes(currentUser?.role);
-  const assignableRoles = INTERNAL_ROLES.filter(
-    (role) => role !== ROLE_IDS.SUPER_ADMIN && role !== ROLE_IDS.READ_ONLY,
-  );
+  const assignableRoles = PEOPLE_ASSIGNABLE_ROLES;
   const [users, setUsers] = useState([]);
   const [draft, setDraft] = useState({ email: '', role: ROLE_IDS.DEVELOPER });
   const [error, setError] = useState(null);

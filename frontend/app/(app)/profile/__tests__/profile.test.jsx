@@ -161,15 +161,10 @@ describe('ProfilePage', () => {
     expect(screen.getByRole('link', { name: /change password/i })).toHaveAttribute('href', '/forgot-password');
   });
 
-  it('shows admin panel shortcuts for admin-tier users only', () => {
+  it('does not render an admin hub on the profile page', () => {
     const { rerender } = render(<ProfilePage />);
 
-    expect(screen.getByRole('heading', { name: /admin panel/i })).toBeInTheDocument();
-    expect(screen.getAllByRole('link', { name: /^open$/i }).map((link) => link.getAttribute('href'))).toEqual([
-      '/users',
-      '/projects',
-      '/teams',
-    ]);
+    expect(screen.queryByRole('heading', { name: /admin panel/i })).not.toBeInTheDocument();
 
     authUser.role = 'member';
     rerender(<ProfilePage />);

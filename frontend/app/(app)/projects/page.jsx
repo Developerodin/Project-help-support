@@ -11,6 +11,7 @@ import NewCompanyDialog from '@/shared/components/companies/new-company-dialog.j
 import FormError from '@/shared/components/form-error.jsx';
 import Icon from '@/shared/components/icons.jsx';
 import ProjectTeamPanel from '@/shared/components/projects/project-team-panel.jsx';
+import ProjectClientTestersPanel from '@/shared/components/projects/project-client-testers-panel.jsx';
 import ProjectModulesEditor from '@/shared/components/project-modules-editor.jsx';
 import { formRowsToModules, modulesToFormRows } from '@/shared/lib/project-modules.js';
 import { showToast } from '@/shared/lib/toast.js';
@@ -99,6 +100,17 @@ function ProjectPanel({
           </div>
 
           <ProjectTeamPanel project={project} teams={teams} onUpdated={onUpdate} />
+        </div>
+
+        <div className="project-form-section">
+          <div className="project-form-intro">
+            <h5 className="project-form-heading">Client testers</h5>
+            <p className="project-form-hint">
+              Grant project-scoped access to external Client Tester users for this company.
+            </p>
+          </div>
+
+          <ProjectClientTestersPanel project={project} />
         </div>
 
         <div className="project-form-section project-form-section--catalog">
