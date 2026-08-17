@@ -10,6 +10,7 @@ import { ROLE_IDS } from '@pms/shared';
 import CompanyLogo from '@/shared/components/companies/company-logo.jsx';
 import FormError from '@/shared/components/form-error.jsx';
 import ProjectModulesEditor from '@/shared/components/project-modules-editor.jsx';
+import ExternalUserMultiSelect from '@/shared/components/external-user-multi-select.jsx';
 import ValidationDialog from '@/shared/components/validation-dialog.jsx';
 import { formRowsToModules } from '@/shared/lib/project-modules.js';
 import { validateNewProjectDraft } from '@/shared/lib/validate-new-project.js';
@@ -234,40 +235,23 @@ export default function NewProjectPage() {
           </section>
 
           <section className="new-ticket-block" aria-labelledby="project-client-testers-heading">
-            <h2 id="project-client-testers-heading" className="form-section">Client testers</h2>
+            <h2 id="project-client-testers-heading" className="form-section">Client tester access</h2>
             <p className="form-hint">
-              Optional project-scoped access for external Client Tester users under the selected company.
+              Optional project-scoped access for external Client Tester users on this project.
             </p>
 
             {!draft.clientId ? (
               <p className="field-hint">Select a company first.</p>
-            ) : clientTesters.length === 0 ? (
-              <p className="field-hint">
-                No active Client Tester users yet. Invite them from People with the Client Tester role.
-              </p>
             ) : (
-              <ul className="project-team-panel__list">
-                {clientTesters.map((user) => (
-                  <li key={user.id} className="project-team-panel__row">
-                    <label className="project-client-testers-panel__choice">
-                      <input
-                        type="checkbox"
-                        checked={draft.clientTesterIds.includes(user.id)}
-                        onChange={() => setDraft((prev) => ({
-                          ...prev,
-                          clientTesterIds: prev.clientTesterIds.includes(user.id)
-                            ? prev.clientTesterIds.filter((id) => id !== user.id)
-                            : [...prev.clientTesterIds, user.id],
-                        }))}
-                      />
-                      <span className="project-team-panel__who">
-                        <b>{user.name || user.email}</b>
-                        <span>{user.email}</span>
-                      </span>
-                    </label>
-                  </li>
-                ))}
-              </ul>
+              <ExternalUserMultiSelect
+                label="Client testers"
+                users={clientTesters}
+                selectedIds={draft.clientTesterIds}
+                onChange={(clientTesterIds) => setDraft((prev) => ({ ...prev, clientTesterIds }))}
+                disabled={busy}
+                loading={false}
+                emptyMessage="No client testers available. Invite users from People."
+              />
             )}
           </section>
 

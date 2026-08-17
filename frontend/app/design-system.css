@@ -2171,8 +2171,123 @@ a.button3{ display:block; text-align:center; text-decoration:none; cursor:pointe
   color:var(--ink-2); font-weight:700; line-height:1;
   border:1px solid var(--rule-soft);
 }
+.company-dialog{
+  max-width:560px;
+}
+.company-dialog .dlg-body{
+  flex:1; min-height:0;
+}
+.company-dialog .dlg-foot{
+  position:sticky; bottom:0; z-index:1;
+}
+.company-dialog-section{
+  display:flex; flex-direction:column; gap:12px;
+}
+.company-dialog-section + .company-dialog-section{
+  margin-top:20px; padding-top:20px; border-top:1px solid var(--rule-soft);
+}
 .company-dialog-body .company-dialog-logo-row{
-  display:flex; align-items:flex-start; gap:16px; margin-bottom:12px;
+  display:flex; align-items:flex-start; gap:16px;
+}
+.company-external-access{
+  display:flex; flex-direction:column; gap:14px;
+}
+.company-external-access__intro{
+  margin-bottom:0;
+}
+.company-external-access__scope{
+  margin:0; font-size:0.6875rem; font-weight:600; letter-spacing:0.055em;
+  text-transform:uppercase; color:var(--ink-3);
+}
+.external-user-ms{
+  position:relative; display:flex; flex-direction:column; gap:8px;
+}
+.external-user-ms__label{
+  font-size:0.8125rem; font-weight:600; color:var(--ink);
+}
+.external-user-ms__chips{
+  display:flex; flex-wrap:wrap; gap:6px; align-items:center;
+  list-style:none; margin:0; padding:0;
+}
+.external-user-ms__chip{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:3px 8px 3px 3px; border:1px solid var(--sig-line);
+  border-radius:999px; background:var(--sig-wash); color:var(--sig);
+  font-size:0.75rem; max-width:220px;
+}
+.external-user-ms__chip.is-locked{
+  border-color:var(--rule); background:var(--panel); color:var(--ink);
+}
+.external-user-ms__chip-name{
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;
+}
+.external-user-ms__chip-badge{
+  flex:none; font-size:0.625rem; padding:1px 6px;
+}
+.external-user-ms__chip-remove{
+  flex:none; display:grid; place-items:center;
+  width:20px; height:20px; border-radius:999px;
+  color:var(--sig); font-size:0.875rem; line-height:1;
+}
+.external-user-ms__chip-remove:hover{
+  background:color-mix(in srgb, var(--sig) 12%, transparent);
+}
+.external-user-ms__more{
+  font-size:0.75rem; color:var(--ink-3); padding:4px 6px;
+}
+.external-user-ms__more:hover{ color:var(--ink); }
+.external-user-ms__empty{
+  margin:0; font-size:0.75rem; color:var(--ink-3); line-height:1.5;
+}
+.external-user-ms__search{
+  position:relative; display:flex; align-items:center;
+}
+.external-user-ms__search > svg{
+  position:absolute; left:11px; color:var(--ink-3); pointer-events:none;
+}
+.external-user-ms__input{
+  width:100%; height:40px; padding:0 12px 0 33px; margin:0;
+  border:1px solid var(--rule); border-radius:var(--r); background:var(--paper);
+  color:var(--ink); font-size:0.8125rem; outline:none;
+}
+.external-user-ms__input:focus{
+  border-color:var(--sig); box-shadow:0 0 0 3px var(--sig-wash);
+}
+.external-user-ms__dropdown{
+  position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:20;
+  max-height:240px; overflow-y:auto;
+  background:var(--paper); border:1px solid var(--rule); border-radius:var(--r);
+  box-shadow:var(--shadow-pop);
+}
+.external-user-ms__dropdown-empty{
+  margin:0; padding:14px 12px; font-size:0.75rem; color:var(--ink-3); text-align:center;
+}
+.external-user-ms__options{
+  list-style:none; margin:0; padding:6px;
+}
+.external-user-ms__option{
+  display:flex; align-items:center; gap:10px; width:100%;
+  min-height:44px; padding:6px 8px; border-radius:var(--r);
+  text-align:left; font-size:0.8125rem; color:var(--ink);
+}
+.external-user-ms__option:hover:not(:disabled){
+  background:var(--panel);
+}
+.external-user-ms__option.is-on{
+  background:var(--sig-wash);
+}
+.external-user-ms__option.is-locked{
+  opacity:0.72; cursor:not-allowed;
+}
+.external-user-ms__option-who{
+  display:flex; flex-direction:column; gap:2px; min-width:0; flex:1;
+}
+.external-user-ms__option-who b{
+  font-size:0.8125rem; font-weight:600; color:var(--ink);
+}
+.external-user-ms__option-who span{
+  font-size:0.75rem; color:var(--ink-3);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
 .company-select-preview{
   display:flex; align-items:center; gap:8px; margin-bottom:6px;

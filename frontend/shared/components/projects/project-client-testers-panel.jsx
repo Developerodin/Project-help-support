@@ -8,6 +8,7 @@ import {
 } from '@/shared/api/projects.js';
 import { ROLE_IDS } from '@pms/shared';
 import { showToast } from '@/shared/lib/toast.js';
+import ExternalUserMultiSelect from '@/shared/components/external-user-multi-select.jsx';
 
 export default function ProjectClientTestersPanel({ project }) {
   const clientId = project.client?.id ?? project.client;
@@ -57,12 +58,15 @@ export default function ProjectClientTestersPanel({ project }) {
   }, [clientId, project.id]);
 
   const companyWideIds = useMemo(
-    () => new Set(
-      effectiveItems
-        .filter((item) => item.scopeType === 'company')
-        .map((item) => item.userId),
-    ),
+    () => (effectiveItems || [])
+      .filter((item) => item.scopeType === 'company')
+      .map((item) => item.userId),
     [effectiveItems],
+  );
+
+  const displaySelectedIds = useMemo(
+    () => [...new Set([...selectedIds, ...companyWideIds])],
+    [selectedIds, companyWideIds],
   );
 
   const dirty = useMemo(() => {
@@ -79,13 +83,9 @@ export default function ProjectClientTestersPanel({ project }) {
     return false;
   }, [effectiveItems, selectedIds]);
 
-  function toggleUser(userId) {
-    if (companyWideIds.has(userId)) return;
-    setSelectedIds((prev) => (
-      prev.includes(userId)
-        ? prev.filter((id) => id !== userId)
-        : [...prev, userId]
-    ));
+  function onSelectionChange(nextIds) {
+    const companyWideSet = new Set(companyWideIds);
+    setSelectedIds(nextIds.filter((id) => !companyWideSet.has(id)));
   }
 
   async function save() {
@@ -115,46 +115,23 @@ export default function ProjectClientTestersPanel({ project }) {
 
   return (
     <div className="project-team-panel project-client-testers-panel">
-      <div className="project-team-panel__head">
-        <span className="lbl">Client testers</span>
-        <span className="meta">{effectiveItems.length} effective</span>
-      </div>
-      <p className="project-form-hint">
-        External Client Tester users scoped to this project. Company-wide assignments
-        apply automatically and cannot be removed here.
-      </p>
-
-      {loading ? (
-        <p className="project-team-panel__empty">Loading client testers…</p>
-      ) : eligibleUsers.length === 0 ? (
-        <p className="project-team-panel__empty">
-          No active Client Tester users yet. Invite them from People with the Client Tester role.
+      <div className="project-form-intro">
+        <h3 className="project-form-heading">Client tester access</h3>
+        <p className="project-form-hint">
+          Grant project-scoped access for external Client Tester users on this project.
         </p>
-      ) : (
-        <ul className="project-team-panel__list">
-          {eligibleUsers.map((user) => {
-            const companyWide = companyWideIds.has(user.id);
-            const checked = companyWide || selectedIds.includes(user.id);
-            return (
-              <li key={user.id} className="project-team-panel__row">
-                <label className="project-client-testers-panel__choice">
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    disabled={companyWide}
-                    onChange={() => toggleUser(user.id)}
-                  />
-                  <span className="project-team-panel__who">
-                    <b>{user.name || user.email}</b>
-                    <span>{user.email}</span>
-                  </span>
-                </label>
-                {companyWide ? <span className="chip">Company-wide</span> : null}
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      </div>
+
+      <ExternalUserMultiSelect
+        label="Client testers"
+        users={eligibleUsers}
+        selectedIds={displaySelectedIds}
+        onChange={onSelectionChange}
+        disabled={saving}
+        loading={loading}
+        lockedIds={companyWideIds}
+        emptyMessage="No client testers available. Invite users from People."
+      />
 
       <div className="project-team-panel__foot">
         <button

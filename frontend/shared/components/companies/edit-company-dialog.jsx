@@ -3,11 +3,14 @@
 import { useEffect, useRef, useState } from 'react';
 import FormError from '@/shared/components/form-error.jsx';
 import CompanyLogo from '@/shared/components/companies/company-logo.jsx';
-import { patchClient, uploadClientLogo, removeClientLogo } from '@/shared/api/clients.js';
+import CompanyExternalAccessFields from '@/shared/components/companies/company-external-access-fields.jsx';
+import { getClient, patchClient, uploadClientLogo, removeClientLogo } from '@/shared/api/clients.js';
 
 export default function EditCompanyDialog({ open, company, onClose, onUpdated }) {
   const [name, setName] = useState('');
   const [status, setStatus] = useState('active');
+  const [clientUserIds, setClientUserIds] = useState([]);
+  const [clientTesterIds, setClientTesterIds] = useState([]);
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreview, setLogoPreview] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -21,7 +24,22 @@ export default function EditCompanyDialog({ open, company, onClose, onUpdated })
     setLogoFile(null);
     setLogoPreview(null);
     setError(null);
+    setClientUserIds(company.externalAccess?.clientUserIds ?? []);
+    setClientTesterIds(company.externalAccess?.clientTesterIds ?? []);
   }, [company, open]);
+
+  useEffect(() => {
+    if (!open || !company?.id) return undefined;
+    let cancelled = false;
+    getClient(company.id)
+      .then((fetched) => {
+        if (cancelled) return;
+        setClientUserIds(fetched.externalAccess?.clientUserIds ?? []);
+        setClientTesterIds(fetched.externalAccess?.clientTesterIds ?? []);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [open, company?.id]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -77,7 +95,12 @@ export default function EditCompanyDialog({ open, company, onClose, onUpdated })
     setBusy(true);
     setError(null);
     try {
-      let updated = await patchClient(company.id, { name: trimmed, status });
+      let updated = await patchClient(company.id, {
+        name: trimmed,
+        status,
+        clientUserIds,
+        clientTesterIds,
+      });
       if (logoFile) {
         updated = await uploadClientLogo(company.id, logoFile);
       }
@@ -99,7 +122,7 @@ export default function EditCompanyDialog({ open, company, onClose, onUpdated })
   return (
     <div className="dscrim on" role="presentation" onClick={() => !busy && onClose()}>
       <form
-        className="dlg"
+        className="dlg wide company-dialog"
         onSubmit={onSubmit}
         onClick={(event) => event.stopPropagation()}
       >
@@ -111,59 +134,73 @@ export default function EditCompanyDialog({ open, company, onClose, onUpdated })
         <div className="dlg-body company-dialog-body">
           <FormError error={error} />
 
-          <div className="company-dialog-logo-row">
-            <CompanyLogo company={previewCompany} size={56} />
+          <section className="company-dialog-section" aria-labelledby="edit-company-details-heading">
+            <h4 id="edit-company-details-heading" className="form-section">Company details</h4>
+
+            <div className="company-dialog-logo-row">
+              <CompanyLogo company={previewCompany} size={56} />
+              <div className="form-row">
+                <label htmlFor="edit-company-logo">Logo</label>
+                <input
+                  id="edit-company-logo"
+                  type="file"
+                  accept="image/png,image/jpeg,image/gif,image/webp"
+                  onChange={onLogoChange}
+                  disabled={busy}
+                />
+                {company.logoKey || company.logoUrl ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={onRemoveLogo}
+                    disabled={busy}
+                  >
+                    Remove logo
+                  </button>
+                ) : null}
+                <span className="help">PNG, JPEG, GIF, or WebP up to 2 MB.</span>
+              </div>
+            </div>
+
             <div className="form-row">
-              <label htmlFor="edit-company-logo">Logo</label>
+              <label htmlFor="edit-company-name">
+                Company name <span className="req" aria-hidden="true">*</span>
+              </label>
               <input
-                id="edit-company-logo"
-                type="file"
-                accept="image/png,image/jpeg,image/gif,image/webp"
-                onChange={onLogoChange}
+                id="edit-company-name"
+                ref={nameRef}
+                required
+                maxLength={120}
+                value={name}
+                onChange={(event) => setName(event.target.value)}
                 disabled={busy}
               />
-              {company.logoKey || company.logoUrl ? (
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={onRemoveLogo}
-                  disabled={busy}
-                >
-                  Remove logo
-                </button>
-              ) : null}
-              <span className="help">PNG, JPEG, GIF, or WebP up to 2 MB.</span>
             </div>
-          </div>
 
-          <div className="form-row">
-            <label htmlFor="edit-company-name">
-              Company name <span className="req" aria-hidden="true">*</span>
-            </label>
-            <input
-              id="edit-company-name"
-              ref={nameRef}
-              required
-              maxLength={120}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
+            <div className="form-row">
+              <label htmlFor="edit-company-status">Status</label>
+              <select
+                id="edit-company-status"
+                value={status}
+                onChange={(event) => setStatus(event.target.value)}
+                disabled={busy}
+              >
+                <option value="active">Active</option>
+                <option value="archived">Archived</option>
+              </select>
+              <span className="help">Archiving a company does not delete its projects.</span>
+            </div>
+          </section>
+
+          <section className="company-dialog-section" aria-labelledby="edit-company-access-heading">
+            <CompanyExternalAccessFields
+              clientUserIds={clientUserIds}
+              clientTesterIds={clientTesterIds}
+              onClientUserIdsChange={setClientUserIds}
+              onClientTesterIdsChange={setClientTesterIds}
               disabled={busy}
             />
-          </div>
-
-          <div className="form-row">
-            <label htmlFor="edit-company-status">Status</label>
-            <select
-              id="edit-company-status"
-              value={status}
-              onChange={(event) => setStatus(event.target.value)}
-              disabled={busy}
-            >
-              <option value="active">Active</option>
-              <option value="archived">Archived</option>
-            </select>
-            <span className="help">Archiving a company does not delete its projects.</span>
-          </div>
+          </section>
         </div>
 
         <div className="dlg-foot">

@@ -3,10 +3,13 @@
 import { useEffect, useRef, useState } from 'react';
 import FormError from '@/shared/components/form-error.jsx';
 import CompanyLogo from '@/shared/components/companies/company-logo.jsx';
+import CompanyExternalAccessFields from '@/shared/components/companies/company-external-access-fields.jsx';
 import { createClient, uploadClientLogo } from '@/shared/api/clients.js';
 
 export default function NewCompanyDialog({ open, onClose, onCreated }) {
   const [name, setName] = useState('');
+  const [clientUserIds, setClientUserIds] = useState([]);
+  const [clientTesterIds, setClientTesterIds] = useState([]);
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreview, setLogoPreview] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -26,6 +29,8 @@ export default function NewCompanyDialog({ open, onClose, onCreated }) {
   useEffect(() => {
     if (!open) {
       setName('');
+      setClientUserIds([]);
+      setClientTesterIds([]);
       setLogoFile(null);
       setLogoPreview(null);
       setError(null);
@@ -59,7 +64,12 @@ export default function NewCompanyDialog({ open, onClose, onCreated }) {
     setBusy(true);
     setError(null);
     try {
-      const created = await createClient({ name: trimmed, status: 'active' });
+      const created = await createClient({
+        name: trimmed,
+        status: 'active',
+        clientUserIds,
+        clientTesterIds,
+      });
       let result = created;
       if (logoFile) {
         result = await uploadClientLogo(created.id, logoFile);
@@ -82,7 +92,7 @@ export default function NewCompanyDialog({ open, onClose, onCreated }) {
   return (
     <div className="dscrim on" role="presentation" onClick={() => !busy && onClose()}>
       <form
-        className="dlg"
+        className="dlg wide company-dialog"
         onSubmit={onSubmit}
         onClick={(event) => event.stopPropagation()}
       >
@@ -94,36 +104,50 @@ export default function NewCompanyDialog({ open, onClose, onCreated }) {
         <div className="dlg-body company-dialog-body">
           <FormError error={error} />
 
-          <div className="company-dialog-logo-row">
-            <CompanyLogo company={previewCompany} size={56} />
-            <div className="form-row">
-              <label htmlFor="new-company-logo">Logo</label>
-              <input
-                id="new-company-logo"
-                type="file"
-                accept="image/png,image/jpeg,image/gif,image/webp"
-                onChange={onLogoChange}
-                disabled={busy}
-              />
-              <span className="help">Optional. PNG, JPEG, GIF, or WebP up to 2 MB.</span>
-            </div>
-          </div>
+          <section className="company-dialog-section" aria-labelledby="new-company-details-heading">
+            <h4 id="new-company-details-heading" className="form-section">Company details</h4>
 
-          <div className="form-row">
-            <label htmlFor="new-company-name">
-              Company name <span className="req" aria-hidden="true">*</span>
-            </label>
-            <input
-              id="new-company-name"
-              ref={nameRef}
-              required
-              maxLength={120}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
+            <div className="company-dialog-logo-row">
+              <CompanyLogo company={previewCompany} size={56} />
+              <div className="form-row">
+                <label htmlFor="new-company-logo">Logo</label>
+                <input
+                  id="new-company-logo"
+                  type="file"
+                  accept="image/png,image/jpeg,image/gif,image/webp"
+                  onChange={onLogoChange}
+                  disabled={busy}
+                />
+                <span className="help">PNG, JPEG, GIF, or WebP up to 2 MB.</span>
+              </div>
+            </div>
+
+            <div className="form-row">
+              <label htmlFor="new-company-name">
+                Company name <span className="req" aria-hidden="true">*</span>
+              </label>
+              <input
+                id="new-company-name"
+                ref={nameRef}
+                required
+                maxLength={120}
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                disabled={busy}
+                placeholder="e.g. Dharwin"
+              />
+            </div>
+          </section>
+
+          <section className="company-dialog-section" aria-labelledby="new-company-access-heading">
+            <CompanyExternalAccessFields
+              clientUserIds={clientUserIds}
+              clientTesterIds={clientTesterIds}
+              onClientUserIdsChange={setClientUserIds}
+              onClientTesterIdsChange={setClientTesterIds}
               disabled={busy}
-              placeholder="e.g. Dharwin"
             />
-          </div>
+          </section>
         </div>
 
         <div className="dlg-foot">
