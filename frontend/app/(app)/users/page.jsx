@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ROLES } from '@pms/shared';
+import { INTERNAL_ROLES, ROLE_IDS, IMPERSONATION_INITIATOR_ROLES } from '@pms/shared';
 import { listUsers, inviteUser, patchUser, resendInvite, deleteUser } from '@/shared/api/users.js';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import ConfirmDialog from '@/shared/components/confirm-dialog.jsx';
@@ -10,11 +10,7 @@ import InviteDialog from '@/shared/components/invite-dialog.jsx';
 import Icon, { initials } from '@/shared/components/icons.jsx';
 import { normalizeApiError } from '@/shared/lib/api-error.js';
 import { showToast } from '@/shared/lib/toast.js';
-
-function capRole(role) {
-  if (!role) return 'Member';
-  return role.charAt(0).toUpperCase() + role.slice(1);
-}
+import { capRole } from '@/shared/lib/profile-utils.js';
 
 function ActionButton({
   label,
@@ -64,9 +60,12 @@ function ActionButton({
 export default function UsersPage() {
   const router = useRouter();
   const { user: currentUser, startImpersonation } = useAuth();
-  const canImpersonate = currentUser?.role === 'admin';
+  const canImpersonate = IMPERSONATION_INITIATOR_ROLES.includes(currentUser?.role);
+  const assignableRoles = INTERNAL_ROLES.filter(
+    (role) => role !== ROLE_IDS.SUPER_ADMIN && role !== ROLE_IDS.READ_ONLY,
+  );
   const [users, setUsers] = useState([]);
-  const [draft, setDraft] = useState({ email: '', role: 'member' });
+  const [draft, setDraft] = useState({ email: '', role: ROLE_IDS.DEVELOPER });
   const [error, setError] = useState(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteBusy, setInviteBusy] = useState(false);
@@ -78,7 +77,7 @@ export default function UsersPage() {
   const [rowFeedback, setRowFeedback] = useState({});
 
   const reload = useCallback(() => {
-    listUsers().then((page) => setUsers(page.results)).catch(setError);
+    listUsers({}).then((page) => setUsers(page.results)).catch(setError);
   }, []);
 
   useEffect(() => { reload(); }, [reload]);
@@ -111,7 +110,7 @@ export default function UsersPage() {
     setInviteBusy(true);
     try {
       await inviteUser(draft);
-      setDraft({ email: '', role: 'member' });
+      setDraft({ email: '', role: ROLE_IDS.DEVELOPER });
       setInviteOpen(false);
       showToast('Invite sent');
       reload();
@@ -126,7 +125,7 @@ export default function UsersPage() {
     if (inviteBusy) return;
     setInviteOpen(false);
     setError(null);
-    setDraft({ email: '', role: 'member' });
+    setDraft({ email: '', role: ROLE_IDS.DEVELOPER });
   }
 
   async function patchRow(id, body, actionKey, successMessage) {
@@ -254,6 +253,7 @@ export default function UsersPage() {
         open={inviteOpen}
         email={draft.email}
         role={draft.role}
+        roles={assignableRoles}
         error={error}
         busy={inviteBusy}
         onEmailChange={(event) => setDraft({ ...draft, email: event.target.value })}
@@ -297,7 +297,9 @@ export default function UsersPage() {
                       onChange={(e) => patchRow(user.id, { role: e.target.value }, `${user.id}:role`)}
                       disabled={Boolean(rowBusy[`${user.id}:role`])}
                     >
-                      {ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
+                      {assignableRoles.map((role) => (
+                        <option key={role} value={role}>{capRole(role)}</option>
+                      ))}
                     </select>
                   </td>
                   <td><span className="chip">{user.status}</span></td>
@@ -339,7 +341,9 @@ export default function UsersPage() {
                           onClick={() => handleResend(user)}
                         />
                       )}
-                      {canImpersonate && user.status === 'active' && user.id !== currentUser?.id && (
+                      {canImpersonate && user.status === 'active' && user.id !== currentUser?.id
+                        && user.role !== ROLE_IDS.SUPER_ADMIN
+                        && !(currentUser?.role === ROLE_IDS.ADMIN && user.role === ROLE_IDS.ADMIN) && (
                         <ActionButton
                           label="Impersonate"
                           icon="eye"

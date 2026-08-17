@@ -42,7 +42,7 @@ describe('UsersPage', () => {
     listUsers.mockReset().mockResolvedValue({
       results: [
         { id: 'u1', name: 'Ada', email: 'ada@example.com', role: 'developer', status: 'active' },
-        { id: 'u2', name: '', email: 'p@example.com', role: 'member', status: 'invited' },
+        { id: 'u2', name: '', email: 'p@example.com', role: 'read_only', status: 'invited' },
         { id: 'u4', name: 'Root', email: 'root@example.com', role: 'admin', status: 'active' },
       ],
       totalResults: 3,
@@ -90,7 +90,7 @@ describe('UsersPage', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: /send invite/i }));
 
     await waitFor(() => expect(inviteUser).toHaveBeenCalledWith({
-      email: 'new@example.com', role: 'member',
+      email: 'new@example.com', role: 'developer',
     }));
     expect(screen.queryByText(/token/i)).not.toBeInTheDocument();
   });
@@ -198,6 +198,62 @@ describe('UsersPage', () => {
     await screen.findByText('ada@example.com');
 
     expect(screen.queryByRole('button', { name: /^impersonate$/i })).not.toBeInTheDocument();
+  });
+
+  it('hides the Super Admin role option from a plain Admin actor', async () => {
+    render(<UsersPage />);
+    await screen.findByText('ada@example.com');
+
+    const select = screen.getByLabelText('Role for Ada');
+    const optionValues = within(select).getAllByRole('option').map((o) => o.value);
+    expect(optionValues).not.toContain('super_admin');
+    expect(optionValues).not.toContain('client');
+    expect(optionValues).not.toContain('client_tester');
+    expect(optionValues).not.toContain('read_only');
+    expect(optionValues).toContain('admin');
+    expect(optionValues).toContain('developer');
+  });
+
+  it('still hides the Super Admin role option even when the actor is a Super Admin', async () => {
+    authUser.role = 'super_admin';
+    render(<UsersPage />);
+    await screen.findByText('ada@example.com');
+
+    const select = screen.getByLabelText('Role for Ada');
+    const optionValues = within(select).getAllByRole('option').map((o) => o.value);
+    expect(optionValues).not.toContain('super_admin');
+  });
+
+  it('hides Impersonate for another Admin row when the actor is an Admin, not a Super Admin', async () => {
+    listUsers.mockResolvedValue({
+      results: [
+        { id: 'u5', name: 'Other Admin', email: 'other-admin@example.com', role: 'admin', status: 'active' },
+        { id: 'u1', name: 'Ada', email: 'ada@example.com', role: 'developer', status: 'active' },
+      ],
+      totalResults: 2,
+    });
+
+    render(<UsersPage />);
+    await screen.findByText('ada@example.com');
+
+    expect(screen.getAllByRole('button', { name: /^impersonate$/i })).toHaveLength(1);
+  });
+
+  it('the invite dialog role select excludes Super Admin and external roles, using human labels', async () => {
+    render(<UsersPage />);
+    await screen.findByText('ada@example.com');
+
+    await userEvent.click(screen.getByRole('button', { name: /^invite$/i }));
+    const dialog = await screen.findByRole('dialog');
+    const roleSelect = within(dialog).getByLabelText(/^role$/i);
+    const options = within(roleSelect).getAllByRole('option');
+
+    const values = options.map((o) => o.value);
+    expect(values).not.toContain('super_admin');
+    expect(values).not.toContain('client');
+    expect(values).not.toContain('read_only');
+    const developerOption = options.find((o) => o.value === 'developer');
+    expect(developerOption).toHaveTextContent('Developer');
   });
 
   it('shows a loading state on the Impersonate button while the request is in flight', async () => {

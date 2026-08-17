@@ -1,13 +1,15 @@
 'use client';
 
 import { useEffect, useId, useRef } from 'react';
-import { ROLES } from '@pms/shared';
+import { ROLE_IDS } from '@pms/shared';
+import { capRole } from '@/shared/lib/profile-utils.js';
 import FormError from '@/shared/components/form-error.jsx';
 
 export default function InviteDialog({
   open,
   email = '',
-  role = 'member',
+  role = ROLE_IDS.READ_ONLY,
+  roles,
   error = null,
   busy = false,
   onEmailChange,
@@ -26,9 +28,6 @@ export default function InviteDialog({
   useEffect(() => {
     if (!open) return undefined;
     document.body.style.overflow = 'hidden';
-    // Focus the first FIELD, and do it in the same commit as the mount. A
-    // deferred focus() yanks the caret away from anyone who started typing
-    // inside the delay, and their keystrokes land on a button instead.
     emailRef.current?.focus();
     return () => { document.body.style.overflow = ''; };
   }, [open]);
@@ -117,7 +116,7 @@ export default function InviteDialog({
               onChange={onRoleChange}
               disabled={busy}
             >
-              {ROLES.map((item) => <option key={item} value={item}>{item}</option>)}
+              {roles.map((item) => <option key={item} value={item}>{capRole(item)}</option>)}
             </select>
           </div>
         </form>
