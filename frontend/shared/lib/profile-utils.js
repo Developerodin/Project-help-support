@@ -1,8 +1,8 @@
 /** Display helpers for the profile page. */
+import { ROLE_IDS, ROLE_LABELS } from '@pms/shared';
 
 export function capRole(role) {
-  if (!role) return 'Member';
-  return role.charAt(0).toUpperCase() + role.slice(1);
+  return ROLE_LABELS[role] || 'Unknown Role';
 }
 
 export function capStatus(status) {
@@ -47,9 +47,13 @@ export function collectProjectsFromTeams(teams) {
 }
 
 export function canAccessTeams(role) {
-  return role === 'admin' || role === 'lead';
+  return role === ROLE_IDS.SUPER_ADMIN || role === ROLE_IDS.ADMIN || role === ROLE_IDS.PROJECT_ADMIN;
 }
 
 export function canAccessProjects(role) {
-  return role === 'admin';
+  return role === ROLE_IDS.SUPER_ADMIN || role === ROLE_IDS.ADMIN;
+}
+
+export function canAccessAdminPanel(role) {
+  return role === ROLE_IDS.SUPER_ADMIN || role === ROLE_IDS.ADMIN;
 }
