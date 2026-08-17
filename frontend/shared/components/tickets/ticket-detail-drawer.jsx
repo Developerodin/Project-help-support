@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { ROLE_IDS } from '@pms/shared';
 import {
   getTicket, patchTicket, transitionTicket, addComment, uploadAttachments, assignTicket,
   watchTicket, unwatchTicket, setBlocked, clearBlocked,
@@ -115,7 +116,8 @@ function TicketDrawerContent({
   const watching = Boolean(
     ticket.watchers?.some((w) => String(w.id || w._id) === String(user?.id || user?._id)),
   );
-  const canAssign = user?.role === 'admin' || user?.role === 'lead';
+  const canAssign = user?.role === ROLE_IDS.SUPER_ADMIN || user?.role === ROLE_IDS.ADMIN
+    || user?.role === ROLE_IDS.PROJECT_ADMIN;
   const onAssign = canAssign
     ? run((patch) => assignTicket(ticket.ticketId, {
       revision: ticket.revision,

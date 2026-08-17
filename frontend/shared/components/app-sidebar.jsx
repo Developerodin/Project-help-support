@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { ROLE_IDS } from '@pms/shared';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import Icon from '@/shared/components/icons.jsx';
 import BrandMark from '@/shared/components/brand-mark.jsx';
@@ -26,16 +27,22 @@ const NAV_GROUPS = [
     items: [
       { href: '/tickets/board', id: 'board', label: 'Board', icon: 'board', roles: '*' },
       { href: '/tickets', id: 'tickets', label: 'Tickets', icon: 'ticket', roles: '*' },
-      { href: '/tickets/analytics', id: 'analytics', label: 'Analytics', icon: 'chart', roles: ['admin', 'lead', 'qa'] },
+      {
+        href: '/tickets/analytics', id: 'analytics', label: 'Analytics', icon: 'chart',
+        roles: [ROLE_IDS.SUPER_ADMIN, ROLE_IDS.ADMIN, ROLE_IDS.PROJECT_ADMIN, ROLE_IDS.TESTER],
+      },
       { href: '/notifications', id: 'inbox', label: 'Notifications', icon: 'bell', roles: '*' },
     ],
   },
   {
     cap: 'Admin',
     items: [
-      { href: '/projects', id: 'projects', label: 'Projects', icon: 'layers', roles: ['admin'] },
-      { href: '/teams', id: 'teams', label: 'Teams', icon: 'teams', roles: ['admin', 'lead'] },
-      { href: '/users', id: 'people', label: 'People', icon: 'user', roles: ['admin'] },
+      { href: '/projects', id: 'projects', label: 'Projects', icon: 'layers',
+        roles: [ROLE_IDS.SUPER_ADMIN, ROLE_IDS.ADMIN] },
+      { href: '/teams', id: 'teams', label: 'Teams', icon: 'teams',
+        roles: [ROLE_IDS.SUPER_ADMIN, ROLE_IDS.ADMIN, ROLE_IDS.PROJECT_ADMIN] },
+      { href: '/users', id: 'people', label: 'People', icon: 'user',
+        roles: [ROLE_IDS.SUPER_ADMIN, ROLE_IDS.ADMIN] },
       { href: '/settings/notifications', id: 'settings', label: 'Notification settings', icon: 'sliders', roles: '*' },
     ],
   },
@@ -57,8 +64,6 @@ export default function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon" aria-label="Primary">
-      {/* The header is never unmounted, so the mark survives the collapse — at
-          icon width only the wordmark folds away. */}
       <SidebarHeader className="h-(--bar-h) justify-center border-b border-sidebar-border p-0">
         <div className="flex h-(--bar-h) items-center gap-2.5 px-3.5 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
           <BrandMark className="size-5 shrink-0" />
@@ -79,8 +84,6 @@ export default function AppSidebar() {
                 <SidebarMenu>
                   {items.map((item) => (
                     <SidebarMenuItem key={item.id}>
-                      {/* tooltip only renders at icon width, so the label stays
-                          reachable once the text folds away. */}
                       <SidebarMenuButton
                         asChild
                         isActive={isCurrent(pathname, item.href)}
@@ -111,8 +114,6 @@ export default function AppSidebar() {
         </SidebarMenu>
       </SidebarFooter>
 
-      {/* Edge handle: a second, always-present way to toggle that never moves
-          relative to the rail. */}
       <SidebarRail />
     </Sidebar>
   );
