@@ -2,7 +2,7 @@ import catchAsync from '../../platform/catchAsync.js';
 import * as projectService from './project.service.js';
 
 export const list = catchAsync(async (req, res) => {
-  res.json(await projectService.listProjects(req.query));
+  res.json(await projectService.listProjects(req.query, req.user));
 });
 
 export const create = catchAsync(async (req, res) => {
@@ -10,7 +10,7 @@ export const create = catchAsync(async (req, res) => {
 });
 
 export const get = catchAsync(async (req, res) => {
-  res.json(await projectService.getProject(req.params.id));
+  res.json(await projectService.getProject(req.params.id, req.user));
 });
 
 export const update = catchAsync(async (req, res) => {

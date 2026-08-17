@@ -12,6 +12,7 @@ import ProjectSwitcher from '@/shared/components/project-switcher.jsx';
 import NotificationBell from '@/shared/components/notification-bell.jsx';
 import ThemeToggle from '@/shared/components/theme-toggle.jsx';
 import AppSidebar from '@/shared/components/app-sidebar.jsx';
+import ExternalWorkspaceNotice from '@/shared/components/external-workspace-notice.jsx';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/shared/components/ui/sidebar';
 import { FOCUS_TICKET_SEARCH_KEY, focusTicketSearch } from '@/shared/lib/ticket-search-focus.js';
 import { readNavCollapsed, storeNavCollapsed } from '@/shared/lib/nav-preference.js';
@@ -34,7 +35,7 @@ function ImpersonationBanner() {
 
 function TopBar() {
   const { user } = useAuth();
-  const { activeProject } = useProject();
+  const { activeProject, hasWorkspace } = useProject();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -71,15 +72,17 @@ function TopBar() {
           gives it one fixed seat in both states: it cannot slide out from under
           the cursor aiming at it, and the rail can never clip it. */}
       <SidebarTrigger className="size-11 shrink-0 rounded-(--r) text-[var(--ink-3)] hover:bg-[var(--panel-2)] hover:text-[var(--ink)]" />
-      <ProjectSwitcher />
+      {hasWorkspace ? <ProjectSwitcher /> : null}
       <button type="button" className="search" onClick={openSearch} aria-label="Search tickets">
         <span className="q">{searchHint}</span>
         <kbd>/</kbd>
       </button>
       <span className="spacer" />
-      <Link href="/tickets/new" className="btn btn-primary">
-        <Icon name="plus" size={12} /> New ticket
-      </Link>
+      {hasWorkspace ? (
+        <Link href="/tickets/new" className="btn btn-primary">
+          <Icon name="plus" size={12} /> New ticket
+        </Link>
+      ) : null}
       <NotificationBell />
       <ThemeToggle />
       <ProfileMenu />
@@ -113,6 +116,7 @@ function AppShell({ children }) {
         <TopBar />
         <div className="page">
           <ImpersonationBanner />
+          <ExternalWorkspaceNotice />
           {children}
         </div>
       </SidebarInset>

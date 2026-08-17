@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { listUsers } from '@/shared/api/users.js';
 import {
   getProjectClientTesters,
@@ -11,6 +11,7 @@ import { showToast } from '@/shared/lib/toast.js';
 import ExternalUserMultiSelect from '@/shared/components/external-user-multi-select.jsx';
 
 export default function ProjectClientTestersPanel({ project }) {
+  const headingId = useId();
   const clientId = project.client?.id ?? project.client;
   const [eligibleUsers, setEligibleUsers] = useState([]);
   const [effectiveItems, setEffectiveItems] = useState([]);
@@ -115,15 +116,12 @@ export default function ProjectClientTestersPanel({ project }) {
 
   return (
     <div className="project-team-panel project-client-testers-panel">
-      <div className="project-form-intro">
-        <h3 className="project-form-heading">Client tester access</h3>
-        <p className="project-form-hint">
-          Grant project-scoped access for external Client Tester users on this project.
-        </p>
-      </div>
+      <h5 className="project-form-heading" id={headingId}>Client tester assign</h5>
 
       <ExternalUserMultiSelect
-        label="Client testers"
+        label="Client tester assign"
+        hideLabel
+        ariaLabelledBy={headingId}
         users={eligibleUsers}
         selectedIds={displaySelectedIds}
         onChange={onSelectionChange}

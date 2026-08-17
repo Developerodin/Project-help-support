@@ -1,5 +1,7 @@
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
+import { buildExternalTicketFilter, isExternalRole } from '../access/external-auth.service.js';
+import Ticket from '../tickets/ticket.model.js';
 import Notification from './notification.model.js';
 
 const TITLES = {
@@ -38,6 +40,12 @@ export async function listNotifications(actor, query = {}) {
   const filter = { user: actor._id };
   if (String(query.unread) === 'true') filter.readAt = null;
 
+  if (isExternalRole(actor.role)) {
+    const ticketScope = await buildExternalTicketFilter(actor);
+    const visibleIds = await Ticket.find(ticketScope).distinct('_id');
+    filter.ticket = { $in: visibleIds.length ? visibleIds : [null] };
+  }
+
   const page = await paginate(Notification, filter, {
     page: query.page, limit: query.limit, sortBy: 'createdAt:desc', populate: ['ticket'],
   });
@@ -45,15 +53,25 @@ export async function listNotifications(actor, query = {}) {
 }
 
 export async function markRead(actor, id) {
-  // Scoped to the actor in the FILTER, not checked after the load: a
-  // notification belonging to someone else simply does not match.
-  const updated = await Notification.findOneAndUpdate(
-    { _id: id, user: actor._id },
-    { $set: { readAt: new Date() } },
-    { new: true },
-  );
-  if (!updated) throw new ApiError(404, 'NOTIFICATION_NOT_FOUND', 'Notification not found');
-  return updated.toJSON();
+  const notification = await Notification.findOne({ _id: id, user: actor._id }).populate('ticket');
+  if (!notification) {
+    throw new ApiError(404, 'NOTIFICATION_NOT_FOUND', 'Notification not found');
+  }
+
+  if (isExternalRole(actor.role) && notification.ticket) {
+    const ticketScope = await buildExternalTicketFilter(actor);
+    const visibleIds = await Ticket.find(ticketScope).distinct('_id');
+    const ticketId = String(notification.ticket._id ?? notification.ticket);
+    if (!visibleIds.some((id) => String(id) === ticketId)) {
+      throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this notification');
+    }
+  }
+
+  if (!notification.readAt) {
+    notification.readAt = new Date();
+    await notification.save();
+  }
+  return notification.toJSON();
 }
 
 export async function markAllRead(actor) {

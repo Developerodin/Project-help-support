@@ -7,7 +7,7 @@ import {
   EXTERNAL_ROLES,
   can,
 } from '@pms/shared';
-import { canExternalViewTicket, buildExternalTicketFilter } from '../access/external-auth.service.js';
+import { canExternalViewTicket, buildExternalTicketFilter, sanitizeExternalTicket, assertExternalCanCreateTicket } from '../access/external-auth.service.js';
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
 import Project from '../projects/project.model.js';
@@ -27,6 +27,8 @@ export async function createTicket(actor, body) {
   if (project.status !== 'active') {
     throw new ApiError(400, 'PROJECT_ARCHIVED', 'That project is archived');
   }
+
+  await assertExternalCanCreateTicket(actor, project._id);
 
   assertModuleAndPage(project, body.module, body.page);
 
@@ -145,7 +147,8 @@ export async function resolveTicketDoc(idOrKey, { populate = [], lean = false } 
 export async function getTicket(actor, idOrKey) {
   const ticket = await resolveTicketDoc(idOrKey, { populate: DETAIL_POPULATE });
   await assertCanViewTicket(actor, ticket);
-  return ticket.toJSON();
+  const json = ticket.toJSON();
+  return EXTERNAL_ROLES.includes(actor.role) ? sanitizeExternalTicket(json) : json;
 }
 
 function scopeFilter(scope, actorId) {
@@ -259,7 +262,13 @@ export async function listTickets(actor, query = {}) {
     select: '-comments -activityLog -stageHistory',
   });
 
-  return { ...page, results: page.results.map((t) => t.toJSON()) };
+  return {
+    ...page,
+    results: page.results.map((t) => {
+      const json = t.toJSON();
+      return EXTERNAL_ROLES.includes(actor.role) ? sanitizeExternalTicket(json) : json;
+    }),
+  };
 }
 
 const EDITABLE_FIELDS = [

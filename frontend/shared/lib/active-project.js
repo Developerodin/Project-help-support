@@ -16,12 +16,16 @@ export function writeStoredProjectId(projectId) {
 
 /**
  * Pick the initial project from stored preference, defaulting to WEB when unset.
+ * External users with multiple projects keep stored preference; single-project users
+ * are handled by the provider before this runs.
  * @param {Array<{ id: string, key: string }>} projects
+ * @param {{ isExternal?: boolean }} options
  * @returns {string | null}
  */
-export function resolveInitialProjectId(projects) {
+export function resolveInitialProjectId(projects, { isExternal = false } = {}) {
   const stored = readStoredProjectId();
   if (stored && projects.some((p) => p.id === stored)) return stored;
+  if (isExternal) return projects[0]?.id ?? null;
   const web = projects.find((p) => p.key === 'WEB');
   return web?.id ?? projects[0]?.id ?? null;
 }

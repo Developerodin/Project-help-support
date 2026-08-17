@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { EXTERNAL_ROLES } from '@pms/shared';
+import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import { useProject } from '@/shared/contexts/project-context.jsx';
 import { groupProjectsByCompany } from '@/shared/lib/group-projects-by-company.js';
 
@@ -13,11 +15,15 @@ function ChevronDown() {
 }
 
 export default function ProjectSwitcher() {
+  const { user } = useAuth();
   const {
     projects, loading, activeProjectId, activeProject, setActiveProjectId,
   } = useProject();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
+
+  const isExternal = EXTERNAL_ROLES.includes(user?.role);
+  const hideSwitcher = isExternal && projects.length <= 1;
 
   useEffect(() => {
     if (!open) return undefined;
@@ -42,7 +48,9 @@ export default function ProjectSwitcher() {
 
   const label = loading
     ? 'Loading…'
-    : activeProject?.name ?? 'All projects';
+    : activeProject?.name ?? (isExternal ? 'Project' : 'All projects');
+
+  if (hideSwitcher) return null;
 
   return (
     <div className="menuwrap" ref={wrapRef}>
@@ -62,17 +70,19 @@ export default function ProjectSwitcher() {
 
       {open && (
         <div className="menu on left" role="menu">
-          <button
-            type="button"
-            className="menuitem"
-            role="menuitem"
-            aria-current={!activeProjectId ? 'true' : undefined}
-            onClick={() => choose(null)}
-          >
-            All projects
-            {!activeProjectId && <span className="k">✓</span>}
-          </button>
-          {projects.length > 0 && <div className="menusep" />}
+          {!isExternal ? (
+            <button
+              type="button"
+              className="menuitem"
+              role="menuitem"
+              aria-current={!activeProjectId ? 'true' : undefined}
+              onClick={() => choose(null)}
+            >
+              All projects
+              {!activeProjectId && <span className="k">✓</span>}
+            </button>
+          ) : null}
+          {projects.length > 0 && !isExternal && <div className="menusep" />}
           <div className="menuscroll">
             {groupProjectsByCompany(projects).map(({ company, projects: companyProjects }) => (
               <div key={company.id ?? company.name} className="menubrand">

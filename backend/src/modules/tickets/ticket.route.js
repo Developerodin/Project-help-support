@@ -1,5 +1,7 @@
 import express from 'express';
 import { auth, requirePermission } from '../../platform/auth.js';
+import { EXTERNAL_ROLES, hasPermission } from '@pms/shared';
+import { ApiError } from '../../platform/errors.js';
 import { validate } from '../../platform/validate.js';
 import { uploadMiddleware } from '../../platform/upload.js';
 import * as controller from './ticket.controller.js';
@@ -11,12 +13,21 @@ import {
   setBlockedSchema, clearBlockedSchema,
 } from './ticket.validation.js';
 
+function requireTicketCreate(req, _res, next) {
+  if (!req.user) return next(new ApiError(401, 'UNAUTHENTICATED', 'Authentication required'));
+  if (EXTERNAL_ROLES.includes(req.user.role)) return next();
+  if (!hasPermission(req.user.role, 'tickets.create')) {
+    return next(new ApiError(403, 'FORBIDDEN', 'Requires permission: tickets.create'));
+  }
+  return next();
+}
+
 export default function ticketRoutes(config) {
   const router = express.Router();
   router.use(auth(config));
 
   router.get('/', validate(listTicketsSchema), controller.list);
-  router.post('/', requirePermission('tickets.create'), validate(createTicketSchema), controller.create(config));
+  router.post('/', requireTicketCreate, validate(createTicketSchema), controller.create(config));
 
   // Before /:id, or "bulk" is parsed as a ticket reference.
   router.post('/bulk', validate(bulkSchema), controller.bulk);

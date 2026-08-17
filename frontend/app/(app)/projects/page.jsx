@@ -103,13 +103,6 @@ function ProjectPanel({
         </div>
 
         <div className="project-form-section">
-          <div className="project-form-intro">
-            <h5 className="project-form-heading">Client testers</h5>
-            <p className="project-form-hint">
-              Grant project-scoped access to external Client Tester users for this company.
-            </p>
-          </div>
-
           <ProjectClientTestersPanel project={project} />
         </div>
 

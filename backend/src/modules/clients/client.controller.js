@@ -2,7 +2,7 @@ import catchAsync from '../../platform/catchAsync.js';
 import * as clientService from './client.service.js';
 
 export const list = (config) => catchAsync(async (req, res) => {
-  res.json(await clientService.listClients(req.query, config));
+  res.json(await clientService.listClients(req.query, config, req.user));
 });
 
 export const create = (config) => catchAsync(async (req, res) => {
@@ -12,11 +12,11 @@ export const create = (config) => catchAsync(async (req, res) => {
 });
 
 export const get = (config) => catchAsync(async (req, res) => {
-  res.json(await clientService.getClient(req.params.id, config));
+  res.json(await clientService.getClient(req.params.id, config, req.user));
 });
 
 export const update = (config) => catchAsync(async (req, res) => {
-  res.json(await clientService.updateClient(req.params.id, req.body, config));
+  res.json(await clientService.updateClient(req.user, req.params.id, req.body, config));
 });
 
 export const uploadLogo = (config) => catchAsync(async (req, res) => {

@@ -31,6 +31,8 @@ export default function ExternalUserMultiSelect({
   lockedIds = [],
   lockedBadge = 'Company-wide',
   maxVisibleChips = 4,
+  hideLabel = false,
+  ariaLabelledBy,
 }) {
   const baseId = useId();
   const wrapRef = useRef(null);
@@ -89,6 +91,8 @@ export default function ExternalUserMultiSelect({
         ? selectedIds.filter((id) => id !== userId)
         : [...selectedIds, userId],
     );
+    setSearch('');
+    setOpen(false);
   }
 
   function removeUser(userId) {
@@ -97,11 +101,18 @@ export default function ExternalUserMultiSelect({
   }
 
   const listboxId = `${baseId}-listbox`;
-  const labelId = `${baseId}-label`;
+  const labelId = ariaLabelledBy || `${baseId}-label`;
+  const inputLabelProps = hideLabel
+    ? (ariaLabelledBy
+      ? { 'aria-labelledby': ariaLabelledBy }
+      : { 'aria-label': label })
+    : { 'aria-labelledby': labelId };
 
   return (
     <div className="external-user-ms" ref={wrapRef}>
-      <span className="external-user-ms__label" id={labelId}>{label}</span>
+      {!hideLabel ? (
+        <span className="external-user-ms__label" id={labelId}>{label}</span>
+      ) : null}
 
       {picked.length > 0 ? (
         <ul className="external-user-ms__chips" aria-labelledby={labelId}>
@@ -149,16 +160,20 @@ export default function ExternalUserMultiSelect({
         <p className="external-user-ms__empty">{emptyMessage}</p>
       ) : (
         <div className="external-user-ms__search">
-          <SearchGlyph />
+          <span className="external-user-ms__search-icon" aria-hidden="true">
+            <SearchGlyph />
+          </span>
           <input
             ref={inputRef}
             id={baseId}
-            type="search"
+            type="text"
+            inputMode="search"
+            autoComplete="off"
             className="external-user-ms__input"
             placeholder="Search by name or email…"
             value={search}
             disabled={disabled}
-            aria-labelledby={labelId}
+            {...inputLabelProps}
             aria-controls={open ? listboxId : undefined}
             aria-expanded={open}
             aria-autocomplete="list"

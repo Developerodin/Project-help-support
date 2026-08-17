@@ -7,7 +7,13 @@ import User from '../users/user.model.js';
 import Project, { RESERVED_PROJECT_KEYS } from './project.model.js';
 import Team from '../teams/team.model.js';
 import { assertActiveUsers, assertTeamUsable } from '../teams/team.service.js';
-import { listEffectiveClientTesters } from '../access/external-auth.service.js';
+import {
+  assertExternalProjectAccess,
+  assignCompanyWideClientTestersToProject,
+  listEffectiveClientTesters,
+  isExternalRole,
+  permittedProjectIdsForExternalUser,
+} from '../access/external-auth.service.js';
 import {
   assignProjectTeam,
   ensureProjectMigrated,
@@ -167,6 +173,8 @@ export async function createProject(actor, body) {
     createdBy: actor._id,
   });
 
+  await assignCompanyWideClientTestersToProject(actor, client._id, project._id);
+
   if (project.team) {
     await assignProjectTeam(project._id, project.team);
   } else if (body.defaultAssignee || body.defaultTester) {
@@ -183,9 +191,24 @@ export async function createProject(actor, body) {
   return attachTeamContext(populated.toJSON());
 }
 
-export async function listProjects(query = {}) {
+export async function listProjects(query = {}, actor = null) {
   const filter = { status: query.status || 'active' };
   if (query.clientId) filter.client = query.clientId;
+
+  if (actor && isExternalRole(actor.role)) {
+    const permittedIds = await permittedProjectIdsForExternalUser(actor._id);
+    if (!permittedIds.length) {
+      return {
+        results: [],
+        page: Number(query.page) || 1,
+        limit: Number(query.limit) || 20,
+        totalPages: 0,
+        totalResults: 0,
+      };
+    }
+    filter._id = { $in: permittedIds };
+  }
+
   const page = await paginate(Project, filter, {
     page: query.page,
     limit: query.limit,
@@ -196,9 +219,10 @@ export async function listProjects(query = {}) {
   return { ...page, results };
 }
 
-export async function getProject(id) {
+export async function getProject(id, actor = null) {
   const project = await Project.findById(id).populate(['team', 'client']);
   if (!project) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
+  if (actor) await assertExternalProjectAccess(actor, project._id);
   return attachTeamContext(project.toJSON());
 }
 

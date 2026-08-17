@@ -235,16 +235,15 @@ export default function NewProjectPage() {
           </section>
 
           <section className="new-ticket-block" aria-labelledby="project-client-testers-heading">
-            <h2 id="project-client-testers-heading" className="form-section">Client tester access</h2>
-            <p className="form-hint">
-              Optional project-scoped access for external Client Tester users on this project.
-            </p>
+            <h2 id="project-client-testers-heading" className="form-section">Client tester assign</h2>
 
             {!draft.clientId ? (
               <p className="field-hint">Select a company first.</p>
             ) : (
               <ExternalUserMultiSelect
-                label="Client testers"
+                label="Client tester assign"
+                hideLabel
+                ariaLabelledBy="project-client-testers-heading"
                 users={clientTesters}
                 selectedIds={draft.clientTesterIds}
                 onChange={(clientTesterIds) => setDraft((prev) => ({ ...prev, clientTesterIds }))}

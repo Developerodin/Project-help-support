@@ -3,6 +3,12 @@ import { paginate } from '../../platform/paginate.js';
 import { safeKey, sniffImageType } from '../../platform/upload.js';
 import * as storage from '../../platform/s3.js';
 import Project from '../projects/project.model.js';
+import {
+  getCompanyExternalAccess,
+  syncCompanyExternalAccess,
+  isExternalRole,
+  permittedClientIdsForExternalUser,
+} from '../access/external-auth.service.js';
 import Client from './client.model.js';
 
 async function attachLogoUrl(config, clientJson) {
@@ -46,12 +52,35 @@ export async function createClient(actor, body, config) {
     createdBy: actor._id,
   });
 
-  return enrichClient(config, client, 0);
+  if (body.clientUserIds !== undefined || body.clientTesterIds !== undefined) {
+    await syncCompanyExternalAccess(actor, client._id, {
+      clientUserIds: body.clientUserIds,
+      clientTesterIds: body.clientTesterIds,
+    });
+  }
+
+  const enriched = await enrichClient(config, client, 0);
+  enriched.externalAccess = await getCompanyExternalAccess(client._id);
+  return enriched;
 }
 
-export async function listClients(query = {}, config) {
+export async function listClients(query = {}, config, actor = null) {
   const filter = {};
   if (query.status) filter.status = query.status;
+
+  if (actor && isExternalRole(actor.role)) {
+    const clientIds = await permittedClientIdsForExternalUser(actor._id);
+    if (!clientIds.length) {
+      return {
+        results: [],
+        page: Number(query.page) || 1,
+        limit: Number(query.limit) || 20,
+        totalPages: 0,
+        totalResults: 0,
+      };
+    }
+    filter._id = { $in: clientIds };
+  }
 
   const page = await paginate(Client, filter, {
     page: query.page,
@@ -67,13 +96,22 @@ export async function listClients(query = {}, config) {
   return { ...page, results };
 }
 
-export async function getClient(id, config) {
+export async function getClient(id, config, actor = null) {
   const client = await Client.findById(id);
   if (!client) throw new ApiError(404, 'CLIENT_NOT_FOUND', 'Company not found');
-  return enrichClient(config, client);
+
+  if (actor && isExternalRole(actor.role)) {
+    const permitted = await permittedClientIdsForExternalUser(actor._id);
+    if (!permitted.includes(String(id))) {
+      throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this company');
+    }
+  }
+  const enriched = await enrichClient(config, client);
+  enriched.externalAccess = await getCompanyExternalAccess(client._id);
+  return enriched;
 }
 
-export async function updateClient(id, body, config) {
+export async function updateClient(actor, id, body, config) {
   const client = await Client.findById(id);
   if (!client) throw new ApiError(404, 'CLIENT_NOT_FOUND', 'Company not found');
 
@@ -89,7 +127,17 @@ export async function updateClient(id, body, config) {
   if (body.status !== undefined) client.status = body.status;
 
   await client.save();
-  return enrichClient(config, client);
+
+  if (body.clientUserIds !== undefined || body.clientTesterIds !== undefined) {
+    await syncCompanyExternalAccess(actor, client._id, {
+      clientUserIds: body.clientUserIds,
+      clientTesterIds: body.clientTesterIds,
+    });
+  }
+
+  const enriched = await enrichClient(config, client);
+  enriched.externalAccess = await getCompanyExternalAccess(client._id);
+  return enriched;
 }
 
 export async function uploadClientLogo(id, file, actor, config) {

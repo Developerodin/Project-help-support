@@ -1,6 +1,7 @@
 import Joi from 'joi';
 
 const objectId = Joi.string().hex().length(24);
+const externalUserIds = Joi.array().items(objectId).default([]);
 
 export const listClientsSchema = {
   query: Joi.object({
@@ -15,6 +16,8 @@ export const createClientSchema = {
   body: Joi.object({
     name: Joi.string().trim().min(1).max(120).required(),
     status: Joi.string().valid('active', 'archived'),
+    clientUserIds: externalUserIds,
+    clientTesterIds: externalUserIds,
   }),
 };
 
@@ -25,5 +28,7 @@ export const updateClientSchema = {
   body: Joi.object({
     name: Joi.string().trim().min(1).max(120),
     status: Joi.string().valid('active', 'archived'),
+    clientUserIds: externalUserIds,
+    clientTesterIds: externalUserIds,
   }).min(1),
 };

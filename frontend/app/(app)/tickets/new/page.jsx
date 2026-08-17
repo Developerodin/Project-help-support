@@ -41,7 +41,7 @@ const INITIAL_DRAFT = {
 
 export default function NewTicketPage() {
   const router = useRouter();
-  const { activeProjectId } = useProject();
+  const { activeProjectId, hasWorkspace, loading: projectsLoading } = useProject();
   const [projects, setProjects] = useState([]);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -171,6 +171,19 @@ export default function NewTicketPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (!projectsLoading && !hasWorkspace) {
+    return (
+      <div className="empty-state" role="alert">
+        <h3>No workspace assigned</h3>
+        <p>
+          You need a company or project assignment before you can file tickets.
+          Contact your administrator for access.
+        </p>
+        <Link href="/tickets" className="btn">Back to tickets</Link>
+      </div>
+    );
   }
 
   return (
