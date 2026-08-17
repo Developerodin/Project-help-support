@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { ROLE_IDS } from '@pms/shared';
 import { withMemoryDb } from '../../../platform/__tests__/helpers/memoryDb.js';
 import User from '../../users/user.model.js';
 import Project from '../../projects/project.model.js';
@@ -16,14 +17,14 @@ const config = {
   email: { from: 'PMS <pms@example.com>' },
 };
 
-const user = (role = 'member') => User.create({
+const user = (role = ROLE_IDS.DEVELOPER) => User.create({
   name: role, email: `${Math.random().toString(36).slice(2)}@example.com`,
   password: 'a-long-enough-password', status: 'active', role,
 });
 
 async function fixture() {
   const reporter = await user();
-  const actor = await user('admin');
+  const actor = await user(ROLE_IDS.ADMIN);
   const project = await Project.create({ key: 'WEB', name: 'Web App', createdBy: actor._id });
   const ticket = await Ticket.create({
     ticketId: 'WEB-1', project: project._id, title: 'Broken login', createdBy: reporter._id,

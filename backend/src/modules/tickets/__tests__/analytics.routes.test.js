@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { ROLE_IDS } from '@pms/shared';
 import request from 'supertest';
 import { withMemoryDb } from '../../../platform/__tests__/helpers/memoryDb.js';
 import User from '../../users/user.model.js';
@@ -25,7 +26,7 @@ const config = {
 const app = () => createApp(config);
 const bearer = (user) => `Bearer ${generateAccessToken(user, config)}`;
 
-async function seed(role = 'member') {
+async function seed(role = ROLE_IDS.DEVELOPER) {
   const user = await User.create({
     name: role, email: `${Math.random().toString(36).slice(2)}@example.com`,
     password: 'a-long-enough-password', status: 'active', role,
@@ -38,7 +39,7 @@ async function seed(role = 'member') {
 }
 
 test('analytics is reachable by a member — it is NOT admin-only', async () => {
-  const { user } = await seed('member');
+  const { user } = await seed(ROLE_IDS.DEVELOPER);
 
   const res = await request(app())
     .get('/v1/analytics/overview')
@@ -50,7 +51,7 @@ test('analytics is reachable by a member — it is NOT admin-only', async () => 
 });
 
 test('the tiles sum to the total for the selected filters', async () => {
-  const { user, project } = await seed('member');
+  const { user, project } = await seed(ROLE_IDS.DEVELOPER);
 
   const res = await request(app())
     .get(`/v1/analytics/overview?project=${project._id}`)

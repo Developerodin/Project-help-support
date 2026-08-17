@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { ROLE_IDS } from '@pms/shared';
 import { withMemoryDb } from '../../../platform/__tests__/helpers/memoryDb.js';
 import User from '../../users/user.model.js';
 import Project from '../../projects/project.model.js';
@@ -35,7 +36,7 @@ const file = (originalname = 'shot.png', buffer = png) => ({
   originalname, buffer, size: buffer.length, mimetype: 'application/octet-stream',
 });
 
-const user = (role = 'member') => User.create({
+const user = (role = ROLE_IDS.DEVELOPER) => User.create({
   name: role, email: `${Math.random().toString(36).slice(2)}@example.com`,
   password: 'a-long-enough-password', status: 'active', role,
 });
@@ -95,7 +96,7 @@ test('a replayed clientRef adds nothing', async () => {
 
 test('an unrelated member cannot attach to a ticket they have no relationship to', async () => {
   const { ticket } = await seed();
-  const stranger = await user('member');
+  const stranger = await user(ROLE_IDS.DEVELOPER);
 
   await assert.rejects(
     () => addAttachments(stranger, ticket.id, [file()], enabled, { storage }),
@@ -122,7 +123,7 @@ test('download presigns ONLY after authorization and ownership both pass', async
 test('an unrelated member cannot download attachments on a ticket they cannot view', async () => {
   presignCalls.length = 0;
   const { reporter, ticket } = await seed();
-  const stranger = await user('member');
+  const stranger = await user(ROLE_IDS.DEVELOPER);
   const [attachment] = (await addAttachments(reporter, ticket.id, [file()], enabled, { storage })).attachments;
 
   await assert.rejects(
@@ -135,7 +136,7 @@ test('an unrelated member cannot download attachments on a ticket they cannot vi
 test('only the uploader or an admin may delete', async () => {
   deleteCalls.length = 0;
   const { reporter, ticket } = await seed();
-  const stranger = await user('member');
+  const stranger = await user(ROLE_IDS.DEVELOPER);
   const admin = await user('admin');
   const [attachment] = (await addAttachments(reporter, ticket.id, [file()], enabled, { storage })).attachments;
 

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { ROLE_IDS } from '@pms/shared';
 import request from 'supertest';
 import { withMemoryDb } from '../../../platform/__tests__/helpers/memoryDb.js';
 import User from '../../users/user.model.js';
@@ -29,7 +30,7 @@ const IN_A_WEEK = new Date(Date.now() + 7 * 86400000).toISOString();
 async function seed() {
   const admin = await User.create({
     name: 'Root', email: `root-${Math.random().toString(36).slice(2)}@example.com`,
-    password: 'a-long-enough-password', status: 'active', role: 'admin',
+    password: 'a-long-enough-password', status: 'active', role: ROLE_IDS.ADMIN,
   });
   const project = await Project.create({ key: 'WEB', name: 'Web App', createdBy: admin._id });
 
@@ -71,7 +72,7 @@ test('an illegal destination returns 400 with the reason, not a coerced success'
   const { ticket } = await seed();
   const member = await User.create({
     name: 'Mem', email: 'mem@example.com', password: 'a-long-enough-password',
-    status: 'active', role: 'member',
+    status: 'active', role: ROLE_IDS.DEVELOPER,
   });
   await Ticket.updateOne({ _id: ticket.id }, { $set: { createdBy: member._id } });
 
@@ -105,7 +106,7 @@ test('an unrelated member is refused at Layer 2 with 403, before any domain rule
   const { ticket } = await seed();
   const stranger = await User.create({
     name: 'Mallory', email: 'mallory@example.com', password: 'a-long-enough-password',
-    status: 'active', role: 'member',
+    status: 'active', role: ROLE_IDS.DEVELOPER,
   });
 
   const res = await request(app())

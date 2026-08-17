@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { ROLE_IDS } from '@pms/shared';
 import { withMemoryDb } from '../../../platform/__tests__/helpers/memoryDb.js';
 import User from '../../users/user.model.js';
 import {
@@ -33,7 +34,7 @@ test('access token round-trips subject and role', async () => {
   const user = await makeUser();
   const payload = verifyAccessToken(generateAccessToken(user, config), config);
   assert.equal(payload.sub, user._id.toString());
-  assert.equal(payload.role, 'member');
+  assert.equal(payload.role, ROLE_IDS.READ_ONLY);
 });
 
 test('an access token signed with a different secret does not verify', async () => {

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { ROLE_IDS } from '@pms/shared';
 import mongoose from 'mongoose';
 import { withMemoryDb } from '../../../platform/__tests__/helpers/memoryDb.js';
 import Project from '../../projects/project.model.js';
@@ -8,7 +9,7 @@ import { overview } from '../analytics.service.js';
 
 withMemoryDb();
 
-const actor = { _id: new mongoose.Types.ObjectId(), role: 'member' };
+const actor = { _id: new mongoose.Types.ObjectId(), role: ROLE_IDS.DEVELOPER };
 
 async function seed(rows) {
   const project = await Project.create({ key: 'WEB', name: 'Web App', createdBy: actor._id });

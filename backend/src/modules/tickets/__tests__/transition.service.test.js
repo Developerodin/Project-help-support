@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { ROLE_IDS } from '@pms/shared';
 import { withMemoryDb } from '../../../platform/__tests__/helpers/memoryDb.js';
 import User from '../../users/user.model.js';
 import Project from '../../projects/project.model.js';
@@ -13,14 +14,14 @@ withMemoryDb();
 
 const IN_A_WEEK = new Date(Date.now() + 7 * 86400000);
 
-const user = (role = 'member') => User.create({
+const user = (role = ROLE_IDS.DEVELOPER) => User.create({
   name: role, email: `${Math.random().toString(36).slice(2)}@example.com`,
   password: 'a-long-enough-password', status: 'active', role,
 });
 
 async function seed({ estimates = true, owned = true } = {}) {
-  const admin = await user('admin');
-  const dev = await user('developer');
+  const admin = await user(ROLE_IDS.ADMIN);
+  const dev = await user(ROLE_IDS.DEVELOPER);
   const web = await Project.create({ key: 'WEB', name: 'Web App', createdBy: admin._id });
 
   const ticket = await createTicket(admin, {
@@ -280,10 +281,10 @@ test('checkGuards is pure and reports which guard failed', () => {
 });
 
 async function seedProjectWithQa() {
-  const admin = await user('admin');
-  const developer = await user('developer');
-  const qa = await user('qa');
-  const outsiderQa = await user('qa');
+  const admin = await user(ROLE_IDS.ADMIN);
+  const developer = await user(ROLE_IDS.DEVELOPER);
+  const qa = await user(ROLE_IDS.TESTER);
+  const outsiderQa = await user(ROLE_IDS.TESTER);
   const team = await Team.create({
     name: 'Web Team',
     members: [developer._id, qa._id],

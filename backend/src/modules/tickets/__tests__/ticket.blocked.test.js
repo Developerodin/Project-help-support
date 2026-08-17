@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { ROLE_IDS } from '@pms/shared';
 import mongoose from 'mongoose';
 import { withMemoryDb } from '../../../platform/__tests__/helpers/memoryDb.js';
 import User from '../../users/user.model.js';
@@ -13,7 +14,7 @@ const user = (over = {}) => User.create({
   email: `${Math.random().toString(36).slice(2)}@example.com`,
   password: 'a-long-enough-password',
   status: 'active',
-  role: 'lead',
+  role: ROLE_IDS.PROJECT_ADMIN,
   ...over,
 });
 

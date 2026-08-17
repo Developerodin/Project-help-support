@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { ROLE_IDS } from '@pms/shared';
 import request from 'supertest';
 import { withMemoryDb } from '../../../platform/__tests__/helpers/memoryDb.js';
 import User from '../user.model.js';
@@ -36,7 +37,7 @@ const make = (role) => User.create({
 const bearer = (user) => `Bearer ${generateAccessToken(user, config)}`;
 
 test('POST /v1/users is admin-only', async () => {
-  const lead = await make('lead');
+  const lead = await make(ROLE_IDS.PROJECT_ADMIN);
 
   const res = await request(app()).post('/v1/users')
     .set('Authorization', bearer(lead))
@@ -48,7 +49,7 @@ test('POST /v1/users is admin-only', async () => {
 
 test('POST /v1/users creates an invited user and hands the token to the deliverer', async () => {
   sent.length = 0;
-  const admin = await make('admin');
+  const admin = await make(ROLE_IDS.ADMIN);
 
   const res = await request(app()).post('/v1/users')
     .set('Authorization', bearer(admin))
@@ -66,8 +67,8 @@ test('POST /v1/users creates an invited user and hands the token to the delivere
 });
 
 test('PATCH /v1/users/:id deactivates without removing the user', async () => {
-  const admin = await make('admin');
-  const target = await make('member');
+  const admin = await make(ROLE_IDS.ADMIN);
+  const target = await make(ROLE_IDS.DEVELOPER);
 
   await request(app()).patch(`/v1/users/${target._id}`)
     .set('Authorization', bearer(admin))
@@ -78,8 +79,8 @@ test('PATCH /v1/users/:id deactivates without removing the user', async () => {
 });
 
 test('DELETE /v1/users/:id scrubs PII and revokes access', async () => {
-  const admin = await make('admin');
-  const target = await make('member');
+  const admin = await make(ROLE_IDS.ADMIN);
+  const target = await make(ROLE_IDS.DEVELOPER);
 
   await request(app()).delete(`/v1/users/${target._id}`)
     .set('Authorization', bearer(admin))
@@ -92,8 +93,8 @@ test('DELETE /v1/users/:id scrubs PII and revokes access', async () => {
 });
 
 test('DELETE /v1/users/:id clears active ticket assignments', async () => {
-  const admin = await make('admin');
-  const target = await make('member');
+  const admin = await make(ROLE_IDS.ADMIN);
+  const target = await make(ROLE_IDS.DEVELOPER);
   const project = await Project.create({ key: 'DEL', name: 'Delete test', createdBy: admin._id });
   await Ticket.create({
     ticketId: 'DEL-1', project: project._id, title: 'Assigned ticket',
@@ -109,7 +110,7 @@ test('DELETE /v1/users/:id clears active ticket assignments', async () => {
 });
 
 test('an admin cannot delete themselves', async () => {
-  const admin = await make('admin');
+  const admin = await make(ROLE_IDS.ADMIN);
 
   const res = await request(app()).delete(`/v1/users/${admin._id}`)
     .set('Authorization', bearer(admin))
@@ -119,8 +120,8 @@ test('an admin cannot delete themselves', async () => {
 });
 
 test('an admin cannot delete the last admin', async () => {
-  const soleAdmin = await make('admin');
-  const actor = await make('member');
+  const soleAdmin = await make(ROLE_IDS.ADMIN);
+  const actor = await make(ROLE_IDS.DEVELOPER);
 
   await assert.rejects(
     () => userService.deleteUser(actor, soleAdmin._id),
@@ -132,11 +133,11 @@ test('an admin cannot delete the last admin', async () => {
 });
 
 test('an admin cannot demote or deactivate themselves', async () => {
-  const admin = await make('admin');
+  const admin = await make(ROLE_IDS.ADMIN);
 
   const demote = await request(app()).patch(`/v1/users/${admin._id}`)
     .set('Authorization', bearer(admin))
-    .send({ role: 'member' })
+    .send({ role: ROLE_IDS.DEVELOPER })
     .expect(400);
   assert.equal(demote.body.error.code, 'CANNOT_MODIFY_SELF');
 
@@ -147,7 +148,7 @@ test('an admin cannot demote or deactivate themselves', async () => {
 });
 
 test('POST /v1/users rejects an inactive email with USER_INACTIVE', async () => {
-  const admin = await make('admin');
+  const admin = await make(ROLE_IDS.ADMIN);
   await User.create({
     name: 'Former', email: 'former@example.com', password: 'a-long-enough-password', status: 'inactive',
   });
@@ -162,12 +163,12 @@ test('POST /v1/users rejects an inactive email with USER_INACTIVE', async () => 
 });
 
 test('resend-invite returns sent=true for invited users and sent=false otherwise', async () => {
-  const admin = await make('admin');
+  const admin = await make(ROLE_IDS.ADMIN);
   const invited = await User.create({
     name: 'Pending', email: 'pending@example.com', password: 'a-long-enough-password',
     status: 'invited',
   });
-  const active = await make('member');
+  const active = await make(ROLE_IDS.DEVELOPER);
 
   const invitedRes = await request(app()).post(`/v1/users/${invited._id}/resend-invite`)
     .set('Authorization', bearer(admin)).expect(200);
@@ -182,7 +183,7 @@ test('resend-invite returns sent=true for invited users and sent=false otherwise
 });
 
 test('a user updates their own notification preferences', async () => {
-  const member = await make('member');
+  const member = await make(ROLE_IDS.DEVELOPER);
 
   const res = await request(app()).patch('/v1/users/me/notification-prefs')
     .set('Authorization', bearer(member))
@@ -194,7 +195,7 @@ test('a user updates their own notification preferences', async () => {
 });
 
 test('an unknown event key in preferences is rejected', async () => {
-  const member = await make('member');
+  const member = await make(ROLE_IDS.DEVELOPER);
 
   const res = await request(app()).patch('/v1/users/me/notification-prefs')
     .set('Authorization', bearer(member))
@@ -205,10 +206,10 @@ test('an unknown event key in preferences is rejected', async () => {
 });
 
 test('GET /v1/users filters by role and by q', async () => {
-  const admin = await make('admin');
-  await make('qa');
+  const admin = await make(ROLE_IDS.ADMIN);
+  await make(ROLE_IDS.TESTER);
 
-  const byRole = await request(app()).get('/v1/users?role=qa')
+  const byRole = await request(app()).get('/v1/users?role=' + ROLE_IDS.TESTER)
     .set('Authorization', bearer(admin)).expect(200);
   assert.equal(byRole.body.results.length, 1);
 

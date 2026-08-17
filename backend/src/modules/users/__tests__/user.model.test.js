@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { ROLE_IDS } from '@pms/shared';
 import { withMemoryDb } from '../../../platform/__tests__/helpers/memoryDb.js';
 import User, { MAX_REFRESH_TOKENS } from '../user.model.js';
 
@@ -56,9 +57,9 @@ test('toJSON exposes id and hides every secret', async () => {
   assert.equal(json.refreshTokens, undefined);
 });
 
-test('defaults are role=member, kind=internal, status=invited', async () => {
+test('defaults are role=read_only, kind=internal, status=invited', async () => {
   const user = await User.create(valid);
-  assert.equal(user.role, 'member');
+  assert.equal(user.role, ROLE_IDS.READ_ONLY);
   assert.equal(user.kind, 'internal');
   assert.equal(user.status, 'invited');
 });
