@@ -322,6 +322,44 @@ export default function ProfilePage() {
         </div>
 
         <div className="profile-page__column">
+          {showProjectsLink ? (
+            <Panel
+              id="profile-admin"
+              title="Admin panel"
+              description="Manage people, projects, and teams across the workspace."
+            >
+              <div className="profile-panel__body">
+                <div className="profile-setting">
+                  <div className="profile-setting__info">
+                    <strong>People</strong>
+                    <p>Invite users, assign roles, and manage access.</p>
+                  </div>
+                  <Link href="/users" className="btn btn-sm btn-primary">
+                    Open
+                  </Link>
+                </div>
+                <div className="profile-setting">
+                  <div className="profile-setting__info">
+                    <strong>Projects</strong>
+                    <p>Create projects and configure workspace settings.</p>
+                  </div>
+                  <Link href="/projects" className="btn btn-sm">
+                    Open
+                  </Link>
+                </div>
+                <div className="profile-setting">
+                  <div className="profile-setting__info">
+                    <strong>Teams</strong>
+                    <p>Organize members and link teams to projects.</p>
+                  </div>
+                  <Link href="/teams" className="btn btn-sm">
+                    Open
+                  </Link>
+                </div>
+              </div>
+            </Panel>
+          ) : null}
+
           <Panel
             id="profile-access"
             title="Access and permissions"

@@ -84,6 +84,7 @@ describe('ProfilePage', () => {
     render(<ProfilePage />);
 
     expect(screen.getByRole('heading', { name: /your profile/i })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: /profile overview/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Ada Lovelace' })).toBeInTheDocument();
     expect(screen.getByText('ada@example.com')).toBeInTheDocument();
     expect(screen.getAllByText('Admin').length).toBeGreaterThan(0);
@@ -98,6 +99,12 @@ describe('ProfilePage', () => {
     await waitFor(() => expect(listTeams).toHaveBeenCalled());
     expect(screen.getAllByText('Platform').length).toBeGreaterThan(0);
     expect(screen.getAllByText('PLT').length).toBeGreaterThan(0);
+  });
+
+  it('exposes a stable personal information anchor target', () => {
+    render(<ProfilePage />);
+
+    expect(document.getElementById('profile-personal-information')).toBeInTheDocument();
   });
 
   it('renders editable full name and read-only email', () => {
@@ -152,5 +159,20 @@ describe('ProfilePage', () => {
 
     expect(screen.getByRole('link', { name: /manage/i })).toHaveAttribute('href', '/settings/notifications');
     expect(screen.getByRole('link', { name: /change password/i })).toHaveAttribute('href', '/forgot-password');
+  });
+
+  it('shows admin panel shortcuts for admin-tier users only', () => {
+    const { rerender } = render(<ProfilePage />);
+
+    expect(screen.getByRole('heading', { name: /admin panel/i })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: /^open$/i }).map((link) => link.getAttribute('href'))).toEqual([
+      '/users',
+      '/projects',
+      '/teams',
+    ]);
+
+    authUser.role = 'member';
+    rerender(<ProfilePage />);
+    expect(screen.queryByRole('heading', { name: /admin panel/i })).not.toBeInTheDocument();
   });
 });
