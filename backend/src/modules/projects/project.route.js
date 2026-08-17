@@ -19,6 +19,7 @@ export default function projectRoutes(config) {
   router.put('/:id/modules', requireRole(...ADMIN_ROLES),
     validate(replaceModulesSchema), controller.modules);
   router.get('/:id/team-members', validate(projectIdSchema), controller.teamMembers);
+  router.get('/:id/client-testers', validate(projectIdSchema), controller.clientTesters);
   router.put('/:id/team-members', requireRole(...ADMIN_ROLES),
     validate(projectTeamMembersSchema), controller.replaceTeamMembers);
 

@@ -4,7 +4,7 @@ import { paginate } from '../../platform/paginate.js';
 import Client from '../clients/client.model.js';
 import Team from '../teams/team.model.js';
 import { assertActiveUsers, assertTeamUsable } from '../teams/team.service.js';
-import Project, { RESERVED_PROJECT_KEYS } from './project.model.js';
+import { listEffectiveClientTesters } from '../access/external-auth.service.js';
 import {
   assignProjectTeam,
   ensureProjectMigrated,
@@ -246,4 +246,18 @@ export async function replaceModules(id, modules) {
   );
   if (!project) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
   return project.toJSON();
+}
+
+export async function getProjectClientTesters(id) {
+  const project = await Project.findById(id).select('client');
+  if (!project) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
+  if (!project.client) {
+    return { projectId: String(id), clientId: null, items: [] };
+  }
+  const items = await listEffectiveClientTesters(project._id, project.client);
+  return {
+    projectId: String(project._id),
+    clientId: String(project.client),
+    items,
+  };
 }
