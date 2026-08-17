@@ -7,7 +7,7 @@ See [`Agent Context/RBAC.md`](../../Agent%20Context/RBAC.md), [`PROJECT_MODEL.md
 
 Today, authorization is a single flat `User.role` (`admin|lead|qa|developer|member`) enforced by `requireRole()` — every admin can act on every project, there is no client/project/environment boundary, and there is no audit trail of who granted or changed access (`SECURITY.md` gap #2, #1). This PMS is being used by one service company to run projects for multiple external clients, and access needs to be scoped per client/project/environment, with production access never implicitly inherited.
 
-The full ask (external client login/portal, dynamic ticket configuration, custom fields, access requests/reviews, SSO/MFA) is six separable projects, not one. This spec covers only the foundation everything else depends on: a real `Client` entity and an internal, scoped, auditable authorization core. See [§9 Explicitly out of scope](#9-explicitly-out-of-scope) for the rest and their intended order.
+The full ask (external client login/portal, dynamic ticket configuration, custom fields, access requests/reviews, SSO/MFA) is six separable projects, not one. This spec covers only the foundation everything else depends on: a real `Client` entity and an internal, scoped, auditable authorization core. See [§9 Deferred sub-projects](#9-deferred-sub-projects-and-how-phase-1-supports-them) for the rest and their intended order.
 
 ## 2. In scope
 
@@ -23,7 +23,7 @@ The full ask (external client login/portal, dynamic ticket configuration, custom
 
 ## 3. Explicitly out of scope for Phase 1
 
-Deferred, not rejected — see [§9](#9-explicitly-out-of-scope) for why this foundation supports them without a rewrite: client portal / external auth, dynamic ticket types/priorities/labels/environments, custom fields, workflow builder, Access Matrix, Roles & Permissions editor, Access Requests, Access Reviews, JIT access, SSO/SCIM/MFA, audit-log export/analytics.
+Deferred, not rejected — see [§9](#9-deferred-sub-projects-and-how-phase-1-supports-them) for why this foundation supports them without a rewrite: client portal / external auth, dynamic ticket types/priorities/labels/environments, custom fields, workflow builder, Access Matrix, Roles & Permissions editor, Access Requests, Access Reviews, JIT access, SSO/SCIM/MFA, audit-log export/analytics.
 
 ## 4. Data model
 
@@ -31,7 +31,7 @@ Deferred, not rejected — see [§9](#9-explicitly-out-of-scope) for why this fo
 
 | Field | Type | Notes |
 |---|---|---|
-| `name` | String, required, trimmed | Replaces `Project.brand` as the real client grouping. Uniqueness validated at the service layer against `active` clients only (not a DB unique index), so an archived client's name can be reused |
+| `name` | String, required, trimmed | Replaces `Project.brand` as the real client grouping. **Partial unique index** on `name` with `partialFilterExpression: { status: 'active' }` — atomic at the DB level (a service-layer preflight check alone is a TOCTOU race between two concurrent creates), while still letting an archived client's name be reused by a new one |
 | `status` | enum `active`\|`archived`, default `active`, indexed | |
 | `createdBy` | ObjectId → User, required | |
 | `timestamps` | — | `createdAt`/`updatedAt` |
@@ -46,23 +46,25 @@ Deferred, not rejected — see [§9](#9-explicitly-out-of-scope) for why this fo
 | `role` | String enum `ROLES` (existing five), required | Defines *what* |
 | `client` | ObjectId → Client, default `null`, indexed | `null` = all clients (global) |
 | `project` | ObjectId → Project, default `null`, indexed | `null` = all projects under `client`. **Validator: may only be set if `client` is also set.** |
-| `environments` | `[String]`, enum `ENVIRONMENTS`, default `[]` | Empty = no access to environment-bearing actions (tickets), not "all" — must be listed explicitly |
-| `status` | enum `active`\|`suspended`, default `active`, indexed | |
-| `expiresAt` | Date, default `null` | Schema-ready for future time-bound access; no expiry *workflow* in Phase 1, just the field and its enforcement in `can()` |
+| `environments` | `[String]`, enum `ENVIRONMENTS`, deduplicated, default `[]` | Empty = no access to environment-bearing actions (tickets), not "all" — must be listed explicitly. Stores plain string identifiers, so Phase 2 replacing the static `ENVIRONMENTS` registry with a dynamic per-client one doesn't change this field's shape |
+| `status` | enum `active`\|`suspended`\|`revoked`, default `active`, indexed | Matches this codebase's existing convention (`User`, `Team`, `Project` all use a status enum, never a hard delete/`deletedAt`) — `DELETE /v1/access-assignments/:id` sets `status: 'revoked'` rather than removing the document |
+| `expiresAt` | Date, default `null`, must be `> now` (server clock) at creation | Schema-ready for future time-bound access; no expiry *workflow* in Phase 1, just the field and its enforcement in `can()`. `now` is always generated server-side, never accepted from the client |
 | `grantedBy` | ObjectId → User, required | |
-| `reason` | String | |
+| `reason` | String | **Required** when revoking, suspending, or when `environments` includes `Production` — optional otherwise |
 | `timestamps` | — | |
 
 Indexes: compound `{ user: 1, status: 1 }`, `{ client: 1, project: 1 }`.
 
 `ENVIRONMENTS` (`@pms/shared/enums.js`) expands from `['Staging','Production']` to `['Development','Staging','Production']` — `Ticket.environment` keeps using the same enum, unchanged shape.
 
+**Duplicate assignments** (same user/role/client/project/environments) aren't hard-prevented by a schema constraint — the union-of-active-assignments model makes a duplicate harmless (redundant, not incorrect), and adding a meaningful uniqueness constraint over an array field is more complexity than the actual risk (data clutter, not a security issue) justifies. The Grant Access UI pre-checks for an identical active assignment and offers to edit it instead of creating a second one.
+
 ### 4.3 `AuditLog` (new collection, append-only)
 
 | Field | Type | Notes |
 |---|---|---|
 | `actor` | ObjectId → User, required | |
-| `action` | String enum, required, indexed | `ACCESS_GRANTED`, `ACCESS_MODIFIED`, `ACCESS_REVOKED`, `CLIENT_CREATED`, `CLIENT_UPDATED`, `USER_SUSPENDED`, `USER_REACTIVATED` |
+| `action` | String enum, required, indexed | `ACCESS_GRANTED`, `ACCESS_MODIFIED`, `ACCESS_SUSPENDED`, `ACCESS_REACTIVATED`, `ACCESS_REVOKED`, `CLIENT_CREATED`, `CLIENT_UPDATED`, `CLIENT_ARCHIVED`, `CLIENT_REACTIVATED`, `USER_SUSPENDED`, `USER_REACTIVATED`. (No `ACCESS_EXPIRED` — expiry is a passive time-based state checked at query time in Phase 1, not a sweep job that could log a transition; nothing "does" an expiry event yet. No `PROJECT_CLIENT_CHANGED` — reassigning a project to a different client isn't an operation this design exposes) |
 | `targetType` / `targetId` | String / ObjectId | e.g. `'AccessAssignment'` / its id |
 | `client` / `project` | ObjectId → Client/Project, nullable | |
 | `before` / `after` | Mixed | Snapshot of the changed fields only |
@@ -71,6 +73,8 @@ Indexes: compound `{ user: 1, status: 1 }`, `{ client: 1, project: 1 }`.
 | `createdAt` | Date, indexed | No `updatedAt` — the collection is never updated |
 
 Indexes: `{ actor: 1, createdAt: -1 }`, `{ client: 1, createdAt: -1 }`, `action`. No update/delete route is ever exposed for this collection.
+
+**Tamper resistance, layered**: application — no update/delete API; service — the repository exposes only an insert operation for this collection, no update/delete method exists to call; tests — assert the repository has no update/delete path. This is process-level integrity, not cryptographic immutability — a compromised DB admin could still edit the collection directly. An external immutable sink (SIEM/log-forwarding) and a retention policy are future governance concerns, out of scope here.
 
 ### 4.4 Permission registry (static, code, not a collection)
 
@@ -114,10 +118,30 @@ This reproduces today's actual route-level behavior (`RBAC.md`'s current table) 
 `backend/src/platform/authorize.js`, two functions, deliberately not merged (they answer different questions and must not be unified later just for code reuse):
 
 ```js
-async function can(user, permission, { clientId, projectId, environment } = {}) {
+async function resolveScope({ projectId, clientId }) {
+  if (!projectId) return { clientId: clientId ?? null, projectId: null, archived: false };
+  const project = await Project.findById(projectId).select('client status');
+  if (!project) throw new NotFoundError();
+  if (clientId && String(project.client) !== String(clientId)) {
+    throw new ForbiddenError('client/project scope mismatch');
+  }
+  const client = await Client.findById(project.client).select('status');
+  return {
+    clientId: project.client,
+    projectId: project.id,
+    archived: project.status === 'archived' || client?.status === 'archived',
+  };
+}
+
+async function can(user, permission, { projectId, clientId, environment } = {}) {
   if (user.status !== 'active') return false;
+  if (ENVIRONMENT_SCOPED_PERMISSIONS.has(permission) && !environment) {
+    throw new Error(`can(): '${permission}' is environment-scoped and requires one`);
+  }
+  const scope = await resolveScope({ projectId, clientId });
+  if (scope.archived && !permission.endsWith('.view')) return false;
   const assignments = await activeAssignmentsFor(user.id);
-  const matching = assignments.filter(a => matchesScope(a, { clientId, projectId, environment }));
+  const matching = assignments.filter(a => matchesScope(a, { ...scope, environment }));
   return matching.some(a => ROLE_PERMISSIONS[a.role].includes(permission));
 }
 
@@ -129,9 +153,12 @@ function matchesScope(a, { clientId, projectId, environment }) {
 }
 
 async function canDelegate(actor, { permission, role, clientId, projectId, environments = [] }) {
+  // `permission` is always 'access.grant' or 'access.revoke', fixed by the calling route
+  // handler — never read from the request body, which only ever supplies role/scope.
   if (actor.status !== 'active') return false;
+  const scope = await resolveScope({ projectId, clientId });
   const assignments = await activeAssignmentsFor(actor.id);
-  const containing = assignments.filter(a => containsScope(a, { clientId, projectId, environments }));
+  const containing = assignments.filter(a => containsScope(a, { ...scope, environments }));
   const delegable = new Set(containing.flatMap(a => ROLE_PERMISSIONS[a.role]));
   if (!delegable.has(permission)) return false;
   return ROLE_PERMISSIONS[role].every(p => delegable.has(p));
@@ -145,17 +172,25 @@ function containsScope(a, target) {
 }
 ```
 
-`activeAssignmentsFor()` filters `status: 'active'` and `expiresAt: null OR expiresAt > now`.
+`activeAssignmentsFor()` filters `status: 'active'` and (`expiresAt: null` OR `expiresAt > new Date()` — always the server's clock, never client-supplied).
 
-**Scope resolution rule**: whenever a route/service receives both a `projectId` and a `clientId`, it must load the project and use its actual `client` — a caller-supplied `clientId` that doesn't match is a hard reject (400/403), never trusted. This applies identically to `can()` call sites and `canDelegate()` call sites.
+**Canonical scope resolution is structural, not a caller convention**: `resolveScope()` is the *only* way `can()`/`canDelegate()` ever obtain a `clientId` — when a `projectId` is given, its `clientId` always comes from the loaded `Project`, and a separately-supplied `clientId` that disagrees is rejected inside `resolveScope()` itself, before any assignment matching runs. A route handler can no longer authorize against an attacker-controlled `clientId` by forgetting to cross-check it, because there's nothing left for it to forget — the primitive both callers share does it once.
 
-**Why `canDelegate` prevents escalation without special-casing**: "only a global admin can grant global admin" is not a coded special case — it falls out of `containsScope`, since only a `client: null` assignment can ever contain another `client: null` request.
+**Environment-scoped permissions must supply an environment**: `ENVIRONMENT_SCOPED_PERMISSIONS = new Set(['tickets.view','tickets.create','tickets.update','tickets.delete','tickets.assign'])`. Calling `can()` for one of these without an `environment` throws — a caller bug, never a silent allow. This is what actually closes the empty-environment gap: `canDelegate`'s containment check intentionally skips environment comparison when `target.environments` is empty, but that's safe by construction — an `AccessAssignment` created with `environments: []` already grants zero ticket access per §4.2, so there's no path where an empty-environment delegation does anything with `tickets.*`. The real fix is making every environment-bearing *check* require a real environment, not adding a redundant check to the delegation side.
+
+**Archived scope**: if the resolved client or project is `archived`, every permission other than a `.view` one is denied — no new grants, no new projects, no ticket mutations under an archived client/project. Historical reads remain available.
+
+**Why `canDelegate` prevents escalation without special-casing**: "only a global admin can grant global admin" is not a coded special case — it falls out of `containsScope`, since only a `client: null` assignment can ever contain another `client: null` request. `admin` is Phase 1's highest-privilege role by construction (holds every permission, and a global `admin` assignment's scope contains every other scope) — stated explicitly here so it isn't mistaken for just another business role later.
 
 Route middleware: `requirePermission(permission, scopeResolver)` wraps `can()`; `scopeResolver` reads `clientId`/`projectId` from `req.params`, or, where the check needs a loaded document (ticket environment, project→client), resolves after the service loads it — same pattern as today's post-load ownership checks. `requireRole` is fully retired, not left running alongside the new check (mixing flat and scoped checks in the same codebase is exactly what `RBAC.md`'s migration note warns against).
 
+**Request pipeline order**, so a future change can't accidentally skip a layer: authenticate → resolve resource/scope → `can()`/`canDelegate()` → ownership/business check (§4.5) → mutation → audit write.
+
+**No caching in Phase 1**: every check is an authoritative DB read. Deliberate — permission caching is deferred until profiling actually shows it's needed, specifically to avoid a stale-permission bug from a cache someone adds later without also wiring invalidation on every assignment mutation.
+
 ### 5.1 Self-protection
 
-- **Last global admin**: revoking, suspending, or expiring an `AccessAssignment` (or deactivating a `User`) that would leave zero active, non-expired `{ role: 'admin', client: null }` assignments is rejected. Enforced inside a single MongoDB transaction (`session.withTransaction`): check count → apply mutation → recheck count → commit, or roll back. Requires the deployment's MongoDB to run as a replica set (default on Atlas; confirm for self-hosted).
+- **Last global admin**: revoking, suspending, or expiring an `AccessAssignment` (or deactivating a `User`) that would leave zero active, non-expired `{ role: 'admin', client: null }` assignments is rejected. Enforced inside a MongoDB transaction with `snapshot` read concern / `majority` write concern (`session.withTransaction`): check count → apply mutation → recheck count → commit, or roll back. Two concurrent transactions that both read the same pre-mutation count and each try to remove a *different* global admin will conflict — Mongo aborts one with a `WriteConflict`; the service layer retries that transaction (which then correctly observes zero-remaining and rejects) rather than swallowing the error, so the two requests can never both commit into zero admins. Requires the deployment's MongoDB to run as a replica set (default on Atlas; confirm for self-hosted).
 - **No self-escalation**: every grant/modify/revoke of an `AccessAssignment` goes through `canDelegate`, checked against the *requested* target scope and role — not merely the actor's access to the resource being touched.
 - **Audit log write** happens inside the same transaction as the mutation — a rolled-back last-admin attempt never produces a log entry. Denied *attempts* (not committed mutations) are not logged in Phase 1 — that's an intrusion-monitoring concern, not an admin audit trail, and stays out of scope.
 
@@ -178,13 +213,15 @@ Non-negotiable, not implementation suggestions:
 13. `AuditLog` is append-only — no update or delete route exists for it.
 14. Authorization never depends on frontend visibility.
 15. IDs supplied by the client are always resolved and scope-validated server-side.
+16. An archived `Client` or `Project` blocks every mutation permission (grants, creation, ticket writes) scoped under it; `.view` permissions and historical reads remain available.
+17. External/client-portal identities, when built, never inherit the internal `ROLE_PERMISSIONS` bundle — they get their own role family from day one.
 
 ## 7. API
 
 - `POST/GET/PATCH /v1/clients`, `GET /v1/clients/:id` — `clients.manage` (mutations) / `clients.view` (reads, scope-filtered to the caller's effective clients).
 - `GET /v1/projects` — filtered to the caller's effective client/project access (via `Project.client`).
-- `POST /v1/access-assignments` (grant), `PATCH /v1/access-assignments/:id` (modify), `DELETE /v1/access-assignments/:id` (revoke) — all through `canDelegate`.
-- `GET /v1/access-assignments?userId=` — a user's own effective access list, powers the Access Profile UI.
+- `POST /v1/access-assignments` (grant), `PATCH /v1/access-assignments/:id` (modify), `DELETE /v1/access-assignments/:id` (**logical revoke** — sets `status: 'revoked'`, per §4.2, never removes the document) — all through `canDelegate`. Joi validation on the body: `role` ∈ `ROLES`, `environments` ∈ `ENVIRONMENTS` (deduplicated), `client`/`project`/`user` exist and are `active`, `expiresAt` (if present) `> now`, `reason` required per §4.2's rule. Rate-limited via the existing `express-rate-limit` infra (`platform/rateLimit.js`), consistent with the login/invite limiters already in place — these routes are a privilege-escalation control plane if an admin session is ever compromised.
+- `GET /v1/access-assignments?userId=` — powers the Access Profile UI. A caller querying their **own** `userId` always succeeds (self-service "what do I have access to"); querying anyone else's requires `access.view` at a scope containing at least one of the target's assignments — in Phase 1 that means only global admins (the only role holding `access.view`) can view another user's access, matching today's behavior where any admin already sees everything.
 - `GET /v1/audit-log?actor=&client=&project=&action=&from=&to=` — paginated — `audit.view`.
 - Existing `requireRole` call sites in `users.route.js`, `teams.route.js`, `projects.route.js`, `tickets.route.js` are replaced with `requirePermission(...)`, one route at a time, each fully cut over in the same change (never partially migrated).
 
@@ -193,6 +230,7 @@ Non-negotiable, not implementation suggestions:
 - **Clients** page: list/create/edit, reusing existing Teams/Projects card and table patterns.
 - **Users & Access**: extends the existing `users/page.jsx` with an Access Profile drawer (readable assignment list — role, client, project, environments) and a step-based Grant Access flow (user → client → project → role → environments → review/confirm).
 - **Audit Log** page: filterable, paginated table. No export, no analytics.
+- Global scope (`client: null` / `project: null`) always renders as an explicit label — "All Clients" / "All Projects" — never a blank cell or raw `null`. It's the highest-privilege grant in the system; it should read as obviously as it is.
 - Deferred: Access Matrix grid, Roles & Permissions editor, Access Requests, Access Reviews.
 
 ## 9. Deferred sub-projects and how Phase 1 supports them
@@ -207,15 +245,19 @@ Ordered, with what Phase 1 gives each of them to build on:
 | Access Requests / Reviews / JIT | `AccessAssignment.expiresAt` (already schema-ready) and `AuditLog` |
 | SSO/SCIM/MFA | Existing auth module, unaffected by this design |
 
+**Guardrail for the Client Portal specifically**: when external/client-portal identities (`User.kind: 'reporter'`) are built, they get their own role family and permission bundle (e.g. `client-admin`/`client-member`) — never reuse or default into the internal `ROLE_PERMISSIONS` map. `AccessAssignment.role` validation should be prepared to branch on `user.kind` once external identities exist, so a client contact can never end up with, say, `member`'s internal ticket-management permissions by accident.
+
 ## 10. Migration
 
-1. **Dry run**: script reports what it *would* create — one `Client` per distinct existing `Project.brand` value, one global `AccessAssignment` per existing `User` (`role: user.role, client: null, project: null, environments: ['Development','Staging','Production']`) — without writing anything.
+1. **Dry run**: script reports what it *would* create — one `Client` per distinct existing `Project.brand` value, one global `AccessAssignment` per existing `User` (`role: user.role, client: null, project: null, environments: ['Development','Staging','Production']`) — without writing anything. The report breaks this down by role and resulting environment access (e.g. "4 admins, 18 developers, 12 qa, 13 members — all 47 users temporarily retain Production access post-migration"), so the operational risk in step 2 is visible before anyone approves it, not discovered after.
 2. **Apply**: creates the `Client` docs, sets `Project.client` accordingly, creates the migrated `AccessAssignment`s. Documented explicitly as **transitional** — this preserves every existing user's current unrestricted access so nobody is locked out at cutover; admins narrow access afterward through the Grant Access UI.
 3. **Cutover**: `requireRole` call sites replaced route-by-route with `requirePermission`/`can()`, each route fully migrated in the same change.
 4. New users from this point forward get zero assignments (default deny).
+5. **Access review, operationally required, not a built feature**: immediately after cutover, an admin reviews the dry-run report and narrows access — starting with Production — through the Grant Access / modify-assignment UI. This is a rollout checklist item, not Phase 2's Access Reviews feature; nothing new is built for it.
 
 ## 11. Testing
 
 - Unit tests for `can()`/`canDelegate()`: union-of-active-assignments, suspended/expired exclusion, empty-environments-means-none, client/project mismatch rejection, scope+permission containment (including escalation-prevention cases), last-admin transaction rollback.
 - Integration tests hit real routes via the existing `mongodb-memory-server` pattern, confirming enforcement at the HTTP layer, not just the unit-level function.
 - Migration script tested against a snapshot of representative existing data (varied `brand` values, all five roles) in dry-run mode before any apply-mode test.
+- Concurrency integration test: two global admins, simultaneous requests each revoking the other — exactly one commits, one global admin always remains; the losing request observes the retry-and-reject path (§5.1), never a silent double-success that leaves zero admins.
