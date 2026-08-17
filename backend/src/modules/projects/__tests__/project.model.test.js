@@ -2,15 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import mongoose from 'mongoose';
 import { withMemoryDb } from '../../../platform/__tests__/helpers/memoryDb.js';
+import Client from '../../clients/client.model.js';
 import Project from '../project.model.js';
 
 withMemoryDb();
 
 const owner = () => new mongoose.Types.ObjectId();
 
-const make = (over = {}) => Project.create({
-  brand: 'Dharwin', key: 'WEB', name: 'Web App', createdBy: owner(), ...over,
-});
+const make = async (over = {}) => {
+  const createdBy = over.createdBy || owner();
+  let clientId = over.client;
+  if (!clientId) {
+    const client = await Client.create({ name: 'Test Co', status: 'active', createdBy });
+    clientId = client._id;
+  }
+  const { client: _client, ...rest } = over;
+  return Project.create({ client: clientId, key: 'WEB', name: 'Web App', createdBy, ...rest });
+};
 
 test('a new project starts its counter at 1', async () => {
   const project = await make();

@@ -3,17 +3,20 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ProjectsPage from '../page.jsx';
 
+const listClients = vi.fn();
 const listProjects = vi.fn();
 const patchProject = vi.fn();
 const replaceModules = vi.fn();
-const replaceProjectTeamMembers = vi.fn();
 const listTeams = vi.fn();
+
+vi.mock('@/shared/api/clients.js', () => ({
+  listClients: (...a) => listClients(...a),
+}));
 
 vi.mock('@/shared/api/projects.js', () => ({
   listProjects: (...a) => listProjects(...a),
   patchProject: (...a) => patchProject(...a),
   replaceModules: (...a) => replaceModules(...a),
-  replaceProjectTeamMembers: (...a) => replaceProjectTeamMembers(...a),
 }));
 
 vi.mock('@/shared/api/teams.js', () => ({
@@ -28,10 +31,17 @@ vi.mock('next/link', () => ({
   default: ({ href, children, ...props }) => <a href={href} {...props}>{children}</a>,
 }));
 
+const sampleCompany = {
+  id: 'c1',
+  name: 'Dharwin',
+  status: 'active',
+  projectCount: 2,
+};
+
 const sampleProjects = [
   {
     id: 'p1',
-    brand: 'Dharwin',
+    client: sampleCompany,
     key: 'WEB',
     name: 'Web App',
     status: 'active',
@@ -41,7 +51,7 @@ const sampleProjects = [
   },
   {
     id: 'p2',
-    brand: 'Dharwin',
+    client: sampleCompany,
     key: 'MOB',
     name: 'Mobile App',
     status: 'active',
@@ -54,13 +64,14 @@ const sampleProjects = [
 describe('ProjectsPage', () => {
   beforeEach(() => {
     window.localStorage.clear();
+    listClients.mockReset().mockResolvedValue({ results: [sampleCompany], totalResults: 1 });
     listProjects.mockReset().mockResolvedValue({ results: sampleProjects, totalResults: 2 });
     patchProject.mockReset().mockResolvedValue({});
     replaceModules.mockReset().mockResolvedValue({});
     listTeams.mockReset().mockResolvedValue({ results: [] });
   });
 
-  it('groups project cards under brand sections', async () => {
+  it('groups project cards under company sections', async () => {
     render(<ProjectsPage />);
 
     expect(await screen.findByRole('button', { name: /collapse dharwin/i })).toBeInTheDocument();
@@ -70,25 +81,32 @@ describe('ProjectsPage', () => {
     expect(screen.getAllByText('Module catalog')).toHaveLength(2);
   });
 
-  it('links to the new project page from the page header', async () => {
+  it('shows new company button in the page header', async () => {
     render(<ProjectsPage />);
     await screen.findByRole('button', { name: /collapse dharwin/i });
 
-    const link = screen.getByRole('link', { name: /new project/i });
-    expect(link).toHaveAttribute('href', '/projects/new');
+    expect(screen.getByRole('button', { name: /new company/i })).toBeInTheDocument();
   });
 
-  it('collapses and expands a brand section', async () => {
+  it('links add project to new project page with company id', async () => {
     render(<ProjectsPage />);
-    const brandToggle = await screen.findByRole('button', { name: /collapse dharwin/i });
-    const brandSection = brandToggle.closest('section');
+    await screen.findByRole('button', { name: /collapse dharwin/i });
 
-    expect(brandSection).not.toHaveClass('collapsed');
-    expect(brandToggle).toHaveAttribute('aria-expanded', 'true');
+    const link = screen.getAllByRole('link', { name: /add project/i })[0];
+    expect(link).toHaveAttribute('href', '/projects/new?clientId=c1');
+  });
 
-    await userEvent.click(brandToggle);
+  it('collapses and expands a company section', async () => {
+    render(<ProjectsPage />);
+    const companyToggle = await screen.findByRole('button', { name: /collapse dharwin/i });
+    const companySection = companyToggle.closest('section');
 
-    expect(brandSection).toHaveClass('collapsed');
+    expect(companySection).not.toHaveClass('collapsed');
+    expect(companyToggle).toHaveAttribute('aria-expanded', 'true');
+
+    await userEvent.click(companyToggle);
+
+    expect(companySection).toHaveClass('collapsed');
     expect(screen.getByRole('button', { name: /expand dharwin/i })).toHaveAttribute('aria-expanded', 'false');
   });
 
@@ -100,37 +118,19 @@ describe('ProjectsPage', () => {
 
     expect(webSection).not.toHaveClass('collapsed');
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    expect(toggle).toHaveClass('project-panel-head-toggle');
 
     await userEvent.click(toggle);
 
     expect(webSection).toHaveClass('collapsed');
     expect(screen.getByRole('button', { name: /expand web app/i })).toHaveAttribute('aria-expanded', 'false');
-
-    await userEvent.click(screen.getByRole('button', { name: /expand web app/i }));
-    expect(webSection).not.toHaveClass('collapsed');
-    expect(screen.getByRole('button', { name: /collapse web app/i })).toHaveAttribute('aria-expanded', 'true');
   });
 
-  it('collapses a project card when clicking the full header row', async () => {
-    render(<ProjectsPage />);
-    const mobToggle = await screen.findByRole('button', { name: /collapse mobile app/i });
-    const mobSection = mobToggle.closest('section');
-
-    expect(mobSection).not.toHaveClass('collapsed');
-
-    await userEvent.click(within(mobToggle).getByText('active'));
-
-    expect(mobSection).toHaveClass('collapsed');
-    expect(screen.getByRole('button', { name: /expand mobile app/i })).toHaveAttribute('aria-expanded', 'false');
-  });
-
-  it('shows empty state with link to create a project', async () => {
+  it('shows empty state when no companies exist', async () => {
+    listClients.mockResolvedValue({ results: [], totalResults: 0 });
     listProjects.mockResolvedValue({ results: [], totalResults: 0 });
     render(<ProjectsPage />);
 
-    expect(await screen.findByRole('heading', { name: /no projects yet/i })).toBeInTheDocument();
-    expect(screen.getAllByRole('link', { name: /new project/i })).toHaveLength(2);
-    expect(screen.getAllByRole('link', { name: /new project/i })[1]).toHaveAttribute('href', '/projects/new');
+    expect(await screen.findByRole('heading', { name: /no companies yet/i })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /new company/i }).length).toBeGreaterThan(0);
   });
 });

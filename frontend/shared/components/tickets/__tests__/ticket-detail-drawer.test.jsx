@@ -5,6 +5,7 @@ import TicketDetailDrawer from '../ticket-detail-drawer.jsx';
 
 const getTicket = vi.fn();
 const transitionTicket = vi.fn();
+const patchTicket = vi.fn();
 const uploadAttachments = vi.fn();
 const assignTicket = vi.fn();
 const listTeams = vi.fn();
@@ -14,7 +15,7 @@ const showToast = vi.fn();
 vi.mock('@/shared/api/tickets.js', () => ({
   getTicket: (...args) => getTicket(...args),
   transitionTicket: (...args) => transitionTicket(...args),
-  patchTicket: vi.fn(),
+  patchTicket: (...args) => patchTicket(...args),
   assignTicket: (...args) => assignTicket(...args),
   addComment: vi.fn(),
   uploadAttachments: (...args) => uploadAttachments(...args),
@@ -36,6 +37,12 @@ vi.mock('@/shared/lib/toast.js', () => ({
 }));
 vi.mock('@/shared/contexts/auth-context.jsx', () => ({
   useAuth: () => ({ user: { _id: 'u-admin', id: 'u-admin', role: 'admin' } }),
+}));
+vi.mock('@/shared/contexts/project-context.jsx', () => ({
+  useProject: () => ({
+    activeProjectId: 'p1',
+    setActiveProjectId: vi.fn(),
+  }),
 }));
 
 const ticket = {
@@ -65,6 +72,7 @@ describe('TicketDetailDrawer', () => {
     getTicket.mockReset().mockResolvedValue(ticket);
     transitionTicket.mockReset()
       .mockResolvedValue({ ...ticket, status: 'under_review', revision: 4 });
+    patchTicket.mockReset().mockResolvedValue(ticket);
     uploadAttachments.mockReset().mockResolvedValue([]);
     assignTicket.mockReset().mockResolvedValue({ ...ticket, team: { id: 'team-1', name: 'Platform' }, revision: 4 });
     listTeams.mockReset().mockResolvedValue({

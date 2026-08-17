@@ -11,6 +11,7 @@ import { ApiError, errorConverter, errorHandler } from './platform/errors.js';
 import { isDbReady } from './platform/db.js';
 import authRoutes from './modules/auth/auth.route.js';
 import teamRoutes from './modules/teams/team.route.js';
+import clientRoutes from './modules/clients/client.route.js';
 import projectRoutes from './modules/projects/project.route.js';
 import ticketRoutes from './modules/tickets/ticket.route.js';
 import userRoutes from './modules/users/user.route.js';
@@ -59,6 +60,7 @@ export function createApp(config, { deliverReset, deliverInvite } = {}) {
 
   app.use('/v1/auth', authRoutes(config, deliverReset));
   app.use('/v1/teams', teamRoutes(config));
+  app.use('/v1/clients', clientRoutes(config));
   app.use('/v1/projects', projectRoutes(config));
   app.use('/v1/tickets', ticketRoutes(config));
   app.use('/v1/users', userRoutes(config, deliverInvite));

@@ -2,15 +2,16 @@
 import { validateNewProjectDraft } from '../validate-new-project.js';
 
 describe('validateNewProjectDraft', () => {
-  it('requires brand and project name only', () => {
-    const result = validateNewProjectDraft({ brand: '', name: '', description: '' });
+  it('requires company and project name', () => {
+    const result = validateNewProjectDraft({ clientId: '', name: '' });
     expect(result.valid).toBe(false);
-    expect(result.summaryItems).toEqual(['Brand', 'Project']);
+    expect(result.errors.map((e) => e.field)).toEqual(['clientId', 'name']);
+    expect(result.firstFieldId).toBe('npc');
   });
 
-  it('accepts a draft without a ticket key', () => {
-    const result = validateNewProjectDraft({ brand: 'Acme', name: 'Operations', description: '' });
+  it('passes when company and project name are present', () => {
+    const result = validateNewProjectDraft({ clientId: 'c1', name: 'Web App' });
     expect(result.valid).toBe(true);
-    expect(result.errors).toEqual([]);
+    expect(result.errors).toHaveLength(0);
   });
 });

@@ -6,12 +6,15 @@ import {
   watchTicket, unwatchTicket, setBlocked, clearBlocked,
 } from '@/shared/api/tickets.js';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
+import { useProject } from '@/shared/contexts/project-context.jsx';
 import Icon from '@/shared/components/icons.jsx';
 import FormError from '@/shared/components/form-error.jsx';
 import ValidationDialog from '@/shared/components/validation-dialog.jsx';
 import {
   getTransitionFieldErrors,
   getValidationDialogForTransitionError,
+  getPatchFieldErrors,
+  isPatchFieldError,
   isTransitionValidationError,
   logApiError,
   normalizeApiError,
@@ -98,6 +101,8 @@ function TicketDrawerContent({
       if (isTransitionValidationError(apiError)) {
         setFieldErrors(getTransitionFieldErrors(apiError, ticket) || {});
         setValidationDialog(getValidationDialogForTransitionError(apiError, ticket));
+      } else if (isPatchFieldError(apiError)) {
+        setFieldErrors(getPatchFieldErrors(apiError) || {});
       } else {
         setError(apiError);
       }
@@ -270,12 +275,24 @@ function TicketDrawerContent({
 
 export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
   const { user } = useAuth();
+  const { activeProjectId, setActiveProjectId } = useProject();
+  const activeProjectIdRef = useRef(activeProjectId);
   const [ticket, setTicket] = useState(null);
   const [error, setError] = useState(null);
+
+  activeProjectIdRef.current = activeProjectId;
 
   const load = useCallback(async () => {
     setTicket(await getTicket(ticketId));
   }, [ticketId]);
+
+  useEffect(() => {
+    if (!ticket) return;
+    const projectId = ticket.project?.id || ticket.project?._id;
+    if (projectId && String(projectId) !== String(activeProjectIdRef.current)) {
+      setActiveProjectId(String(projectId));
+    }
+  }, [ticket, setActiveProjectId]);
 
   useEffect(() => { load().catch(setError); }, [load]);
 

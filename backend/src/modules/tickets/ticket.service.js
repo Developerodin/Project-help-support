@@ -1,4 +1,8 @@
 import mongoose from 'mongoose';
+import {
+  resolveTicketEstimateDates,
+  validateTicketEstimateDates,
+} from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
 import Project from '../projects/project.model.js';
@@ -33,10 +37,12 @@ export async function createTicket(actor, body) {
   }
 
   let testedBy = body.testedBy ?? undefined;
-  if (!testedBy && team) {
-    const qaMember = await findProjectMemberByRole(project._id, team, 'qa');
-    if (qaMember) testedBy = qaMember.user;
-    else if (project.defaultTester) testedBy = project.defaultTester;
+  if (!testedBy) {
+    testedBy = await resolveDefaultTester({
+      project: project._id,
+      team,
+      testedBy: null,
+    }, project);
   }
 
   await assertActiveUsers([assignedTo, testedBy]);
@@ -83,6 +89,34 @@ const DETAIL_POPULATE = [
 ];
 
 const LIST_POPULATE = ['project', 'assignedTo', 'team', 'createdBy'];
+
+/** QA stages that should have a tester assigned for visibility and notifications. */
+export const QA_TESTER_STAGES = new Set(['ready_qa', 'deployed_staging', 'qa_approved']);
+
+/**
+ * Resolve the project QA tester — project-team `qa` role first, then legacy
+ * defaultTester. Shared by createTicket and QA-lane transitions so a ticket
+ * entering QA always grants view access to the assigned tester.
+ */
+export async function resolveDefaultTester(ticket, projectDoc = null) {
+  if (ticket.testedBy) return null;
+
+  const projectId = ticket.project?._id ?? ticket.project;
+  if (!projectId) return null;
+
+  await ensureProjectMigrated(projectId);
+
+  const project = projectDoc
+    ?? await Project.findById(projectId).select('team defaultTeam defaultTester').lean();
+
+  const teamId = ticket.team?._id ?? ticket.team ?? project?.team ?? project?.defaultTeam;
+  if (teamId) {
+    const qaMember = await findProjectMemberByRole(projectId, teamId, 'qa');
+    if (qaMember) return qaMember.user;
+  }
+
+  return project?.defaultTester ?? null;
+}
 
 /**
  * :id accepts EITHER the Mongo _id or the human ticketId (WEB-101), on every
@@ -326,6 +360,24 @@ export async function patchTicket(actor, idOrKey, body) {
     assertModuleAndPage(project, patch.module ?? ticket.module, patch.page ?? ticket.page);
   }
   if ('testedBy' in patch) await assertActiveUsers([patch.testedBy]);
+
+  const estimateChangedFields = [];
+  if ('estimatedResolutionAt' in patch) estimateChangedFields.push('estimatedResolutionAt');
+  if ('expectedReleaseDate' in patch) estimateChangedFields.push('expectedReleaseDate');
+
+  const dateFields = validateTicketEstimateDates(
+    ...Object.values(resolveTicketEstimateDates(ticket, patch)),
+    { changedFields: estimateChangedFields },
+  );
+  if (dateFields) {
+    const firstMessage = Object.values(dateFields)[0];
+    throw new ApiError(
+      400,
+      'INVALID_ESTIMATE_DATES',
+      firstMessage || 'Invalid estimate dates',
+      dateFields,
+    );
+  }
 
   const written = await applyConditionalUpdate(ticket, revision, {
     $set: { ...patch, revision: revision + 1 },

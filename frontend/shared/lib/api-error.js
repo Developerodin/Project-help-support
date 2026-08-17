@@ -122,6 +122,15 @@ export function getValidationDialogForTransitionError(error, ticket) {
     };
   }
 
+  if (error.code === 'INVALID_ESTIMATE_DATES') {
+    return {
+      title: 'Invalid dates',
+      message: 'Expected release cannot be before resolution estimate.',
+      items,
+      firstFieldId: fieldErrors.expectedReleaseDate ? 'expectedReleaseDate' : firstFieldId,
+    };
+  }
+
   return {
     title: 'Complete required details',
     message: 'Fix the highlighted fields in Details, then try again.',
@@ -131,7 +140,19 @@ export function getValidationDialogForTransitionError(error, ticket) {
 }
 
 export function isTransitionValidationError(error) {
-  return error?.code === 'ESTIMATES_REQUIRED' || error?.code === 'OWNERSHIP_REQUIRED';
+  return error?.code === 'ESTIMATES_REQUIRED'
+    || error?.code === 'OWNERSHIP_REQUIRED'
+    || error?.code === 'INVALID_ESTIMATE_DATES';
+}
+
+export function getPatchFieldErrors(error) {
+  if (!error?.fields || typeof error.fields !== 'object') return null;
+  if (error.code === 'INVALID_ESTIMATE_DATES') return error.fields;
+  return null;
+}
+
+export function isPatchFieldError(error) {
+  return Boolean(getPatchFieldErrors(error));
 }
 
 export function friendlyTransitionError(error) {

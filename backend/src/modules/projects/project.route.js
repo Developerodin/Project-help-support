@@ -12,7 +12,6 @@ export default function projectRoutes(config) {
   router.use(auth(config));
 
   router.get('/', validate(listProjectsSchema), controller.list);
-  router.get('/brands', controller.listBrands);
   router.post('/', requireRole('admin'), validate(createProjectSchema), controller.create);
   router.get('/:id', validate(projectIdSchema), controller.get);
   router.patch('/:id', requireRole('admin'), validate(updateProjectSchema), controller.update);

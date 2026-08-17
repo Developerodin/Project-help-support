@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useProject } from '@/shared/contexts/project-context.jsx';
-import { groupProjectsByBrand } from '@/shared/lib/group-projects-by-brand.js';
+import { groupProjectsByCompany } from '@/shared/lib/group-projects-by-company.js';
 
 function ChevronDown() {
   return (
@@ -74,10 +74,10 @@ export default function ProjectSwitcher() {
           </button>
           {projects.length > 0 && <div className="menusep" />}
           <div className="menuscroll">
-            {groupProjectsByBrand(projects).map(({ brand, projects: brandProjects }) => (
-              <div key={brand} className="menubrand">
-                <div className="menubrand-label" role="presentation">{brand}</div>
-                {brandProjects.map((project) => (
+            {groupProjectsByCompany(projects).map(({ company, projects: companyProjects }) => (
+              <div key={company.id ?? company.name} className="menubrand">
+                <div className="menubrand-label" role="presentation">{company.name}</div>
+                {companyProjects.map((project) => (
                   <button
                     key={project.id}
                     type="button"

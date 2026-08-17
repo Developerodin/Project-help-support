@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { withMemoryDb } from '../../../platform/__tests__/helpers/memoryDb.js';
 import User from '../../users/user.model.js';
+import Client from '../../clients/client.model.js';
 import Project from '../project.model.js';
 import Team from '../../teams/team.model.js';
 import Ticket from '../../tickets/ticket.model.js';
@@ -35,9 +36,10 @@ async function seedProjectWithTeam() {
     members: [developer._id, qa._id],
     createdBy: admin._id,
   });
+  const client = await Client.create({ name: 'Acme', status: 'active', createdBy: admin._id });
   const project = await Project.create({
     key: 'WEB',
-    brand: 'Acme',
+    client: client._id,
     name: 'Web App',
     createdBy: admin._id,
     defaultTeam: team._id,
@@ -62,8 +64,9 @@ test('same user can have different roles on different projects', async () => {
   const admin = await user('admin');
   const person = await user('developer', 'Poly');
   const team = await Team.create({ name: 'Shared', members: [person._id], createdBy: admin._id });
-  const web = await Project.create({ key: 'WEB', brand: 'A', name: 'Web', createdBy: admin._id, team: team._id });
-  const mob = await Project.create({ key: 'MOB', brand: 'A', name: 'Mobile', createdBy: admin._id, team: team._id });
+  const client = await Client.create({ name: 'A Co', status: 'active', createdBy: admin._id });
+  const web = await Project.create({ key: 'WEB', client: client._id, name: 'Web', createdBy: admin._id, team: team._id });
+  const mob = await Project.create({ key: 'MOB', client: client._id, name: 'Mobile', createdBy: admin._id, team: team._id });
   await assignProjectTeam(web._id, team._id);
   await assignProjectTeam(mob._id, team._id);
 
@@ -102,7 +105,8 @@ test('changing project team resyncs eligible members', async () => {
   const userB = await user('qa', 'B');
   const teamA = await Team.create({ name: 'Team A', members: [userA._id], createdBy: admin._id });
   const teamB = await Team.create({ name: 'Team B', members: [userB._id], createdBy: admin._id });
-  const project = await createProject(admin, { brand: 'X', name: 'Portal', team: teamA._id });
+  const client = await Client.create({ name: 'X Co', status: 'active', createdBy: admin._id });
+  const project = await createProject(admin, { clientId: client.id, name: 'Portal', team: teamA._id });
 
   await updateProject(project.id, { team: teamB._id });
   const members = await listProjectTeamMembers(project.id);

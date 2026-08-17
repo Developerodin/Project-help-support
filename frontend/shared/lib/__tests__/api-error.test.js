@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   getTransitionFieldErrors,
   getValidationDialogForTransitionError,
+  getPatchFieldErrors,
+  isPatchFieldError,
   isTransitionValidationError,
   logApiError,
   normalizeApiError,
@@ -58,7 +60,33 @@ describe('api-error', () => {
   it('recognizes transition validation error codes', () => {
     expect(isTransitionValidationError({ code: 'ESTIMATES_REQUIRED' })).toBe(true);
     expect(isTransitionValidationError({ code: 'OWNERSHIP_REQUIRED' })).toBe(true);
+    expect(isTransitionValidationError({ code: 'INVALID_ESTIMATE_DATES' })).toBe(true);
     expect(isTransitionValidationError({ code: 'STAGE_CONFLICT' })).toBe(false);
+  });
+
+  it('maps INVALID_ESTIMATE_DATES patch errors to release field errors', () => {
+    const err = {
+      code: 'INVALID_ESTIMATE_DATES',
+      fields: { expectedReleaseDate: 'Expected release cannot be before resolution estimate' },
+    };
+
+    expect(isPatchFieldError(err)).toBe(true);
+    expect(getPatchFieldErrors(err)).toEqual({
+      expectedReleaseDate: 'Expected release cannot be before resolution estimate',
+    });
+  });
+
+  it('builds a validation dialog for invalid estimate ordering', () => {
+    const err = {
+      code: 'INVALID_ESTIMATE_DATES',
+      fields: { expectedReleaseDate: 'Expected release cannot be before resolution estimate' },
+    };
+
+    expect(getValidationDialogForTransitionError(err, ticket)).toMatchObject({
+      title: 'Invalid dates',
+      firstFieldId: 'expectedReleaseDate',
+      items: ['Expected release date'],
+    });
   });
 
   it('builds a validation dialog for ownership errors', () => {

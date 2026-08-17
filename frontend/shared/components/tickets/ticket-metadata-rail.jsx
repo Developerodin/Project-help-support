@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import { useRef, useState } from 'react';
+import { todayDateKey, validateTicketEstimateDates } from '@pms/shared';
 import Icon, { initials, isOverdue } from '../icons.jsx';
 import AttachmentUploadLoader from '../attachment-upload-loader.jsx';
 import { formatFileSize, ATTACHMENT_ACCEPT, validateAttachmentBatch } from '@/shared/lib/attachment-config.js';
@@ -50,6 +51,7 @@ export default function TicketMetadataRail({
   const uploadRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
+  const [localDateErrors, setLocalDateErrors] = useState({});
   const [draft, setDraft] = useState({
     estimatedResolutionAt: dateValue(ticket.estimatedResolutionAt),
     expectedReleaseDate: dateValue(ticket.expectedReleaseDate),
@@ -74,10 +76,41 @@ export default function TicketMetadataRail({
 
   const set = (key) => (event) => {
     onFieldEdit?.(key);
-    setDraft({ ...draft, [key]: event.target.value });
+    setLocalDateErrors((prev) => {
+      if (!prev[key] && !prev.expectedReleaseDate) return prev;
+      const next = { ...prev };
+      delete next[key];
+      delete next.expectedReleaseDate;
+      return next;
+    });
+    setDraft((prev) => ({ ...prev, [key]: event.target.value }));
   };
 
+  const mergedFieldErrors = { ...fieldErrors, ...localDateErrors };
+
+  const today = todayDateKey();
+  const estIso = draft.estimatedResolutionAt || dateValue(ticket.estimatedResolutionAt);
+  const releaseIso = draft.expectedReleaseDate || dateValue(ticket.expectedReleaseDate);
+  const resolutionChanged = draft.estimatedResolutionAt !== dateValue(ticket.estimatedResolutionAt);
+  const releaseChanged = draft.expectedReleaseDate !== dateValue(ticket.expectedReleaseDate);
+  const releaseMin = estIso && estIso >= today ? estIso : today;
+
   const saveDates = () => {
+    const changedFields = [];
+    if (resolutionChanged) changedFields.push('estimatedResolutionAt');
+    if (releaseChanged) changedFields.push('expectedReleaseDate');
+
+    const dateErrors = validateTicketEstimateDates(
+      draft.estimatedResolutionAt || null,
+      draft.expectedReleaseDate || null,
+      { changedFields },
+    );
+    if (dateErrors) {
+      setLocalDateErrors(dateErrors);
+      return;
+    }
+
+    setLocalDateErrors({});
     onSave({
       revision: ticket.revision,
       estimatedResolutionAt: draft.estimatedResolutionAt || null,
@@ -85,12 +118,11 @@ export default function TicketMetadataRail({
     });
   };
 
-  const estInvalid = Boolean(fieldErrors.estimatedResolutionAt);
-  const releaseInvalid = Boolean(fieldErrors.expectedReleaseDate);
+  const estInvalid = Boolean(mergedFieldErrors.estimatedResolutionAt);
+  const releaseInvalid = Boolean(mergedFieldErrors.expectedReleaseDate);
   const attachments = ticket.attachments ?? [];
   const late = isOverdue(ticket);
   const hasEst = Boolean(ticket.estimatedResolutionAt || draft.estimatedResolutionAt);
-  const estIso = draft.estimatedResolutionAt || dateValue(ticket.estimatedResolutionAt);
   const elapsed = ticket.createdAt ? daysBetween(ticket.createdAt) : 0;
   const span = estIso ? daysBetween(ticket.createdAt, `${estIso}T00:00:00Z`) : 0;
   const pct = span > 0 ? Math.min(100, Math.round((elapsed / span) * 100)) : 0;
@@ -208,6 +240,8 @@ export default function TicketMetadataRail({
                 id="estimatedResolutionAt"
                 type="date"
                 value={draft.estimatedResolutionAt}
+                min={today}
+                max={releaseIso || undefined}
                 onChange={set('estimatedResolutionAt')}
                 onBlur={saveDates}
                 aria-invalid={estInvalid}
@@ -240,6 +274,8 @@ export default function TicketMetadataRail({
                 id="estimatedResolutionAt"
                 type="date"
                 value={draft.estimatedResolutionAt}
+                min={today}
+                max={releaseIso || undefined}
                 onChange={set('estimatedResolutionAt')}
                 onBlur={saveDates}
                 aria-invalid={estInvalid}
@@ -253,7 +289,7 @@ export default function TicketMetadataRail({
           )}
           {estInvalid ? (
             <p id="estimatedResolutionAt-hint" className="field-hint invalid">
-              {fieldErrors.estimatedResolutionAt}
+              {mergedFieldErrors.estimatedResolutionAt}
             </p>
           ) : null}
         </div>
@@ -265,6 +301,7 @@ export default function TicketMetadataRail({
               id="expectedReleaseDate"
               type="date"
               value={draft.expectedReleaseDate}
+              min={releaseMin}
               onChange={set('expectedReleaseDate')}
               onBlur={saveDates}
               aria-invalid={releaseInvalid}
@@ -276,6 +313,7 @@ export default function TicketMetadataRail({
                 id="expectedReleaseDate"
                 type="date"
                 value={draft.expectedReleaseDate}
+                min={releaseMin}
                 onChange={set('expectedReleaseDate')}
                 onBlur={saveDates}
                 aria-invalid={releaseInvalid}
@@ -286,7 +324,7 @@ export default function TicketMetadataRail({
           )}
           {releaseInvalid ? (
             <p id="expectedReleaseDate-hint" className="field-hint invalid">
-              {fieldErrors.expectedReleaseDate}
+              {mergedFieldErrors.expectedReleaseDate}
             </p>
           ) : null}
         </div>

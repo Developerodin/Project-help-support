@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import { withMemoryDb } from '../../../platform/__tests__/helpers/memoryDb.js';
 import User from '../../users/user.model.js';
 import Project from '../../projects/project.model.js';
+import Team from '../../teams/team.model.js';
 import Ticket from '../ticket.model.js';
-import { createTicket } from '../ticket.service.js';
+import { createTicket, getTicket, listTickets } from '../ticket.service.js';
 import { transitionTicket, checkGuards } from '../transition.service.js';
+import { assignProjectTeam } from '../../projects/project-team-member.service.js';
 
 withMemoryDb();
 
@@ -89,6 +91,34 @@ test('the estimate guard anchors on the DESTINATION, so a skip cannot bypass it'
     to: 'under_review', revision: 0,
   });
   assert.equal(moved.status, 'under_review');
+});
+
+test('the estimate guard rejects release before resolution', async () => {
+  const { admin, ticket } = await seed({ estimates: false });
+
+  await Ticket.updateOne({ _id: ticket.id }, {
+    $set: {
+      estimatedResolutionAt: new Date('2026-08-19T00:00:00.000Z'),
+      expectedReleaseDate: new Date('2026-08-18T00:00:00.000Z'),
+    },
+  });
+
+  await assert.rejects(
+    () => transitionTicket(admin, ticket.id, { to: 'in_progress', revision: 0 }),
+    (err) => err.statusCode === 400
+      && err.code === 'INVALID_ESTIMATE_DATES'
+      && err.fields.expectedReleaseDate === 'Expected release cannot be before resolution estimate',
+  );
+});
+
+test('checkGuards rejects invalid estimate ordering at guarded destinations', () => {
+  const verdict = checkGuards('in_progress', {
+    estimatedResolutionAt: new Date('2026-08-19T00:00:00.000Z'),
+    expectedReleaseDate: new Date('2026-08-18T00:00:00.000Z'),
+  });
+
+  assert.equal(verdict.ok, false);
+  assert.equal(verdict.code, 'INVALID_ESTIMATE_DATES');
 });
 
 test('the ownership guard blocks entry to ready_qa with neither team nor assignee', async () => {
@@ -247,4 +277,87 @@ test('checkGuards is pure and reports which guard failed', () => {
     }).code,
     'OWNERSHIP_REQUIRED',
   );
+});
+
+async function seedProjectWithQa() {
+  const admin = await user('admin');
+  const developer = await user('developer');
+  const qa = await user('qa');
+  const outsiderQa = await user('qa');
+  const team = await Team.create({
+    name: 'Web Team',
+    members: [developer._id, qa._id],
+    createdBy: admin._id,
+  });
+  const project = await Project.create({
+    key: 'WEB',
+    name: 'Web App',
+    createdBy: admin._id,
+    defaultTeam: team._id,
+    defaultTester: qa._id,
+  });
+  await assignProjectTeam(project._id, team._id);
+  return { admin, developer, qa, outsiderQa, team, project };
+}
+
+async function withEstimates(ticketId) {
+  await Ticket.updateOne({ _id: ticketId }, {
+    $set: { estimatedResolutionAt: IN_A_WEEK, expectedReleaseDate: IN_A_WEEK },
+  });
+}
+
+test('transition to ready_qa auto-assigns testedBy from the project qa role', async () => {
+  const { admin, developer, qa, project } = await seedProjectWithQa();
+  const ticket = await createTicket(admin, {
+    project: project._id,
+    title: 'Checkout regression',
+    assignedTo: developer._id,
+    team: undefined,
+  });
+  await Ticket.updateOne({ _id: ticket.id }, { $unset: { testedBy: 1 } });
+  await withEstimates(ticket.id);
+
+  const { ticket: moved } = await transitionTicket(admin, ticket.id, {
+    to: 'ready_qa',
+    revision: ticket.revision,
+  });
+
+  assert.equal(String(moved.testedBy), String(qa._id));
+  assert.equal((await getTicket(qa, moved.ticketId)).ticketId, moved.ticketId);
+});
+
+test('project qa can list the ticket after it enters ready_qa', async () => {
+  const { admin, developer, qa, project } = await seedProjectWithQa();
+  const ticket = await createTicket(admin, {
+    project: project._id,
+    title: 'Login failure',
+    assignedTo: developer._id,
+  });
+  await Ticket.updateOne({ _id: ticket.id }, { $unset: { testedBy: 1 } });
+  await withEstimates(ticket.id);
+  await transitionTicket(admin, ticket.id, { to: 'ready_qa', revision: ticket.revision });
+
+  const page = await listTickets(qa, { project: String(project._id) });
+  assert.ok(page.results.some((row) => row.ticketId === ticket.ticketId));
+});
+
+test('qa from another project cannot view after ready_qa transition', async () => {
+  const { admin, developer, outsiderQa, project } = await seedProjectWithQa();
+  const ticket = await createTicket(admin, {
+    project: project._id,
+    title: 'Mobile-only bug',
+    assignedTo: developer._id,
+  });
+  await Ticket.updateOne({ _id: ticket.id }, { $unset: { testedBy: 1 } });
+  await withEstimates(ticket.id);
+  const { ticket: moved } = await transitionTicket(admin, ticket.id, {
+    to: 'ready_qa',
+    revision: ticket.revision,
+  });
+
+  await assert.rejects(
+    () => getTicket(outsiderQa, moved.ticketId),
+    (err) => err.statusCode === 403 && err.code === 'FORBIDDEN',
+  );
+  assert.equal((await listTickets(outsiderQa, {})).totalResults, 0);
 });

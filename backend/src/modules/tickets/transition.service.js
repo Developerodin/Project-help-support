@@ -1,10 +1,18 @@
 import {
   canTransition, stageIndex, stageLabel,
   GUARD_ESTIMATES_FROM_INDEX, GUARD_OWNERSHIP_FROM_INDEX,
+  validateTicketEstimateDates,
 } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
+import { assertActiveUsers } from '../teams/team.service.js';
 import Ticket from './ticket.model.js';
-import { resolveTicketDoc, getTicket, assertCanEditTicket } from './ticket.service.js';
+import {
+  QA_TESTER_STAGES,
+  resolveDefaultTester,
+  resolveTicketDoc,
+  getTicket,
+  assertCanEditTicket,
+} from './ticket.service.js';
 
 /**
  * Layer 3, the half that needs the ticket's own fields â€” which is why it lives
@@ -28,6 +36,19 @@ export function checkGuards(to, ticket) {
       code: 'ESTIMATES_REQUIRED',
       reason: `Both an estimated resolution date and an expected release date are required to enter ${stageLabel(to)}`,
       fields,
+    };
+  }
+
+  const dateFields = validateTicketEstimateDates(
+    ticket.estimatedResolutionAt,
+    ticket.expectedReleaseDate,
+  );
+  if (toIndex >= GUARD_ESTIMATES_FROM_INDEX && dateFields) {
+    return {
+      ok: false,
+      code: 'INVALID_ESTIMATE_DATES',
+      reason: 'Expected release cannot be before resolution estimate',
+      fields: dateFields,
     };
   }
 
@@ -96,6 +117,16 @@ export async function transitionTicket(actor, idOrKey, { to, revision, note, rea
   const set = { status: to, revision: revision + 1 };
   const unset = {};
   const inc = {};
+  const activityChanges = [{ field: 'status', from, to }];
+
+  if (QA_TESTER_STAGES.has(to) && !ticket.testedBy) {
+    const testerId = await resolveDefaultTester(ticket);
+    if (testerId) {
+      await assertActiveUsers([testerId]);
+      set.testedBy = testerId;
+      activityChanges.push({ field: 'testedBy', from: ticket.testedBy ?? null, to: testerId });
+    }
+  }
 
   if (verdict.isClose) {
     set.closedAt = now;
@@ -129,7 +160,7 @@ export async function transitionTicket(actor, idOrKey, { to, revision, note, rea
         action: verdict.isReopen ? 'reopened' : 'transitioned',
         performedBy: actor._id,
         at: now,
-        changes: [{ field: 'status', from, to }],
+        changes: activityChanges,
       },
     },
   };

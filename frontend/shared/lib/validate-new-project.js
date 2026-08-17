@@ -1,19 +1,18 @@
 ﻿export const NEW_PROJECT_FIELD_IDS = {
-  brand: 'npb',
+  clientId: 'npc',
   name: 'npn',
 };
 
-/** @param {{ brand?: string, name?: string, description?: string }} draft */
+/** @param {{ clientId?: string, name?: string, description?: string }} draft */
 export function validateNewProjectDraft(draft) {
   const errors = [];
-  const brandLen = draft.brand?.trim().length ?? 0;
 
-  if (brandLen === 0) {
+  if (!draft.clientId?.trim()) {
     errors.push({
-      field: 'brand',
-      label: 'Brand',
+      field: 'clientId',
+      label: 'Company',
       message: 'Required.',
-      summary: 'Brand',
+      summary: 'Company',
     });
   }
 

@@ -14,6 +14,7 @@ const moduleItem = Joi.object({
 export const listProjectsSchema = {
   query: Joi.object({
     status: Joi.string().valid('active', 'archived'),
+    clientId: objectId,
     page: Joi.number().integer().min(1),
     limit: Joi.number().integer().min(1).max(100),
     sortBy: Joi.string().max(80),
@@ -22,7 +23,7 @@ export const listProjectsSchema = {
 
 export const createProjectSchema = {
   body: Joi.object({
-    brand: Joi.string().trim().min(1).max(80).required(),
+    clientId: objectId.required(),
     key: Joi.string().trim().uppercase().pattern(/^[A-Z][A-Z0-9]{1,9}$/),
     name: Joi.string().trim().min(1).max(120).required(),
     description: Joi.string().trim().max(1000).allow(''),
@@ -42,7 +43,6 @@ export const updateProjectSchema = {
   // change it returns a clear message instead of a generic unknown-key error.
   body: Joi.object({
     key: Joi.any().forbidden().messages({ 'any.unknown': 'Project key cannot be changed' }),
-    brand: Joi.string().trim().min(1).max(80),
     name: Joi.string().trim().min(1).max(120),
     description: Joi.string().trim().max(1000).allow(''),
     status: Joi.string().valid('active', 'archived'),

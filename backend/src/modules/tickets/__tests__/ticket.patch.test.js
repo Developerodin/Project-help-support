@@ -156,3 +156,68 @@ test('bulk never authorizes once and assumes the rest', async () => {
   assert.equal(result.results[0].ok, false);
   assert.equal(result.results[0].error.code, 'FORBIDDEN');
 });
+
+test('a patch rejects expected release before resolution estimate', async () => {
+  const { reporter, ticket } = await seed();
+
+  await assert.rejects(
+    () => patchTicket(reporter, ticket.id, {
+      revision: 0,
+      estimatedResolutionAt: '2026-08-19',
+      expectedReleaseDate: '2026-08-18',
+    }),
+    (err) => err.statusCode === 400
+      && err.code === 'INVALID_ESTIMATE_DATES'
+      && err.fields.expectedReleaseDate === 'Expected release cannot be before resolution estimate',
+  );
+
+  const stored = await Ticket.findById(ticket.id);
+  assert.equal(stored.estimatedResolutionAt, undefined);
+  assert.equal(stored.expectedReleaseDate, undefined);
+});
+
+test('a patch rejects past resolution estimate', async () => {
+  const { reporter, ticket } = await seed();
+  const past = '2020-01-01';
+
+  await assert.rejects(
+    () => patchTicket(reporter, ticket.id, {
+      revision: 0,
+      estimatedResolutionAt: past,
+    }),
+    (err) => err.statusCode === 400
+      && err.code === 'INVALID_ESTIMATE_DATES'
+      && err.fields.estimatedResolutionAt === 'Resolution estimate cannot be in the past',
+  );
+});
+
+test('a patch allows expected release on the same day as resolution estimate', async () => {
+  const { reporter, ticket } = await seed();
+
+  const updated = await patchTicket(reporter, ticket.id, {
+    revision: 0,
+    estimatedResolutionAt: '2026-08-19',
+    expectedReleaseDate: '2026-08-19',
+  });
+
+  assert.equal(updated.estimatedResolutionAt?.toISOString().slice(0, 10), '2026-08-19');
+  assert.equal(updated.expectedReleaseDate?.toISOString().slice(0, 10), '2026-08-19');
+});
+
+test('a patch validates merged dates when only one field changes', async () => {
+  const { reporter, ticket } = await seed();
+
+  await patchTicket(reporter, ticket.id, {
+    revision: 0,
+    estimatedResolutionAt: '2026-08-19',
+    expectedReleaseDate: '2026-08-20',
+  });
+
+  await assert.rejects(
+    () => patchTicket(reporter, ticket.id, {
+      revision: 1,
+      estimatedResolutionAt: '2026-08-21',
+    }),
+    (err) => err.statusCode === 400 && err.code === 'INVALID_ESTIMATE_DATES',
+  );
+});

@@ -1,6 +1,7 @@
 import { resolveProjectModules } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
+import Client from '../clients/client.model.js';
 import Team from '../teams/team.model.js';
 import { assertActiveUsers, assertTeamUsable } from '../teams/team.service.js';
 import Project, { RESERVED_PROJECT_KEYS } from './project.model.js';
@@ -132,9 +133,15 @@ async function attachTeamContext(projectJson) {
 }
 
 export async function createProject(actor, body) {
-  const brand = String(body.brand || '').trim();
-  if (!brand) {
-    throw new ApiError(400, 'BRAND_REQUIRED', 'Brand is required');
+  const clientId = body.clientId || body.client;
+  if (!clientId) {
+    throw new ApiError(400, 'CLIENT_REQUIRED', 'Company is required');
+  }
+
+  const client = await Client.findById(clientId);
+  if (!client) throw new ApiError(404, 'CLIENT_NOT_FOUND', 'Company not found');
+  if (client.status !== 'active') {
+    throw new ApiError(400, 'CLIENT_ARCHIVED', 'Projects can only be created under an active company');
   }
 
   await assertCreateDefaults(body);
@@ -148,7 +155,7 @@ export async function createProject(actor, body) {
   }
 
   const project = await Project.create({
-    brand,
+    client: client._id,
     key,
     name: body.name,
     description: body.description,
@@ -169,29 +176,25 @@ export async function createProject(actor, body) {
     await migrateProjectTeamFromLegacy(await Project.findById(project._id));
   }
 
-  const populated = await Project.findById(project._id).populate('team');
+  const populated = await Project.findById(project._id).populate(['team', 'client']);
   return attachTeamContext(populated.toJSON());
-}
-
-export async function listBrands() {
-  const brands = await Project.distinct('brand', { status: 'active' });
-  return brands.filter(Boolean).sort((a, b) => a.localeCompare(b));
 }
 
 export async function listProjects(query = {}) {
   const filter = { status: query.status || 'active' };
+  if (query.clientId) filter.client = query.clientId;
   const page = await paginate(Project, filter, {
     page: query.page,
     limit: query.limit,
-    sortBy: query.sortBy || 'brand:asc,key:asc',
-    populate: ['team'],
+    sortBy: query.sortBy || 'key:asc',
+    populate: ['team', 'client'],
   });
   const results = await Promise.all(page.results.map(async (p) => attachTeamContext(p.toJSON())));
   return { ...page, results };
 }
 
 export async function getProject(id) {
-  const project = await Project.findById(id).populate('team');
+  const project = await Project.findById(id).populate(['team', 'client']);
   if (!project) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
   return attachTeamContext(project.toJSON());
 }
@@ -218,7 +221,7 @@ export async function updateProject(id, body) {
 
   const project = await Project.findByIdAndUpdate(
     id, { $set: patch }, { new: true, runValidators: true },
-  ).populate('team');
+  ).populate(['team', 'client']);
 
   if (body.defaultAssignee || body.defaultTester || body.defaultTeam) {
     await migrateProjectTeamFromLegacy(project);

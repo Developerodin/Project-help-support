@@ -2,18 +2,21 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { listClients } from '@/shared/api/clients.js';
 import { listProjects, patchProject, replaceModules } from '@/shared/api/projects.js';
 import { listTeams } from '@/shared/api/teams.js';
+import CompanyLogo from '@/shared/components/companies/company-logo.jsx';
+import EditCompanyDialog from '@/shared/components/companies/edit-company-dialog.jsx';
+import NewCompanyDialog from '@/shared/components/companies/new-company-dialog.jsx';
 import FormError from '@/shared/components/form-error.jsx';
 import Icon from '@/shared/components/icons.jsx';
 import ProjectTeamPanel from '@/shared/components/projects/project-team-panel.jsx';
 import ProjectModulesEditor from '@/shared/components/project-modules-editor.jsx';
-import { groupProjectsByBrand } from '@/shared/lib/group-projects-by-brand.js';
 import { formRowsToModules, modulesToFormRows } from '@/shared/lib/project-modules.js';
 import { showToast } from '@/shared/lib/toast.js';
 
 const EXPANDED_STORAGE_KEY = 'pms-projects-expanded';
-const BRAND_EXPANDED_STORAGE_KEY = 'pms-brands-expanded';
+const COMPANY_EXPANDED_STORAGE_KEY = 'pms-companies-expanded';
 
 function mergeExpandedState(prev, projectIds) {
   const next = { ...prev };
@@ -23,10 +26,10 @@ function mergeExpandedState(prev, projectIds) {
   return next;
 }
 
-function mergeBrandExpandedState(prev, brands) {
+function mergeCompanyExpandedState(prev, companyIds) {
   const next = { ...prev };
-  for (const brand of brands) {
-    if (!(brand in next)) next[brand] = true;
+  for (const id of companyIds) {
+    if (!(id in next)) next[id] = true;
   }
   return next;
 }
@@ -120,15 +123,33 @@ function ProjectPanel({
 }
 
 export default function ProjectsPage() {
+  const [companies, setCompanies] = useState([]);
   const [projects, setProjects] = useState([]);
   const [teams, setTeams] = useState([]);
   const [modulesDraft, setModulesDraft] = useState({});
   const [expanded, setExpanded] = useState({});
-  const [brandExpanded, setBrandExpanded] = useState({});
+  const [companyExpanded, setCompanyExpanded] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [newCompanyOpen, setNewCompanyOpen] = useState(false);
+  const [editCompany, setEditCompany] = useState(null);
 
-  const brandGroups = useMemo(() => groupProjectsByBrand(projects), [projects]);
+  const companyGroups = useMemo(() => {
+    const projectMap = new Map();
+    for (const project of projects) {
+      const companyId = project.client?.id ?? project.client;
+      if (!companyId) continue;
+      if (!projectMap.has(companyId)) projectMap.set(companyId, []);
+      projectMap.get(companyId).push(project);
+    }
+
+    return companies
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((company) => ({
+        company,
+        projects: (projectMap.get(company.id) ?? []).sort((a, b) => a.key.localeCompare(b.key)),
+      }));
+  }, [companies, projects]);
 
   const syncModulesDraft = useCallback((nextProjects) => {
     setModulesDraft((prev) => {
@@ -144,13 +165,22 @@ export default function ProjectsPage() {
 
   const reload = useCallback(() => {
     setLoading(true);
-    return listProjects()
-      .then((p) => {
-        setProjects(p.results);
-        syncModulesDraft(p.results);
-        const groups = groupProjectsByBrand(p.results);
-        setExpanded((prev) => mergeExpandedState({ ...readStoredExpanded(EXPANDED_STORAGE_KEY), ...prev }, p.results.map((x) => x.id)));
-        setBrandExpanded((prev) => mergeBrandExpandedState({ ...readStoredExpanded(BRAND_EXPANDED_STORAGE_KEY), ...prev }, groups.map((g) => g.brand)));
+    return Promise.all([
+      listClients({ status: 'active' }),
+      listProjects(),
+    ])
+      .then(([clientPage, projectPage]) => {
+        setCompanies(clientPage.results);
+        setProjects(projectPage.results);
+        syncModulesDraft(projectPage.results);
+        setExpanded((prev) => mergeExpandedState(
+          { ...readStoredExpanded(EXPANDED_STORAGE_KEY), ...prev },
+          projectPage.results.map((x) => x.id),
+        ));
+        setCompanyExpanded((prev) => mergeCompanyExpandedState(
+          { ...readStoredExpanded(COMPANY_EXPANDED_STORAGE_KEY), ...prev },
+          clientPage.results.map((c) => c.id),
+        ));
       })
       .catch(setError)
       .finally(() => setLoading(false));
@@ -170,11 +200,11 @@ export default function ProjectsPage() {
     });
   };
 
-  const toggleBrandExpanded = (brand) => {
-    setBrandExpanded((prev) => {
-      const currentlyExpanded = prev[brand] !== false;
-      const next = { ...prev, [brand]: !currentlyExpanded };
-      persistExpandedState(BRAND_EXPANDED_STORAGE_KEY, next);
+  const toggleCompanyExpanded = (companyId) => {
+    setCompanyExpanded((prev) => {
+      const currentlyExpanded = prev[companyId] !== false;
+      const next = { ...prev, [companyId]: !currentlyExpanded };
+      persistExpandedState(COMPANY_EXPANDED_STORAGE_KEY, next);
       return next;
     });
   };
@@ -204,82 +234,134 @@ export default function ProjectsPage() {
     }
   };
 
+  const onCompanyCreated = (company) => {
+    showToast(`Company ${company.name} created`);
+    reload();
+  };
+
+  const onCompanyUpdated = (company) => {
+    setCompanies((prev) => prev.map((c) => (c.id === company.id ? company : c)));
+    showToast(`Company ${company.name} updated`);
+  };
+
   return (
     <>
       <div className="page-head">
         <div>
           <h1>Projects</h1>
-          <p className="sub">Brands, project teams, and module taxonomy for each project.</p>
+          <p className="sub">Companies, project teams, and module taxonomy for each project.</p>
         </div>
         <span className="spacer" />
-        <Link href="/projects/new" className="btn btn-primary">
-          <Icon name="plus" size={12} /> New project
-        </Link>
+        <button type="button" className="btn btn-primary" onClick={() => setNewCompanyOpen(true)}>
+          <Icon name="plus" size={12} /> New company
+        </button>
       </div>
       <FormError error={error} />
 
       {loading ? (
         <p className="meta" role="status">Loading projects...</p>
-      ) : projects.length === 0 ? (
+      ) : companies.length === 0 ? (
         <div className="empty-state">
-          <h3>No projects yet</h3>
-          <p>Create a project to assign a team and define its module catalog.</p>
-          <Link href="/projects/new" className="btn btn-primary">New project</Link>
+          <h3>No companies yet</h3>
+          <p>Create a company, then add projects under it.</p>
+          <button type="button" className="btn btn-primary" onClick={() => setNewCompanyOpen(true)}>
+            New company
+          </button>
         </div>
       ) : (
-        brandGroups.map(({ brand, projects: brandProjects }) => {
-          const isBrandExpanded = brandExpanded[brand] !== false;
+        companyGroups.map(({ company, projects: companyProjects }) => {
+          const isCompanyExpanded = companyExpanded[company.id] !== false;
+          const projectCount = companyProjects.length;
 
           return (
             <section
-              key={brand}
-              className={`brand-group${isBrandExpanded ? '' : ' collapsed'}`}
+              key={company.id}
+              className={`company-group${isCompanyExpanded ? '' : ' collapsed'}`}
             >
-              <header className="brand-group-head">
-                <h3 className="brand-group-title">
+              <header className="company-group-head">
+                <div className="company-group-title-row">
                   <button
                     type="button"
-                    className="brand-group-toggle"
-                    aria-expanded={isBrandExpanded}
-                    aria-controls={`brand-body-${brand}`}
-                    onClick={() => toggleBrandExpanded(brand)}
+                    className="company-group-toggle"
+                    aria-expanded={isCompanyExpanded}
+                    aria-controls={`company-body-${company.id}`}
+                    onClick={() => toggleCompanyExpanded(company.id)}
                   >
-                    <span className="brand-group-chev" aria-hidden="true">
+                    <span className="company-group-chev" aria-hidden="true">
                       <Icon name="chev-right" size={14} />
                     </span>
-                    <span>{brand}</span>
-                    <span className="chip">{brandProjects.length}</span>
-                    <span className="sr">{isBrandExpanded ? 'Collapse' : 'Expand'} {brand}</span>
+                    <CompanyLogo company={company} size={28} />
+                    <span>{company.name}</span>
+                    <span className="chip">{company.status}</span>
+                    <span className="chip">{projectCount}</span>
+                    <span className="sr">
+                      {isCompanyExpanded ? 'Collapse' : 'Expand'} {company.name}
+                    </span>
                   </button>
-                </h3>
+                  <div className="company-group-actions">
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => setEditCompany(company)}
+                    >
+                      Edit
+                    </button>
+                    <Link
+                      href={`/projects/new?clientId=${company.id}`}
+                      className="btn btn-sm btn-primary"
+                    >
+                      <Icon name="plus" size={12} /> Add project
+                    </Link>
+                  </div>
+                </div>
               </header>
 
-              <div className="brand-group-body" id={`brand-body-${brand}`}>
-                {brandProjects.map((project) => {
-                  const moduleRows = modulesDraft[project.id] ?? modulesToFormRows(project.modules);
-                  const hasModuleDraft = Boolean(modulesDraft[project.id]);
-                  const isExpanded = expanded[project.id] !== false;
+              <div className="company-group-body" id={`company-body-${company.id}`}>
+                {companyProjects.length === 0 ? (
+                  <p className="meta company-group-empty">
+                    No projects yet.{' '}
+                    <Link href={`/projects/new?clientId=${company.id}`}>Add a project</Link>
+                  </p>
+                ) : (
+                  companyProjects.map((project) => {
+                    const moduleRows = modulesDraft[project.id] ?? modulesToFormRows(project.modules);
+                    const hasModuleDraft = Boolean(modulesDraft[project.id]);
+                    const isExpanded = expanded[project.id] !== false;
 
-                  return (
-                    <ProjectPanel
-                      key={project.id}
-                      project={project}
-                      teams={teams}
-                      moduleRows={moduleRows}
-                      hasModuleDraft={hasModuleDraft}
-                      isExpanded={isExpanded}
-                      onToggleExpanded={toggleExpanded}
-                      onUpdate={update}
-                      onSaveModules={saveModules}
-                      onModulesChange={(projectId, rows) => setModulesDraft((prev) => ({ ...prev, [projectId]: rows }))}
-                    />
-                  );
-                })}
+                    return (
+                      <ProjectPanel
+                        key={project.id}
+                        project={project}
+                        teams={teams}
+                        moduleRows={moduleRows}
+                        hasModuleDraft={hasModuleDraft}
+                        isExpanded={isExpanded}
+                        onToggleExpanded={toggleExpanded}
+                        onUpdate={update}
+                        onSaveModules={saveModules}
+                        onModulesChange={(projectId, rows) => setModulesDraft((prev) => ({ ...prev, [projectId]: rows }))}
+                      />
+                    );
+                  })
+                )}
               </div>
             </section>
           );
         })
       )}
+
+      <NewCompanyDialog
+        open={newCompanyOpen}
+        onClose={() => setNewCompanyOpen(false)}
+        onCreated={onCompanyCreated}
+      />
+
+      <EditCompanyDialog
+        open={Boolean(editCompany)}
+        company={editCompany}
+        onClose={() => setEditCompany(null)}
+        onUpdated={onCompanyUpdated}
+      />
     </>
   );
 }

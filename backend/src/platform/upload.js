@@ -4,6 +4,7 @@ import multer from 'multer';
 import { ApiError } from './errors.js';
 
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
+export const MAX_LOGO_BYTES = 2 * 1024 * 1024;
 export const MAX_REQUEST_BYTES = 100 * 1024 * 1024;
 
 /**
@@ -90,6 +91,15 @@ export function sniffType(buffer, filename) {
   throw new ApiError(400, 'UNSUPPORTED_FILE_TYPE', 'That file type is not accepted');
 }
 
+/** Company logos accept image types only, with a smaller size limit than ticket attachments. */
+export function sniffImageType(buffer, filename) {
+  const result = sniffType(buffer, filename);
+  if (!result.mime.startsWith('image/')) {
+    throw new ApiError(400, 'INVALID_LOGO_TYPE', 'Logo must be an image file (PNG, JPEG, GIF, or WebP)');
+  }
+  return result;
+}
+
 /**
  * The original filename is NEVER an input here. It is kept as display metadata
  * only, so a name containing `../` or control characters cannot influence where
@@ -109,3 +119,8 @@ export const uploadMiddleware = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_FILE_BYTES, files: 10, fieldSize: 1024 * 1024 },
 }).array('files', 10);
+
+export const logoUploadMiddleware = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_LOGO_BYTES, files: 1 },
+}).single('logo');

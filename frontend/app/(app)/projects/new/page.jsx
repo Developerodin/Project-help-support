@@ -1,9 +1,11 @@
 ﻿'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { createProject, listBrands } from '@/shared/api/projects.js';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { listClients } from '@/shared/api/clients.js';
+import { createProject } from '@/shared/api/projects.js';
 import { listTeams } from '@/shared/api/teams.js';
+import CompanyLogo from '@/shared/components/companies/company-logo.jsx';
 import FormError from '@/shared/components/form-error.jsx';
 import ProjectModulesEditor from '@/shared/components/project-modules-editor.jsx';
 import ValidationDialog from '@/shared/components/validation-dialog.jsx';
@@ -12,7 +14,7 @@ import { validateNewProjectDraft } from '@/shared/lib/validate-new-project.js';
 import { showToast } from '@/shared/lib/toast.js';
 
 const INITIAL_DRAFT = {
-  brand: '',
+  clientId: '',
   name: '',
   description: '',
   team: '',
@@ -20,9 +22,12 @@ const INITIAL_DRAFT = {
 
 export default function NewProjectPage() {
   const router = useRouter();
-  const [draft, setDraft] = useState(INITIAL_DRAFT);
+  const searchParams = useSearchParams();
+  const presetClientId = searchParams.get('clientId') ?? '';
+
+  const [draft, setDraft] = useState({ ...INITIAL_DRAFT, clientId: presetClientId });
   const [moduleRows, setModuleRows] = useState([]);
-  const [brands, setBrands] = useState([]);
+  const [companies, setCompanies] = useState([]);
   const [teams, setTeams] = useState([]);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -31,17 +36,27 @@ export default function NewProjectPage() {
   const [validationItems, setValidationItems] = useState([]);
 
   useEffect(() => {
-    listBrands().then(setBrands).catch(() => {});
+    listClients({ status: 'active' }).then((p) => setCompanies(p.results)).catch(() => {});
     listTeams().then((p) => setTeams(p.results)).catch(() => {});
   }, []);
 
-  const brandLen = draft.brand.trim().length;
+  useEffect(() => {
+    if (presetClientId) {
+      setDraft((prev) => ({ ...prev, clientId: presetClientId }));
+    }
+  }, [presetClientId]);
+
+  const selectedCompany = useMemo(
+    () => companies.find((c) => c.id === draft.clientId),
+    [companies, draft.clientId],
+  );
+
   const nameLen = draft.name.trim().length;
   const descLen = draft.description.trim().length;
   const validation = useMemo(() => validateNewProjectDraft(draft), [draft]);
-  const brandInvalid = showValidation && validation.errors.some((e) => e.field === 'brand');
+  const companyInvalid = showValidation && validation.errors.some((e) => e.field === 'clientId');
   const nameInvalid = showValidation && validation.errors.some((e) => e.field === 'name');
-  const brandError = validation.errors.find((e) => e.field === 'brand');
+  const companyError = validation.errors.find((e) => e.field === 'clientId');
 
   const focusFirstInvalid = useCallback((result) => {
     const id = result?.firstFieldId;
@@ -72,7 +87,7 @@ export default function NewProjectPage() {
     setError(null);
     try {
       const body = {
-        brand: draft.brand.trim(),
+        clientId: draft.clientId,
         name: draft.name.trim(),
         description: draft.description.trim(),
         team: draft.team || null,
@@ -93,7 +108,7 @@ export default function NewProjectPage() {
       <div className="page-head">
         <div>
           <h1>New project</h1>
-          <p className="sub">Add a project under a brand with defaults and a module catalog.</p>
+          <p className="sub">Add a project under a company with defaults and a module catalog.</p>
         </div>
       </div>
 
@@ -103,30 +118,35 @@ export default function NewProjectPage() {
         <form className="form new-ticket-form new-project-form" id="newProject" onSubmit={onSubmit} noValidate>
           <section className="new-ticket-block" aria-labelledby="project-details-heading">
             <h2 id="project-details-heading" className="form-section">Project details</h2>
-            <p className="form-hint">Brand, project name, and optional description.</p>
+            <p className="form-hint">Company, project name, and optional description.</p>
 
-            <div className={`form-row${brandInvalid ? ' bad' : ''}`}>
-              <label htmlFor="npb">Brand <span className="req" aria-hidden="true">*</span></label>
-              <input
-                id="npb"
+            <div className={`form-row${companyInvalid ? ' bad' : ''}`}>
+              <label htmlFor="npc">Company <span className="req" aria-hidden="true">*</span></label>
+              {selectedCompany ? (
+                <div className="company-select-preview">
+                  <CompanyLogo company={selectedCompany} size={24} />
+                  <span>{selectedCompany.name}</span>
+                </div>
+              ) : null}
+              <select
+                id="npc"
                 required
-                list="brand-options"
-                maxLength={80}
-                placeholder="e.g. Dharwin"
-                value={draft.brand}
-                onChange={set('brand')}
-                aria-invalid={brandInvalid}
-                aria-describedby="npb-hint"
-              />
-              <datalist id="brand-options">
-                {brands.map((brand) => <option key={brand} value={brand} />)}
-              </datalist>
-              <p id="npb-hint" className={`field-hint${brandInvalid ? ' invalid' : ''}`}>
-                {brandInvalid
-                  ? (brandError?.message ?? 'Invalid brand.')
-                  : `${brandLen}/80 · company or product line`}
+                value={draft.clientId}
+                onChange={set('clientId')}
+                aria-invalid={companyInvalid}
+                aria-describedby="npc-hint"
+                disabled={Boolean(presetClientId) && companies.some((c) => c.id === presetClientId)}
+              >
+                <option value="">Select a company</option>
+                {companies.map((company) => (
+                  <option key={company.id} value={company.id}>{company.name}</option>
+                ))}
+              </select>
+              <p id="npc-hint" className={`field-hint${companyInvalid ? ' invalid' : ''}`}>
+                {companyInvalid
+                  ? (companyError?.message ?? 'Invalid company.')
+                  : 'Projects always belong to one company.'}
               </p>
-              <span className="help">Pick an existing brand or type a new one. Projects nest under brands.</span>
             </div>
 
             <div className={`form-row${nameInvalid ? ' bad' : ''}`}>
@@ -146,7 +166,7 @@ export default function NewProjectPage() {
                   ? 'Required.'
                   : `${nameLen}/120 characters`}
               </p>
-              <span className="help">The product or app under this brand.</span>
+              <span className="help">The product or app under this company.</span>
             </div>
 
             <div className="form-row">
@@ -212,9 +232,9 @@ export default function NewProjectPage() {
 
         <aside className="formside" aria-label="Project setup notes">
           <div className="panel">
-            <header><h3>Brand vs project</h3></header>
+            <header><h3>Company vs project</h3></header>
             <p className="note-line">
-              A brand groups related projects. Dharwin might contain Web App and Mobile App as separate
+              A company groups related projects. One client might contain Web App and Mobile App as separate
               projects, each with its own module catalog and ticket defaults.
             </p>
           </div>

@@ -6,7 +6,6 @@ export const listProjects = (params = {}) => {
   ).toString();
   return apiFetch(`/projects${search ? `?${search}` : ''}`);
 };
-export const listBrands = () => apiFetch('/projects/brands');
 export const getProject = (id) => apiFetch(`/projects/${id}`);
 export const createProject = (body) => apiFetch('/projects', { method: 'POST', body });
 export const patchProject = (id, body) => apiFetch(`/projects/${id}`, { method: 'PATCH', body });

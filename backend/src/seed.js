@@ -1,5 +1,6 @@
 import { WEB_MODULE_TAXONOMY } from '@pms/shared';
 import User from './modules/users/user.model.js';
+import Client from './modules/clients/client.model.js';
 import Project, { RESERVED_PROJECT_KEYS } from './modules/projects/project.model.js';
 import Notification from './modules/notifications/notification.model.js';
 import logger from './platform/logger.js';
@@ -50,13 +51,13 @@ export async function seedAdmin(config) {
  * through PUT /v1/projects/:id/modules once the screens are known.
  */
 const SEED_PROJECTS = [
-  { key: 'WEB', brand: 'Dharwin', name: 'Web App', status: 'active', modules: WEB_MODULE_TAXONOMY },
-  { key: 'MOB', brand: 'Dharwin', name: 'Mobile App', status: 'active', modules: [] },
+  { key: 'WEB', companyName: 'Dharwin', name: 'Web App', status: 'active', modules: WEB_MODULE_TAXONOMY },
+  { key: 'MOB', companyName: 'Dharwin', name: 'Mobile App', status: 'active', modules: [] },
   // Reserved AND archived: it exists only so a later import of legacy DEV-*
   // tickets has a project to belong to. Archived keeps it out of every form.
   {
     key: 'DEV',
-    brand: 'Legacy',
+    companyName: 'Legacy',
     name: 'Legacy Dev Tickets',
     status: 'archived',
     modules: [],
@@ -64,7 +65,7 @@ const SEED_PROJECTS = [
   },
 ];
 
-const DEFAULT_BRAND_BY_KEY = Object.freeze({
+const DEFAULT_COMPANY_BY_KEY = Object.freeze({
   WEB: 'Dharwin',
   MOB: 'Dharwin',
   DEV: 'Legacy',
@@ -77,24 +78,85 @@ for (const key of RESERVED_PROJECT_KEYS) {
   }
 }
 
+async function findOrCreateClient(name, actorId, status = 'active') {
+  const trimmed = String(name || '').trim();
+  if (!trimmed) return null;
+
+  let client = await Client.findOne({ name: trimmed, status: 'active' });
+  if (!client) {
+    client = await Client.create({ name: trimmed, status, createdBy: actorId });
+  }
+  return client;
+}
+
+/**
+ * One Client per distinct legacy Project.brand, then wire Project.client.
+ * Safe to run on every boot — only touches projects missing a client reference.
+ */
+export async function migrateBrandsToClients(actor) {
+  const created = [];
+  const linked = [];
+
+  const brands = await Project.distinct('brand');
+  for (const brandName of brands.filter(Boolean)) {
+    const existing = await Client.findOne({ name: brandName, status: 'active' });
+    const client = existing ?? await Client.create({
+      name: brandName, status: 'active', createdBy: actor._id,
+    });
+    if (!existing) created.push(brandName);
+
+    const result = await Project.updateMany(
+      { brand: brandName, $or: [{ client: null }, { client: { $exists: false } }] },
+      { $set: { client: client._id } },
+    );
+    if (result.modifiedCount) linked.push(`${brandName} (${result.modifiedCount})`);
+  }
+
+  const uncategorized = await findOrCreateClient('Uncategorized', actor._id);
+  if (uncategorized) {
+    const result = await Project.updateMany(
+      { $or: [{ client: null }, { client: { $exists: false } }] },
+      { $set: { client: uncategorized._id } },
+    );
+    if (result.modifiedCount) linked.push(`Uncategorized (${result.modifiedCount})`);
+  }
+
+  if (created.length) logger.info(`Seeded companies from brands: ${created.join(', ')}`);
+  if (linked.length) logger.info(`Linked projects to companies: ${linked.join(', ')}`);
+  return { created, linked };
+}
+
 export async function seedProjects(actor) {
   const created = [];
   const backfilled = [];
-  const brandsBackfilled = [];
+  const clientsCreated = [];
+  const migration = await migrateBrandsToClients(actor);
 
   for (const definition of SEED_PROJECTS) {
+    const client = await findOrCreateClient(definition.companyName, actor._id);
+    if (!client) continue;
+
     if (await Project.exists({ key: definition.key })) continue;
-    await Project.create({ ...definition, createdBy: actor._id });
+
+    const { companyName: _companyName, ...projectFields } = definition;
+    await Project.create({
+      ...projectFields,
+      client: client._id,
+      createdBy: actor._id,
+    });
     created.push(definition.key);
+    if (!clientsCreated.includes(definition.companyName)) clientsCreated.push(definition.companyName);
   }
 
-  // Existing installs created before brand grouping: assign sensible defaults.
+  // Existing installs created before company grouping: assign sensible defaults.
   for (const project of await Project.find({
-    $or: [{ brand: { $exists: false } }, { brand: null }, { brand: '' }],
+    $or: [{ client: null }, { client: { $exists: false } }],
   })) {
-    project.brand = DEFAULT_BRAND_BY_KEY[project.key] ?? 'Uncategorized';
+    const companyName = DEFAULT_COMPANY_BY_KEY[project.key] ?? project.brand ?? 'Uncategorized';
+    const client = await findOrCreateClient(companyName, actor._id);
+    if (!client) continue;
+    project.client = client._id;
     await project.save();
-    brandsBackfilled.push(project.key);
   }
 
   // Existing installs may have WEB with an empty modules array (seed skipped
@@ -108,6 +170,6 @@ export async function seedProjects(actor) {
 
   if (created.length) logger.info(`Seeded projects: ${created.join(', ')}`);
   if (backfilled.length) logger.info(`Backfilled project modules: ${backfilled.join(', ')}`);
-  if (brandsBackfilled.length) logger.info(`Backfilled project brands: ${brandsBackfilled.join(', ')}`);
-  return { created, backfilled, brandsBackfilled };
+  if (clientsCreated.length) logger.info(`Seeded companies: ${clientsCreated.join(', ')}`);
+  return { created, backfilled, clientsCreated, linked: migration.linked };
 }

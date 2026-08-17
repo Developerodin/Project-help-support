@@ -5,10 +5,6 @@ export const list = catchAsync(async (req, res) => {
   res.json(await projectService.listProjects(req.query));
 });
 
-export const listBrands = catchAsync(async (_req, res) => {
-  res.json(await projectService.listBrands());
-});
-
 export const create = catchAsync(async (req, res) => {
   res.status(201).json(await projectService.createProject(req.user, req.body));
 });
