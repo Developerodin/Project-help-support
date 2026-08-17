@@ -9,6 +9,7 @@ import * as controller from './auth.controller.js';
 import {
   loginSchema, previewInviteSchema, acceptInviteSchema, forgotPasswordSchema, resetPasswordSchema,
 } from './auth.validation.js';
+import { IMPERSONATION_INITIATOR_ROLES } from '@pms/shared';
 import { userIdSchema } from '../users/user.validation.js';
 
 /**
@@ -31,7 +32,7 @@ export default function authRoutes(config, deliverReset) {
     controller.forgotPassword(deliverReset));
   router.post('/reset-password', passwordResetLimiter, validate(resetPasswordSchema), controller.resetPassword);
 
-  router.post('/impersonate/:id', auth(config), requireRole('admin'), validate(userIdSchema),
+  router.post('/impersonate/:id', auth(config), requireRole(...IMPERSONATION_INITIATOR_ROLES), validate(userIdSchema),
     controller.impersonate(config));
   router.post('/stop-impersonation', auth(config), origin, controller.stopImpersonation(config));
 

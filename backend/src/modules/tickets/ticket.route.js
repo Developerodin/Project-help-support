@@ -1,5 +1,5 @@
 import express from 'express';
-import { auth, requireRole } from '../../platform/auth.js';
+import { auth, requirePermission } from '../../platform/auth.js';
 import { validate } from '../../platform/validate.js';
 import { uploadMiddleware } from '../../platform/upload.js';
 import * as controller from './ticket.controller.js';
@@ -16,16 +16,16 @@ export default function ticketRoutes(config) {
   router.use(auth(config));
 
   router.get('/', validate(listTicketsSchema), controller.list);
-  router.post('/', validate(createTicketSchema), controller.create(config));
+  router.post('/', requirePermission('tickets.create'), validate(createTicketSchema), controller.create(config));
 
   // Before /:id, or "bulk" is parsed as a ticket reference.
   router.post('/bulk', validate(bulkSchema), controller.bulk);
 
   router.get('/:id', validate(ticketIdSchema), controller.get);
-  router.patch('/:id', validate(patchTicketSchema), controller.patch(config));
-  router.delete('/:id', requireRole('admin'), validate(ticketIdSchema), controller.remove);
+  router.patch('/:id', requirePermission('tickets.update'), validate(patchTicketSchema), controller.patch(config));
+  router.delete('/:id', requirePermission('tickets.delete'), validate(ticketIdSchema), controller.remove);
 
-  router.post('/:id/assign', validate(assignTicketSchema), controller.assign(config));
+  router.post('/:id/assign', requirePermission('tickets.assign'), validate(assignTicketSchema), controller.assign(config));
   router.post('/:id/transition', validate(transitionSchema), controller.transition(config));
   router.post('/:id/watch', validate(ticketIdSchema), controller.watch);
   router.delete('/:id/watch', validate(ticketIdSchema), controller.unwatch);
