@@ -5,7 +5,7 @@ import {
 } from 'react';
 import { listProjects } from '../api/projects.js';
 import { useAuth } from './auth-context.jsx';
-import { EXTERNAL_ROLES } from '@pms/shared';
+import { isExternalUser } from '@pms/shared';
 import {
   resolveInitialProjectId,
   writeStoredProjectId,
@@ -34,7 +34,7 @@ export function ProjectProvider({ children }) {
         if (cancelled) return;
         const active = page.results.filter((p) => p.status === 'active');
         setProjects(active);
-        const isExternal = EXTERNAL_ROLES.includes(user.role);
+        const isExternal = isExternalUser(user);
         if (isExternal && active.length === 1) {
           setActiveProjectIdState(active[0].id);
           writeStoredProjectId(active[0].id);
@@ -65,7 +65,7 @@ export function ProjectProvider({ children }) {
     [projects, activeProjectId],
   );
 
-  const isExternal = Boolean(user && EXTERNAL_ROLES.includes(user.role));
+  const isExternal = Boolean(user && isExternalUser(user));
   const hasWorkspace = !isExternal || projects.length > 0;
 
   const value = useMemo(() => ({

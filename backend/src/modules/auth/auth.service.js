@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import bcrypt from 'bcryptjs';
-import { ROLE_IDS } from '@pms/shared';
+import { ROLE_IDS, pickPrimaryRole, isSuperAdmin, hasAnyRole } from '@pms/shared';
 import User from '../users/user.model.js';
 import { ApiError } from '../../platform/errors.js';
 import logger from '../../platform/logger.js';
@@ -72,7 +72,10 @@ export async function logout(presentedRaw) {
   if (presentedRaw) await revokeRefreshToken(presentedRaw);
 }
 
-export async function createInvite(_actor, { email, role = ROLE_IDS.DEVELOPER }) {
+export async function createInvite(_actor, { email, role, roles }) {
+  const resolvedRoles = roles?.length
+    ? [...new Set(roles)]
+    : [role || ROLE_IDS.DEVELOPER];
   const existing = await User.findByNormalisedEmail(email);
   if (existing) {
     if (existing.status === 'inactive') {
@@ -95,7 +98,8 @@ export async function createInvite(_actor, { email, role = ROLE_IDS.DEVELOPER })
   const inviteToken = newRawToken();
   const user = await User.create({
     email,
-    role,
+    roles: resolvedRoles,
+    role: pickPrimaryRole(resolvedRoles),
     status: 'invited',
     // A random placeholder the invitee never learns; acceptInvite replaces it.
     password: newRawToken(),
@@ -122,10 +126,10 @@ export async function impersonate(admin, targetId, adminRefreshRaw, config, meta
   if (target.status !== 'active') {
     throw new ApiError(400, 'USER_NOT_ACTIVE', 'Only active users can be impersonated');
   }
-  if (target.role === ROLE_IDS.SUPER_ADMIN) {
+  if (isSuperAdmin(target)) {
     throw new ApiError(403, 'SUPER_ADMIN_PROTECTED', 'Super Admin accounts cannot be impersonated');
   }
-  if (admin.role === ROLE_IDS.ADMIN && target.role === ROLE_IDS.ADMIN) {
+  if (hasAnyRole(admin, ROLE_IDS.ADMIN) && hasAnyRole(target, ROLE_IDS.ADMIN)) {
     throw new ApiError(403, 'CANNOT_IMPERSONATE_PEER', 'Admins cannot impersonate other Admins');
   }
 

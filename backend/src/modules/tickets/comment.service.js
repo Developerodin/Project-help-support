@@ -1,3 +1,4 @@
+import { ADMIN_ROLES, hasAnyRole } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { assertActiveUsers } from '../teams/team.service.js';
 import Ticket from './ticket.model.js';
@@ -94,7 +95,7 @@ export async function deleteComment(actor, idOrKey, commentId) {
   const comment = findComment(ticket, commentId);
 
   const isAuthor = sameId(comment.commentedBy, actor._id);
-  if (!isAuthor && actor.role !== 'admin') {
+  if (!isAuthor && !hasAnyRole(actor, ...ADMIN_ROLES)) {
     throw new ApiError(403, 'FORBIDDEN', 'Only the author or an admin may delete a comment');
   }
 

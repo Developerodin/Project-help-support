@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ROLE_IDS } from '@pms/shared';
+import { getUserRoles, ROLE_IDS } from '@pms/shared';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import Icon from '@/shared/components/icons.jsx';
 import BrandMark from '@/shared/components/brand-mark.jsx';
@@ -48,8 +48,9 @@ const NAV_GROUPS = [
   },
 ];
 
-function visible(item, role) {
-  return item.roles === '*' || item.roles.includes(role);
+function visible(item, user) {
+  if (item.roles === '*') return true;
+  return getUserRoles(user).some((role) => item.roles.includes(role));
 }
 
 function isCurrent(pathname, href) {
@@ -75,7 +76,7 @@ export default function AppSidebar() {
 
       <SidebarContent>
         {NAV_GROUPS.map((group) => {
-          const items = group.items.filter((item) => visible(item, user.role));
+          const items = group.items.filter((item) => visible(item, user));
           if (items.length === 0) return null;
           return (
             <SidebarGroup key={group.cap}>

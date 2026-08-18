@@ -1,51 +1,12 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { replaceProjectTeamMembers } from '@/shared/api/projects.js';
-import { showToast } from '@/shared/lib/toast.js';
-
-const ROLE_OPTIONS = [
-  { value: 'team_lead', label: 'Team Lead' },
-  { value: 'developer', label: 'Developer' },
-  { value: 'qa', label: 'QA' },
-  { value: 'member', label: 'Member' },
-];
+import { capRole } from '@/shared/lib/profile-utils.js';
 
 export default function ProjectTeamPanel({ project, teams, onUpdated }) {
-  const [roleDraft, setRoleDraft] = useState({});
-  const [savingRoles, setSavingRoles] = useState(false);
-
   const members = project.teamMembers || [];
-  const dirtyRoles = useMemo(() => {
-    const draft = {};
-    for (const member of members) {
-      draft[member.user.id] = roleDraft[member.user.id] ?? member.role;
-    }
-    return draft;
-  }, [members, roleDraft]);
-
-  const rolesChanged = members.some((member) => dirtyRoles[member.user.id] !== member.role);
 
   async function changeTeam(teamId) {
     await onUpdated(project.id, { team: teamId || null });
-  }
-
-  async function saveRoles() {
-    if (!members.length) return;
-    setSavingRoles(true);
-    try {
-      await replaceProjectTeamMembers(project.id, members.map((member) => ({
-        userId: member.user.id,
-        role: dirtyRoles[member.user.id],
-      })));
-      setRoleDraft({});
-      showToast('Project team roles saved');
-      await onUpdated(project.id, {});
-    } catch (err) {
-      showToast(err?.message || 'Could not save team roles');
-    } finally {
-      setSavingRoles(false);
-    }
   }
 
   return (
@@ -81,34 +42,14 @@ export default function ProjectTeamPanel({ project, teams, onUpdated }) {
                     <b>{member.user.name}</b>
                     <span>{member.user.email}</span>
                   </div>
-                  <select
-                    aria-label={`Role for ${member.user.name}`}
-                    value={dirtyRoles[member.user.id]}
-                    onChange={(e) => setRoleDraft((prev) => ({
-                      ...prev,
-                      [member.user.id]: e.target.value,
-                    }))}
-                  >
-                    {ROLE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
+                  <span className="chip member-row__role">
+                    {capRole(member.user.globalRole)}
+                  </span>
                   <span className="chip">Active</span>
                 </li>
               ))}
             </ul>
           )}
-
-          <div className="project-team-panel__foot">
-            <button
-              type="button"
-              className="btn btn-sm btn-primary"
-              disabled={!rolesChanged || savingRoles || !members.length}
-              onClick={saveRoles}
-            >
-              {savingRoles ? 'Saving…' : 'Save team roles'}
-            </button>
-          </div>
         </>
       ) : (
         <p className="project-team-panel__empty">Assign a team to define who can work on this project.</p>

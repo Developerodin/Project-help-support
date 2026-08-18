@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import jwt from 'jsonwebtoken';
+import { getUserRoles, pickPrimaryRole } from '@pms/shared';
 import User, { MAX_REFRESH_TOKENS } from '../users/user.model.js';
 import { ApiError } from '../../platform/errors.js';
 
@@ -9,7 +10,12 @@ export function hashToken(raw) {
 }
 
 export function generateAccessToken(user, config, opts = {}) {
-  const payload = { sub: user._id.toString(), role: user.role };
+  const roles = getUserRoles(user);
+  const payload = {
+    sub: user._id.toString(),
+    role: pickPrimaryRole(roles),
+    roles,
+  };
   if (opts.impersonatedBy) payload.impersonatedBy = opts.impersonatedBy.toString();
   return jwt.sign(payload, config.jwt.secret, { expiresIn: `${config.jwt.accessExpirationMinutes}m` });
 }

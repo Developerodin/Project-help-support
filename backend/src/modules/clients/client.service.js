@@ -1,3 +1,4 @@
+import { isExternalUser } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
 import { safeKey, sniffImageType } from '../../platform/upload.js';
@@ -6,7 +7,6 @@ import Project from '../projects/project.model.js';
 import {
   getCompanyExternalAccess,
   syncCompanyExternalAccess,
-  isExternalRole,
   permittedClientIdsForExternalUser,
 } from '../access/external-auth.service.js';
 import Client from './client.model.js';
@@ -68,7 +68,7 @@ export async function listClients(query = {}, config, actor = null) {
   const filter = {};
   if (query.status) filter.status = query.status;
 
-  if (actor && isExternalRole(actor.role)) {
+  if (actor && isExternalUser(actor)) {
     const clientIds = await permittedClientIdsForExternalUser(actor._id);
     if (!clientIds.length) {
       return {
@@ -100,7 +100,7 @@ export async function getClient(id, config, actor = null) {
   const client = await Client.findById(id);
   if (!client) throw new ApiError(404, 'CLIENT_NOT_FOUND', 'Company not found');
 
-  if (actor && isExternalRole(actor.role)) {
+  if (actor && isExternalUser(actor)) {
     const permitted = await permittedClientIdsForExternalUser(actor._id);
     if (!permitted.includes(String(id))) {
       throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this company');

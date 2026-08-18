@@ -1,6 +1,6 @@
 import express from 'express';
 import { auth, requirePermission } from '../../platform/auth.js';
-import { EXTERNAL_ROLES, hasPermission } from '@pms/shared';
+import { isExternalUser, can } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { validate } from '../../platform/validate.js';
 import { uploadMiddleware } from '../../platform/upload.js';
@@ -15,8 +15,8 @@ import {
 
 function requireTicketCreate(req, _res, next) {
   if (!req.user) return next(new ApiError(401, 'UNAUTHENTICATED', 'Authentication required'));
-  if (EXTERNAL_ROLES.includes(req.user.role)) return next();
-  if (!hasPermission(req.user.role, 'tickets.create')) {
+  if (isExternalUser(req.user)) return next();
+  if (!can(req.user, 'tickets.create')) {
     return next(new ApiError(403, 'FORBIDDEN', 'Requires permission: tickets.create'));
   }
   return next();

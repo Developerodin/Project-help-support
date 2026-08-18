@@ -5,7 +5,8 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import { initials } from '@/shared/components/icons.jsx';
-import { canAccessAdminPanel, capRole } from '@/shared/lib/profile-utils.js';
+import RoleBadges from '@/shared/components/role-badges.jsx';
+import { canAccessAdminPanel } from '@/shared/lib/profile-utils.js';
 
 const PERSONAL_INFORMATION_HREF = '/profile#profile-personal-information';
 const ADMIN_PANEL_HOME = '/admin';
@@ -23,7 +24,7 @@ export default function ProfileMenu() {
   const router = useRouter();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const isAdminTier = canAccessAdminPanel(user?.role);
+  const isAdminTier = canAccessAdminPanel(user);
   const adminPanelOn = isAdminTier && isAdminPanelPath(pathname);
 
   useEffect(() => {
@@ -77,7 +78,7 @@ export default function ProfileMenu() {
           <div>
             <strong>{user.name || 'Unnamed'}</strong>
             <p className="meta">{user.email}</p>
-            <span className="chip profile-menu__chip">{capRole(user.role)}</span>
+            <RoleBadges user={user} className="profile-menu__chip" />
           </div>
         </div>
         <div className="menusep" />

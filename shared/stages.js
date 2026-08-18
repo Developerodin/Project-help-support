@@ -8,6 +8,14 @@
  * Keys are stable and snake_case. Labels live beside them, so renaming a stage
  * is a one-line edit rather than a data migration.
  */
+function getUserRoles(user) {
+  if (!user) return [];
+  const roles = user.roles;
+  if (Array.isArray(roles) && roles.length > 0) return [...new Set(roles)];
+  if (user.role) return [user.role];
+  return [];
+}
+
 export const STAGES = Object.freeze([
   { key: 'pending', index: 0, label: 'Pending', roles: [], relationships: [] },
   { key: 'under_review', index: 1, label: 'Under Review', roles: ['lead', 'admin'], relationships: [] },
@@ -84,7 +92,8 @@ function hasRelationship(relationship, actor, ticket) {
 }
 
 function passes({ roles, relationships }, actor, ticket) {
-  if (roles.includes(actor?.role)) return true;
+  const actorRoles = getUserRoles(actor);
+  if (roles.some((role) => actorRoles.includes(role))) return true;
   return relationships.some((rel) => hasRelationship(rel, actor, ticket));
 }
 

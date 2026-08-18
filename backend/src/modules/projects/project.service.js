@@ -1,4 +1,4 @@
-import { ROLE_IDS, resolveProjectModules } from '@pms/shared';
+import { ROLE_IDS, resolveProjectModules, hasRole, isExternalUser } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
 import AccessAssignment from '../access/accessAssignment.model.js';
@@ -11,7 +11,6 @@ import {
   assertExternalProjectAccess,
   assignCompanyWideClientTestersToProject,
   listEffectiveClientTesters,
-  isExternalRole,
   permittedProjectIdsForExternalUser,
 } from '../access/external-auth.service.js';
 import {
@@ -195,7 +194,7 @@ export async function listProjects(query = {}, actor = null) {
   const filter = { status: query.status || 'active' };
   if (query.clientId) filter.client = query.clientId;
 
-  if (actor && isExternalRole(actor.role)) {
+  if (actor && isExternalUser(actor)) {
     const permittedIds = await permittedProjectIdsForExternalUser(actor._id);
     if (!permittedIds.length) {
       return {
@@ -307,7 +306,7 @@ export async function setProjectClientTesters(actor, projectId, userIds) {
       if (user.status !== 'active') {
         throw new ApiError(400, 'USER_NOT_ACTIVE', 'Only active users can be assigned as client testers');
       }
-      if (user.role !== ROLE_IDS.CLIENT_TESTER) {
+      if (!hasRole(user, ROLE_IDS.CLIENT_TESTER)) {
         throw new ApiError(
           400,
           'INVALID_CLIENT_TESTER',

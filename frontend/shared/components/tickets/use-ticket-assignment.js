@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { getProject } from '@/shared/api/projects.js';
 import { listTeams } from '@/shared/api/teams.js';
 import { normalizeApiError } from '@/shared/lib/api-error.js';
+import { getUserRoles } from '@pms/shared';
+import { capRole } from '@/shared/lib/profile-utils.js';
 import { showToast } from '@/shared/lib/toast.js';
 
 function entityRef(entity) {
@@ -64,11 +66,16 @@ export function useTicketAssignment({ ticket, canAssign, onAssign, eagerLoad = f
   }, [canAssign, teamPickerOpen, projectId, eagerLoad]);
 
   const userOptions = useMemo(
-    () => teamMembers.map((member) => ({
-      id: String(member.user.id),
-      name: member.user.name,
-      subtitle: member.roleLabel || member.role,
-    })),
+    () => teamMembers.map((member) => {
+      const globalRoles = member.user?.globalRoles?.length
+        ? member.user.globalRoles
+        : getUserRoles(member.user);
+      return {
+        id: String(member.user.id),
+        name: member.user.name,
+        subtitle: globalRoles.map(capRole).join(', '),
+      };
+    }),
     [teamMembers],
   );
 

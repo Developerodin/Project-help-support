@@ -2,6 +2,7 @@ import { DEFAULT_NOTIFICATION_PREFS, ROLE_IDS } from '@pms/shared';
 import User from '../users/user.model.js';
 import Team from '../teams/team.model.js';
 import Project from '../projects/project.model.js';
+import { userHasRoleQuery } from '../users/user-role-query.js';
 
 /** Stages whose entry broadcasts to every qa user. */
 const QA_BROADCAST_STAGES = new Set(['ready_qa', 'deployed_staging', 'qa_approved']);
@@ -59,12 +60,20 @@ export async function getNotificationRecipients(event, ticket, actor, context = 
 
     const { to } = context;
     if (to && QA_BROADCAST_STAGES.has(to)) {
-      const testers = await User.find({ role: ROLE_IDS.TESTER, status: 'active' }).select('_id');
+      const testers = await User.find({
+        ...userHasRoleQuery(ROLE_IDS.TESTER),
+        status: 'active',
+      }).select('_id');
       for (const u of testers) ids.add(idStr(u._id));
     }
     if (to && RELEASE_BROADCAST_STAGES.has(to)) {
       const leads = await User.find({
-        role: { $in: [ROLE_IDS.PROJECT_ADMIN, ROLE_IDS.ADMIN, ROLE_IDS.SUPER_ADMIN] }, status: 'active',
+        $or: [
+          userHasRoleQuery(ROLE_IDS.PROJECT_ADMIN),
+          userHasRoleQuery(ROLE_IDS.ADMIN),
+          userHasRoleQuery(ROLE_IDS.SUPER_ADMIN),
+        ],
+        status: 'active',
       }).select('_id');
       for (const u of leads) ids.add(idStr(u._id));
     }

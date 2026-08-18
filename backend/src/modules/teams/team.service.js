@@ -5,6 +5,7 @@ import Project from '../projects/project.model.js';
 import Ticket from '../tickets/ticket.model.js';
 import User from '../users/user.model.js';
 import Team from './team.model.js';
+import { NOT_SUPER_ADMIN_FILTER } from '../users/user-role-query.js';
 
 const idOf = (v) => {
   if (!v) return null;
@@ -42,7 +43,7 @@ export async function assertActiveUsers(ids, { allowSuperAdmin = false } = {}) {
   const wanted = ids.filter(Boolean).map(String);
   if (wanted.length === 0) return;
 
-  const roleFilter = allowSuperAdmin ? {} : { role: { $ne: ROLE_IDS.SUPER_ADMIN } };
+  const roleFilter = allowSuperAdmin ? {} : NOT_SUPER_ADMIN_FILTER;
   const found = await User.find({ _id: { $in: wanted }, status: 'active', ...roleFilter }).select('_id');
   if (found.length !== new Set(wanted).size) {
     throw new ApiError(

@@ -7,6 +7,7 @@ import { updateMe } from '@/shared/api/users.js';
 import { listTeams } from '@/shared/api/teams.js';
 import { listProjects } from '@/shared/api/projects.js';
 import AccessDetailsDrawer from '@/shared/components/profile/access-details-drawer.jsx';
+import RoleBadges from '@/shared/components/role-badges.jsx';
 import ThemeToggle from '@/shared/components/theme-toggle.jsx';
 import FormError from '@/shared/components/form-error.jsx';
 import { initials } from '@/shared/components/icons.jsx';
@@ -15,7 +16,6 @@ import { formatRelativeTime } from '@/shared/lib/notification-utils.js';
 import {
   canAccessProjects,
   canAccessTeams,
-  capRole,
   capStatus,
   collectProjectsFromTeams,
   filterUserTeams,
@@ -82,7 +82,7 @@ export default function ProfilePage() {
         await refreshUser();
         const [teamsPage, projectsPage] = await Promise.all([
           listTeams({ limit: 100 }),
-          canAccessProjects(user.role) ? listProjects({ limit: 1 }) : Promise.resolve(null),
+          canAccessProjects(user) ? listProjects({ limit: 1 }) : Promise.resolve(null),
         ]);
         if (!cancelled) {
           setTeams(teamsPage?.results || []);
@@ -99,13 +99,13 @@ export default function ProfilePage() {
     })();
 
     return () => { cancelled = true; };
-  }, [user?.id, user?.role, refreshUser]);
+  }, [user?.id, user?.roles, user?.role, refreshUser]);
 
   const trimmed = name.trim();
   const nameChanged = trimmed !== (user?.name || '').trim();
   const userTeams = user ? filterUserTeams(teams, user.id) : [];
   const userProjects = collectProjectsFromTeams(userTeams);
-  const resolvedProjectCount = canAccessProjects(user?.role)
+  const resolvedProjectCount = canAccessProjects(user)
     ? projectCount
     : userProjects.length;
 
@@ -148,8 +148,8 @@ export default function ProfilePage() {
 
   if (!user) return null;
 
-  const showTeamsLink = canAccessTeams(user.role);
-  const showProjectsLink = canAccessProjects(user.role);
+  const showTeamsLink = canAccessTeams(user);
+  const showProjectsLink = canAccessProjects(user);
 
   return (
     <div className="profile-page">
@@ -171,7 +171,7 @@ export default function ProfilePage() {
             <h2>{user.name || 'Unnamed'}</h2>
             <p className="meta">{user.email}</p>
             <div className="profile-page__badges">
-              <span className="chip">{capRole(user.role)}</span>
+              <RoleBadges user={user} />
               <StatusChip status={user.status} />
             </div>
             {user.lastLoginAt ? (
@@ -251,7 +251,7 @@ export default function ProfilePage() {
             description="Your role and team associations in this workspace."
           >
             <dl className="profile-dl profile-panel__body">
-              <DetailRow label="Role">{capRole(user.role)}</DetailRow>
+              <DetailRow label="Roles"><RoleBadges user={user} /></DetailRow>
               <DetailRow label="Teams">
                 {workLoading ? (
                   <span className="profile-muted">Loading…</span>
@@ -328,7 +328,7 @@ export default function ProfilePage() {
             description="Read-only summary of what your account can reach."
           >
             <dl className="profile-dl profile-panel__body">
-              <DetailRow label="System role">{capRole(user.role)}</DetailRow>
+              <DetailRow label="System roles"><RoleBadges user={user} /></DetailRow>
               <DetailRow label="Teams">{workLoading ? '…' : userTeams.length}</DetailRow>
               <DetailRow label="Projects">
                 {workLoading ? '…' : (resolvedProjectCount ?? userProjects.length)}

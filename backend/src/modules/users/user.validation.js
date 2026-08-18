@@ -18,11 +18,17 @@ export const listUsersSchema = {
   }),
 };
 
+const rolesArray = Joi.array()
+  .items(Joi.string())
+  .min(1)
+  .unique();
+
 export const createUserSchema = {
   body: Joi.object({
     email: Joi.string().trim().lowercase().email().required(),
-    role: Joi.string().valid(...PEOPLE_ASSIGNABLE_ROLES).default(ROLE_IDS.DEVELOPER),
-  }),
+    role: Joi.string().valid(...PEOPLE_ASSIGNABLE_ROLES),
+    roles: rolesArray.items(Joi.string().valid(...PEOPLE_ASSIGNABLE_ROLES)),
+  }).default({ roles: [ROLE_IDS.DEVELOPER] }),
 };
 
 export const userIdSchema = { params: Joi.object({ id: objectId.required() }) };
@@ -32,6 +38,7 @@ export const updateUserSchema = {
   body: Joi.object({
     name: Joi.string().trim().min(1).max(120),
     role: Joi.string().valid(...ROLES),
+    roles: rolesArray.items(Joi.string().valid(...ROLES)),
     status: Joi.string().valid('invited', 'active', 'inactive'),
   }).min(1),
 };

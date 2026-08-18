@@ -1,4 +1,4 @@
-import { PROJECT_TEAM_ROLES } from '@pms/shared';
+import { PROJECT_TEAM_ROLES, getUserRoles, pickPrimaryRole } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import Team from '../teams/team.model.js';
 import { assertActiveUsers, assertTeamUsable } from '../teams/team.service.js';
@@ -20,7 +20,7 @@ export function projectTeamRoleLabel(role) {
 
 export async function listProjectTeamMembers(projectId) {
   const rows = await ProjectTeamMember.find({ project: projectId })
-    .populate('user', 'name email status role')
+    .populate('user', 'name email status role roles')
     .sort({ role: 1, 'user.name': 1 })
     .lean();
 
@@ -32,7 +32,8 @@ export async function listProjectTeamMembers(projectId) {
         id: String(row.user._id),
         name: row.user.name,
         email: row.user.email,
-        globalRole: row.user.role,
+        globalRole: pickPrimaryRole(getUserRoles(row.user)),
+        globalRoles: getUserRoles(row.user),
       },
       role: row.role,
       roleLabel: projectTeamRoleLabel(row.role),

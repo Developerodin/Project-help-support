@@ -4,8 +4,10 @@ import {
   validateTicketEstimateDates,
   ROLE_IDS,
   ADMIN_ROLES,
-  EXTERNAL_ROLES,
+  ESTIMATE_DATE_EDITOR_ROLES,
   can,
+  hasAnyRole,
+  isExternalUser,
 } from '@pms/shared';
 import { canExternalViewTicket, buildExternalTicketFilter, sanitizeExternalTicket, assertExternalCanCreateTicket } from '../access/external-auth.service.js';
 import { ApiError } from '../../platform/errors.js';
@@ -148,7 +150,7 @@ export async function getTicket(actor, idOrKey) {
   const ticket = await resolveTicketDoc(idOrKey, { populate: DETAIL_POPULATE });
   await assertCanViewTicket(actor, ticket);
   const json = ticket.toJSON();
-  return EXTERNAL_ROLES.includes(actor.role) ? sanitizeExternalTicket(json) : json;
+  return isExternalUser(actor) ? sanitizeExternalTicket(json) : json;
 }
 
 function scopeFilter(scope, actorId) {
@@ -191,11 +193,11 @@ function ticketVisibilityOr(actorId, teamIds = [], projectIds = []) {
 /** Roles with unrestricted ticket list/detail visibility via the permission matrix. */
 function hasGlobalTicketView(actor) {
   return can(actor, 'tickets.view')
-    && (ADMIN_ROLES.includes(actor.role) || actor.role === ROLE_IDS.PROJECT_ADMIN);
+    && hasAnyRole(actor, ...ADMIN_ROLES, ROLE_IDS.PROJECT_ADMIN);
 }
 
 async function applyTicketVisibility(filter, actor) {
-  if (EXTERNAL_ROLES.includes(actor.role)) {
+  if (isExternalUser(actor)) {
     const externalFilter = await buildExternalTicketFilter(actor);
     if (Object.keys(filter).length === 0) return externalFilter;
     return { $and: [filter, externalFilter] };
@@ -266,7 +268,7 @@ export async function listTickets(actor, query = {}) {
     ...page,
     results: page.results.map((t) => {
       const json = t.toJSON();
-      return EXTERNAL_ROLES.includes(actor.role) ? sanitizeExternalTicket(json) : json;
+      return isExternalUser(actor) ? sanitizeExternalTicket(json) : json;
     }),
   };
 }
@@ -309,7 +311,7 @@ async function isActorOnTicketTeam(actorId, ticket) {
 }
 
 export async function assertCanViewTicket(actor, ticket) {
-  if (EXTERNAL_ROLES.includes(actor.role)) {
+  if (isExternalUser(actor)) {
     if (!(await canExternalViewTicket(actor, ticket))) {
       throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this ticket');
     }
@@ -333,13 +335,25 @@ export async function assertCanViewTicket(actor, ticket) {
 }
 
 export function assertCanEditTicket(actor, ticket) {
-  const privileged = ADMIN_ROLES.includes(actor.role) || actor.role === ROLE_IDS.PROJECT_ADMIN;
+  const privileged = hasAnyRole(actor, ...ADMIN_ROLES, ROLE_IDS.PROJECT_ADMIN);
   const related = sameId(ticket.createdBy, actor._id) || sameId(ticket.assignedTo, actor._id);
 
   if (!privileged && !related) {
     throw new ApiError(
       403, 'FORBIDDEN',
       'Only the reporter, the assignee, a project admin or an admin may edit this ticket',
+    );
+  }
+}
+
+function assertCanEditEstimateDates(actor, patch) {
+  const changing = 'estimatedResolutionAt' in patch || 'expectedReleaseDate' in patch;
+  if (!changing) return;
+  if (!hasAnyRole(actor, ...ESTIMATE_DATE_EDITOR_ROLES)) {
+    throw new ApiError(
+      403,
+      'FORBIDDEN',
+      'Only admin, developer, or project admin may change estimate dates',
     );
   }
 }
@@ -394,6 +408,8 @@ export async function patchTicket(actor, idOrKey, body) {
   }
   if ('testedBy' in patch) await assertActiveUsers([patch.testedBy]);
 
+  assertCanEditEstimateDates(actor, patch);
+
   const estimateChangedFields = [];
   if ('estimatedResolutionAt' in patch) estimateChangedFields.push('estimatedResolutionAt');
   if ('expectedReleaseDate' in patch) estimateChangedFields.push('expectedReleaseDate');
@@ -423,7 +439,7 @@ export async function patchTicket(actor, idOrKey, body) {
 export async function assignTicket(actor, idOrKey, { assignedTo, team, revision }) {
   const ticket = await resolveTicketDoc(idOrKey);
 
-  if (!ADMIN_ROLES.includes(actor.role) && actor.role !== ROLE_IDS.PROJECT_ADMIN) {
+  if (!hasAnyRole(actor, ...ADMIN_ROLES, ROLE_IDS.PROJECT_ADMIN)) {
     throw new ApiError(403, 'FORBIDDEN', 'Only a project admin or an admin may assign tickets');
   }
 
@@ -553,7 +569,7 @@ export async function bulkTickets(actor, { action, ids, assignedTo, team }) {
   for (const id of ids) {
     try {
       if (action === 'delete') {
-        if (actor.role !== 'admin') {
+        if (!hasAnyRole(actor, ...ADMIN_ROLES)) {
           throw new ApiError(403, 'FORBIDDEN', 'Only an admin may delete tickets');
         }
         const removed = await deleteTicket(id);

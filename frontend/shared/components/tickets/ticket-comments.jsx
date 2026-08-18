@@ -107,35 +107,37 @@ export default function TicketComments({ ticket, onAdd, onUpload }) {
   const canSubmit = Boolean(content.trim() || pendingFiles.length);
 
   return (
-    <section aria-label="Discussion">
-      {(ticket.comments?.length ?? 0) === 0 && (
-        <p className="meta">No comments yet. Say what changed or what you need.</p>
-      )}
+    <section className="discussion-tab" aria-label="Discussion">
+      <div className="discussion-scroll">
+        {(ticket.comments?.length ?? 0) === 0 && (
+          <p className="meta">No comments yet. Say what changed or what you need.</p>
+        )}
 
-      {ticket.comments?.map((comment) => (
-        <article key={comment._id || comment.id} className="comment">
-          <span className="avatar sm" title={comment.commentedBy?.name || 'Someone'}>
-            {initials(comment.commentedBy?.name)}
-          </span>
-          <div className="body">
-            <div className="who">
-              <b>{comment.commentedBy?.name || 'Someone'}</b>
-              <span className="when">
-                {formatWhen(comment.createdAt)}
-                {comment.editedAt && ' (edited)'}
-              </span>
+        {ticket.comments?.map((comment) => (
+          <article key={comment._id || comment.id} className="comment">
+            <span className="avatar sm" title={comment.commentedBy?.name || 'Someone'}>
+              {initials(comment.commentedBy?.name)}
+            </span>
+            <div className="body">
+              <div className="who">
+                <b>{comment.commentedBy?.name || 'Someone'}</b>
+                <span className="when">
+                  {formatWhen(comment.createdAt)}
+                  {comment.editedAt && ' (edited)'}
+                </span>
+              </div>
+              <p>{comment.content}</p>
+              {comment.attachments?.map((file) => (
+                <CommentAttachment
+                  key={file._id || file.id || file.name}
+                  ticketId={ticket.ticketId}
+                  file={file}
+                />
+              ))}
             </div>
-            <p>{comment.content}</p>
-            {comment.attachments?.map((file) => (
-              <CommentAttachment
-                key={file._id || file.id || file.name}
-                ticketId={ticket.ticketId}
-                file={file}
-              />
-            ))}
-          </div>
-        </article>
-      ))}
+          </article>
+        ))}
+      </div>
 
       <div className="composer">
         <textarea

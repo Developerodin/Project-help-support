@@ -1,8 +1,13 @@
 /** Display helpers for the profile page. */
-import { ROLE_IDS, ROLE_LABELS } from '@pms/shared';
+import { ROLE_IDS, ROLE_LABELS, getUserRoles, hasAnyRole } from '@pms/shared';
 
 export function capRole(role) {
   return ROLE_LABELS[role] || 'Unknown Role';
+}
+
+export function capRoles(userOrRoles) {
+  const roles = Array.isArray(userOrRoles) ? userOrRoles : getUserRoles(userOrRoles);
+  return roles.map(capRole).join(', ');
 }
 
 export function capStatus(status) {
@@ -46,14 +51,19 @@ export function collectProjectsFromTeams(teams) {
   return [...seen.values()].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 }
 
-export function canAccessTeams(role) {
-  return role === ROLE_IDS.SUPER_ADMIN || role === ROLE_IDS.ADMIN || role === ROLE_IDS.PROJECT_ADMIN;
+export function canAccessTeams(userOrRole) {
+  const roles = typeof userOrRole === 'string' ? [userOrRole] : getUserRoles(userOrRole);
+  return hasAnyRole({ roles }, ROLE_IDS.SUPER_ADMIN, ROLE_IDS.ADMIN, ROLE_IDS.PROJECT_ADMIN);
 }
 
-export function canAccessProjects(role) {
-  return role === ROLE_IDS.SUPER_ADMIN || role === ROLE_IDS.ADMIN;
+export function canAccessProjects(userOrRole) {
+  const roles = typeof userOrRole === 'string' ? [userOrRole] : getUserRoles(userOrRole);
+  return hasAnyRole({ roles }, ROLE_IDS.SUPER_ADMIN, ROLE_IDS.ADMIN);
 }
 
-export function canAccessAdminPanel(role) {
-  return role === ROLE_IDS.SUPER_ADMIN || role === ROLE_IDS.ADMIN;
+export function canAccessAdminPanel(userOrRole) {
+  const roles = typeof userOrRole === 'string' ? [userOrRole] : getUserRoles(userOrRole);
+  return hasAnyRole({ roles }, ROLE_IDS.SUPER_ADMIN, ROLE_IDS.ADMIN);
 }
+
+export { getUserRoles };

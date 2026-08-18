@@ -8,7 +8,7 @@ import FormError from '@/shared/components/form-error.jsx';
 export default function InviteDialog({
   open,
   email = '',
-  role = ROLE_IDS.READ_ONLY,
+  role = [ROLE_IDS.READ_ONLY],
   roles,
   error = null,
   busy = false,
@@ -20,10 +20,11 @@ export default function InviteDialog({
   const emailRef = useRef(null);
   const dialogRef = useRef(null);
   const emailId = useId();
-  const roleId = useId();
+  const roleGroupId = useId();
   const titleId = useId();
   const descId = useId();
   const trimmed = email.trim();
+  const selectedRoles = Array.isArray(role) ? role : [role];
 
   useEffect(() => {
     if (!open) return undefined;
@@ -63,6 +64,17 @@ export default function InviteDialog({
     dialog.addEventListener('keydown', onKeyDown);
     return () => dialog.removeEventListener('keydown', onKeyDown);
   }, [open, busy]);
+
+  function toggleRole(nextRole) {
+    const selected = new Set(selectedRoles);
+    if (selected.has(nextRole)) {
+      if (selected.size === 1) return;
+      selected.delete(nextRole);
+    } else {
+      selected.add(nextRole);
+    }
+    onRoleChange([...selected]);
+  }
 
   if (!open) return null;
 
@@ -109,15 +121,23 @@ export default function InviteDialog({
             />
           </div>
           <div className="form-row">
-            <label htmlFor={roleId}>Role</label>
-            <select
-              id={roleId}
-              value={role}
-              onChange={onRoleChange}
-              disabled={busy}
-            >
-              {roles.map((item) => <option key={item} value={item}>{capRole(item)}</option>)}
-            </select>
+            <span id={roleGroupId} className="form-label">Roles</span>
+            <div className="role-multi-select__panel role-multi-select__panel--static" role="group" aria-labelledby={roleGroupId}>
+              {roles.map((item) => {
+                const checked = selectedRoles.includes(item);
+                return (
+                  <label key={item} className="role-multi-select__option">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={busy || (checked && selectedRoles.length === 1)}
+                      onChange={() => toggleRole(item)}
+                    />
+                    <span>{capRole(item)}</span>
+                  </label>
+                );
+              })}
+            </div>
           </div>
         </form>
         <div className="dlg-foot">
@@ -134,7 +154,7 @@ export default function InviteDialog({
             type="button"
             className="btn btn-primary"
             onClick={onConfirm}
-            disabled={busy || !trimmed}
+            disabled={busy || !trimmed || selectedRoles.length === 0}
             aria-busy={busy || undefined}
           >
             {busy ? (

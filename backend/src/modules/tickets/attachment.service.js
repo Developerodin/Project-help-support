@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+import { ADMIN_ROLES, hasAnyRole } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { sniffType, safeKey } from '../../platform/upload.js';
 import * as defaultStorage from '../../platform/s3.js';
@@ -185,7 +185,7 @@ export async function removeAttachment(actor, idOrKey, attachmentId, config, opt
   const ticket = await resolveTicketDoc(idOrKey);
   const attachment = findAttachment(ticket, attachmentId);
 
-  if (!sameId(attachment.uploadedBy, actor._id) && actor.role !== 'admin') {
+  if (!sameId(attachment.uploadedBy, actor._id) && !hasAnyRole(actor, ...ADMIN_ROLES)) {
     throw new ApiError(403, 'FORBIDDEN', 'Only the uploader or an admin may delete an attachment');
   }
 

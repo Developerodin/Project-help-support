@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { EXTERNAL_ROLES } from '@pms/shared';
+import { isExternalUser } from '@pms/shared';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import { useProject } from '@/shared/contexts/project-context.jsx';
 import { groupProjectsByCompany } from '@/shared/lib/group-projects-by-company.js';
@@ -22,7 +22,7 @@ export default function ProjectSwitcher() {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
 
-  const isExternal = EXTERNAL_ROLES.includes(user?.role);
+  const isExternal = isExternalUser(user);
   const hideSwitcher = isExternal && projects.length <= 1;
 
   useEffect(() => {

@@ -1,14 +1,11 @@
 ﻿'use client';
 
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { todayDateKey, validateTicketEstimateDates } from '@pms/shared';
 import Icon, { initials, isOverdue } from '../icons.jsx';
-import AttachmentUploadLoader from '../attachment-upload-loader.jsx';
-import { formatFileSize, ATTACHMENT_ACCEPT, validateAttachmentBatch } from '@/shared/lib/attachment-config.js';
-import { TicketAttachmentLink } from './ticket-attachment.jsx';
 import TicketRailPicker from './ticket-rail-picker.jsx';
 import {
-  dateValue, daysBetween, formatWhen, stageAgeDays,
+  dateValue, daysBetween, formatWhen, formatDateOnly, stageAgeDays,
 } from './ticket-drawer-utils.js';
 
 function PersonLine({ name, empty = 'Unassigned' }) {
@@ -45,12 +42,9 @@ function WatcherAvatar({ name }) {
 }
 
 export default function TicketMetadataRail({
-  ticket, onSave, canAssign = false, assignment, onBlock, onUnblock, blockReason, setBlockReason, onUpload,
+  ticket, onSave, canAssign = false, canEditEstimates = false, assignment, onBlock, onUnblock, blockReason, setBlockReason,
   fieldErrors = {}, onFieldEdit, collapsed = false, onToggleCollapsed,
 }) {
-  const uploadRef = useRef(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState(null);
   const [localDateErrors, setLocalDateErrors] = useState({});
   const [draft, setDraft] = useState({
     estimatedResolutionAt: dateValue(ticket.estimatedResolutionAt),
@@ -120,39 +114,16 @@ export default function TicketMetadataRail({
 
   const estInvalid = Boolean(mergedFieldErrors.estimatedResolutionAt);
   const releaseInvalid = Boolean(mergedFieldErrors.expectedReleaseDate);
-  const attachments = ticket.attachments ?? [];
   const late = isOverdue(ticket);
   const hasEst = Boolean(ticket.estimatedResolutionAt || draft.estimatedResolutionAt);
   const elapsed = ticket.createdAt ? daysBetween(ticket.createdAt) : 0;
   const span = estIso ? daysBetween(ticket.createdAt, `${estIso}T00:00:00Z`) : 0;
   const pct = span > 0 ? Math.min(100, Math.round((elapsed / span) * 100)) : 0;
   const daysLeft = estIso ? -daysBetween(`${estIso}T00:00:00Z`) : null;
-  const watcherAvatars = uniquePeople(ticket.createdBy, ticket.assignedTo);
-  const watcherExtra = Math.max(0, (ticket.watchers?.length ?? 0) - 2);
+  const allWatchers = uniquePeople(...(ticket.watchers || []));
+  const watcherAvatars = allWatchers.slice(0, 2);
+  const watcherExtra = Math.max(0, allWatchers.length - 2);
   const canEditAssignment = canAssign && submitAssignment;
-
-  async function submitUpload() {
-    const files = uploadRef.current?.files;
-    if (!files?.length || !onUpload || uploading) return;
-    const { errors, valid } = validateAttachmentBatch([], Array.from(files));
-    if (errors.length) {
-      setUploadError(errors[0]);
-      return;
-    }
-    const form = new FormData();
-    for (const file of valid) form.append('files', file);
-    form.append('clientRef', crypto.randomUUID());
-    setUploading(true);
-    setUploadError(null);
-    try {
-      await onUpload(form);
-      uploadRef.current.value = '';
-    } catch (err) {
-      setUploadError(err?.message || 'Upload failed');
-    } finally {
-      setUploading(false);
-    }
-  }
 
   return (
     <aside
@@ -233,20 +204,67 @@ export default function TicketMetadataRail({
         </div>
 
         <div className={`siderow${estInvalid ? ' bad' : ''}`}>
-          <label className="lbl" htmlFor="estimatedResolutionAt">Resolution estimate</label>
-          {hasEst ? (
+          <span className="lbl">Resolution estimate</span>
+          {canEditEstimates ? (
+            <>
+              <label className="sr" htmlFor="estimatedResolutionAt">Resolution estimate</label>
+              {hasEst ? (
+                <div className={`due${late ? ' late' : ''}`}>
+                  <input
+                    id="estimatedResolutionAt"
+                    type="date"
+                    value={draft.estimatedResolutionAt}
+                    min={today}
+                    max={releaseIso || undefined}
+                    onChange={set('estimatedResolutionAt')}
+                    onBlur={saveDates}
+                    aria-invalid={estInvalid}
+                    aria-describedby={estInvalid ? 'estimatedResolutionAt-hint' : undefined}
+                  />
+                  <div className="track">
+                    <span className="fill" style={{ width: `${late ? 100 : pct}%` }} />
+                  </div>
+                  <p className="read">
+                    {late ? (
+                      <>
+                        <b>{Math.abs(daysLeft ?? 0)}d late</b>
+                        <span>
+                          estimate was
+                          {' '}
+                          {formatWhen(ticket.estimatedResolutionAt || `${draft.estimatedResolutionAt}T00:00:00Z`)}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <b>{daysLeft ?? 0}d left</b>
+                        <span>due {formatWhen(ticket.estimatedResolutionAt || `${draft.estimatedResolutionAt}T00:00:00Z`)}</span>
+                      </>
+                    )}
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <input
+                    id="estimatedResolutionAt"
+                    type="date"
+                    value={draft.estimatedResolutionAt}
+                    min={today}
+                    max={releaseIso || undefined}
+                    onChange={set('estimatedResolutionAt')}
+                    onBlur={saveDates}
+                    aria-invalid={estInvalid}
+                    aria-describedby={estInvalid ? 'estimatedResolutionAt-hint' : undefined}
+                  />
+                  <span className="v empty">Not set</span>
+                  <p className="meta" style={{ marginTop: 4, color: 'var(--alarm)' }}>
+                    Required before In Progress.
+                  </p>
+                </>
+              )}
+            </>
+          ) : hasEst ? (
             <div className={`due${late ? ' late' : ''}`}>
-              <input
-                id="estimatedResolutionAt"
-                type="date"
-                value={draft.estimatedResolutionAt}
-                min={today}
-                max={releaseIso || undefined}
-                onChange={set('estimatedResolutionAt')}
-                onBlur={saveDates}
-                aria-invalid={estInvalid}
-                aria-describedby={estInvalid ? 'estimatedResolutionAt-hint' : undefined}
-              />
+              <span className="v">{formatDateOnly(ticket.estimatedResolutionAt || `${estIso}T00:00:00Z`)}</span>
               <div className="track">
                 <span className="fill" style={{ width: `${late ? 100 : pct}%` }} />
               </div>
@@ -257,35 +275,19 @@ export default function TicketMetadataRail({
                     <span>
                       estimate was
                       {' '}
-                      {formatWhen(ticket.estimatedResolutionAt || `${draft.estimatedResolutionAt}T00:00:00Z`)}
+                      {formatWhen(ticket.estimatedResolutionAt || `${estIso}T00:00:00Z`)}
                     </span>
                   </>
                 ) : (
                   <>
                     <b>{daysLeft ?? 0}d left</b>
-                    <span>due {formatWhen(ticket.estimatedResolutionAt || `${draft.estimatedResolutionAt}T00:00:00Z`)}</span>
+                    <span>due {formatWhen(ticket.estimatedResolutionAt || `${estIso}T00:00:00Z`)}</span>
                   </>
                 )}
               </p>
             </div>
           ) : (
-            <>
-              <input
-                id="estimatedResolutionAt"
-                type="date"
-                value={draft.estimatedResolutionAt}
-                min={today}
-                max={releaseIso || undefined}
-                onChange={set('estimatedResolutionAt')}
-                onBlur={saveDates}
-                aria-invalid={estInvalid}
-                aria-describedby={estInvalid ? 'estimatedResolutionAt-hint' : undefined}
-              />
-              <span className="v empty">Not set</span>
-              <p className="meta" style={{ marginTop: 4, color: 'var(--alarm)' }}>
-                Required before In Progress.
-              </p>
-            </>
+            <span className="v empty">Not set</span>
           )}
           {estInvalid ? (
             <p id="estimatedResolutionAt-hint" className="field-hint invalid">
@@ -295,32 +297,41 @@ export default function TicketMetadataRail({
         </div>
 
         <div className={`siderow${releaseInvalid ? ' bad' : ''}`}>
-          <label className="lbl" htmlFor="expectedReleaseDate">Expected release</label>
-          {ticket.expectedReleaseDate || draft.expectedReleaseDate ? (
-            <input
-              id="expectedReleaseDate"
-              type="date"
-              value={draft.expectedReleaseDate}
-              min={releaseMin}
-              onChange={set('expectedReleaseDate')}
-              onBlur={saveDates}
-              aria-invalid={releaseInvalid}
-              aria-describedby={releaseInvalid ? 'expectedReleaseDate-hint' : undefined}
-            />
-          ) : (
+          <span className="lbl">Expected release</span>
+          {canEditEstimates ? (
             <>
-              <input
-                id="expectedReleaseDate"
-                type="date"
-                value={draft.expectedReleaseDate}
-                min={releaseMin}
-                onChange={set('expectedReleaseDate')}
-                onBlur={saveDates}
-                aria-invalid={releaseInvalid}
-                aria-describedby={releaseInvalid ? 'expectedReleaseDate-hint' : undefined}
-              />
-              <span className="v empty">Not set</span>
+              <label className="sr" htmlFor="expectedReleaseDate">Expected release</label>
+              {ticket.expectedReleaseDate || draft.expectedReleaseDate ? (
+                <input
+                  id="expectedReleaseDate"
+                  type="date"
+                  value={draft.expectedReleaseDate}
+                  min={releaseMin}
+                  onChange={set('expectedReleaseDate')}
+                  onBlur={saveDates}
+                  aria-invalid={releaseInvalid}
+                  aria-describedby={releaseInvalid ? 'expectedReleaseDate-hint' : undefined}
+                />
+              ) : (
+                <>
+                  <input
+                    id="expectedReleaseDate"
+                    type="date"
+                    value={draft.expectedReleaseDate}
+                    min={releaseMin}
+                    onChange={set('expectedReleaseDate')}
+                    onBlur={saveDates}
+                    aria-invalid={releaseInvalid}
+                    aria-describedby={releaseInvalid ? 'expectedReleaseDate-hint' : undefined}
+                  />
+                  <span className="v empty">Not set</span>
+                </>
+              )}
             </>
+          ) : (
+            ticket.expectedReleaseDate || releaseIso
+              ? <span className="v">{formatDateOnly(ticket.expectedReleaseDate || `${releaseIso}T00:00:00Z`)}</span>
+              : <span className="v empty">Not set</span>
           )}
           {releaseInvalid ? (
             <p id="expectedReleaseDate-hint" className="field-hint invalid">
@@ -332,53 +343,6 @@ export default function TicketMetadataRail({
         <div className="siderow">
           <span className="lbl">In current stage</span>
           <span className="v mono">{stageAgeDays(ticket)} days</span>
-        </div>
-
-        <div className="siderow">
-          <span className="lbl">
-            Attachments{attachments.length ? ` (${attachments.length})` : ''}
-          </span>
-          {attachments.length > 0 ? (
-            <div className="filelist">
-              {attachments.map((attachment) => (
-                <TicketAttachmentLink
-                  key={attachment._id || attachment.id}
-                  ticketId={ticket.ticketId}
-                  attachmentId={attachment._id || attachment.id}
-                  className="fileitem"
-                >
-                  <Icon name="clip" size={12} />
-                  <span className="n">{attachment.name}</span>
-                  {attachment.size != null && (
-                    <span className="sz">{formatFileSize(attachment.size)}</span>
-                  )}
-                </TicketAttachmentLink>
-              ))}
-            </div>
-          ) : (
-            <span className="v empty">Nothing attached</span>
-          )}
-          {onUpload && (
-            <>
-              {uploading ? (
-                <div className="attach-upload-inline">
-                  <AttachmentUploadLoader variant="compact" />
-                </div>
-              ) : null}
-              <div className="withbtn" style={{ marginTop: 8 }}>
-                <input ref={uploadRef} type="file" multiple className="sr-only" accept={ATTACHMENT_ACCEPT} aria-label="Add attachments" disabled={uploading} />
-                <button type="button" className="btn btn-sm" onClick={() => uploadRef.current?.click()} disabled={uploading}>
-                  Choose files
-                </button>
-                <button type="button" className="btn btn-sm btn-primary" onClick={submitUpload} disabled={uploading}>
-                  Upload
-                </button>
-              </div>
-              {uploadError ? (
-                <p className="field-hint invalid" role="alert">{uploadError}</p>
-              ) : null}
-            </>
-          )}
         </div>
 
         <div className="siderow">

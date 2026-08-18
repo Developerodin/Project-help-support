@@ -1,6 +1,7 @@
+import { isExternalUser } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
-import { buildExternalTicketFilter, isExternalRole } from '../access/external-auth.service.js';
+import { buildExternalTicketFilter } from '../access/external-auth.service.js';
 import Ticket from '../tickets/ticket.model.js';
 import Notification from './notification.model.js';
 
@@ -40,7 +41,7 @@ export async function listNotifications(actor, query = {}) {
   const filter = { user: actor._id };
   if (String(query.unread) === 'true') filter.readAt = null;
 
-  if (isExternalRole(actor.role)) {
+  if (isExternalUser(actor)) {
     const ticketScope = await buildExternalTicketFilter(actor);
     const visibleIds = await Ticket.find(ticketScope).distinct('_id');
     filter.ticket = { $in: visibleIds.length ? visibleIds : [null] };
@@ -58,7 +59,7 @@ export async function markRead(actor, id) {
     throw new ApiError(404, 'NOTIFICATION_NOT_FOUND', 'Notification not found');
   }
 
-  if (isExternalRole(actor.role) && notification.ticket) {
+  if (isExternalUser(actor) && notification.ticket) {
     const ticketScope = await buildExternalTicketFilter(actor);
     const visibleIds = await Ticket.find(ticketScope).distinct('_id');
     const ticketId = String(notification.ticket._id ?? notification.ticket);

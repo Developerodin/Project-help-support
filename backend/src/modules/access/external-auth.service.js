@@ -1,4 +1,4 @@
-import { ROLE_IDS, EXTERNAL_ROLES } from '@pms/shared';
+import { ROLE_IDS, EXTERNAL_ROLES, hasRole, isSuperAdmin, isExternalUser, getUserRoles, pickPrimaryRole } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import AccessAssignment from './accessAssignment.model.js';
 import User from '../users/user.model.js';
@@ -44,19 +44,20 @@ export async function listEffectiveClientTesters(projectId, clientId) {
     status: 'active',
     role: ROLE_IDS.CLIENT_TESTER,
     $or: [{ project: null }, { project: projectId }],
-  }).populate('user', 'name email role status').lean();
+  }).populate('user', 'name email role roles status').lean();
 
   const byUser = new Map();
   for (const row of assignments) {
     const user = row.user;
-    if (!user || user.status !== 'active' || user.role === ROLE_IDS.SUPER_ADMIN) continue;
+    if (!user || user.status !== 'active' || isSuperAdmin(user)) continue;
     const userId = String(user._id ?? user.id);
 
     const entry = byUser.get(userId) ?? {
       userId,
       name: user.name,
       email: user.email,
-      role: user.role,
+      role: pickPrimaryRole(getUserRoles(user)),
+      roles: getUserRoles(user),
       hasCompanyWide: false,
       hasProject: false,
     };
@@ -101,7 +102,7 @@ export async function hasExternalWorkspaceAccess(userId) {
  * Internal users are not checked here — their authorization is elsewhere.
  */
 export async function assertExternalProjectAccess(actor, projectId) {
-  if (!isExternalRole(actor.role)) return;
+  if (!isExternalUser(actor)) return;
 
   const project = await Project.findById(projectId).select('client status').lean();
   if (!project) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
@@ -116,7 +117,7 @@ export async function assertExternalProjectAccess(actor, projectId) {
 
 /** External users may raise tickets only within their assigned company/project scope. */
 export async function assertExternalCanCreateTicket(actor, projectId) {
-  if (!isExternalRole(actor.role)) return;
+  if (!isExternalUser(actor)) return;
   await assertExternalProjectAccess(actor, projectId);
 }
 
@@ -177,7 +178,7 @@ export async function buildExternalTicketFilter(actor) {
 
   const projectScope = await projectScopeFromAssignments(assignments);
 
-  if (actor.role === ROLE_IDS.CLIENT_TESTER) {
+  if (hasRole(actor, ROLE_IDS.CLIENT_TESTER)) {
     return { $and: [projectScope, { createdBy: actor._id }] };
   }
 
@@ -211,10 +212,10 @@ async function creatorCoversClientBoundary(creatorId, clientId, projectId) {
  * assignment covers the project. Internal tickets remain invisible.
  */
 export async function canExternalViewTicket(actor, ticket) {
-  if (!isExternalRole(actor.role)) return false;
+  if (!isExternalUser(actor)) return false;
 
-  const creator = await User.findById(ticket.createdBy).select('role').lean();
-  if (creator?.role !== ROLE_IDS.CLIENT_TESTER) return false;
+  const creator = await User.findById(ticket.createdBy).select('role roles').lean();
+  if (!hasRole(creator, ROLE_IDS.CLIENT_TESTER)) return false;
 
   const projectId = ticket.project?._id ?? ticket.project;
   if (!projectId) return false;
@@ -230,7 +231,7 @@ export async function canExternalViewTicket(actor, ticket) {
 
   const creatorId = ticket.createdBy?._id ?? ticket.createdBy;
 
-  if (actor.role === ROLE_IDS.CLIENT_TESTER) {
+  if (hasRole(actor, ROLE_IDS.CLIENT_TESTER)) {
     return String(creatorId) === String(actor._id);
   }
 
@@ -245,8 +246,6 @@ export function sanitizeExternalTicket(ticketJson) {
     stageHistory,
     watchers,
     testedBy,
-    assignedTo,
-    team,
     ...rest
   } = ticketJson;
 
@@ -257,12 +256,26 @@ export function sanitizeExternalTicket(ticketJson) {
     }
     : rest.createdBy;
 
+  const assignedTo = rest.assignedTo
+    ? {
+      id: rest.assignedTo.id ?? rest.assignedTo._id,
+      name: rest.assignedTo.name,
+    }
+    : null;
+
+  const team = rest.team
+    ? {
+      id: rest.team.id ?? rest.team._id,
+      name: rest.team.name,
+    }
+    : null;
+
   return {
     ...rest,
     createdBy,
-    assignedTo: null,
+    assignedTo,
     testedBy: null,
-    team: null,
+    team,
     watchers: [],
     comments: [],
     activityLog: [],
@@ -292,7 +305,7 @@ async function assertExternalUsers(userIds, expectedRole) {
   const desired = [...new Set((userIds || []).map(String))];
   if (!desired.length) return;
 
-  const users = await User.find({ _id: { $in: desired } }).select('role status');
+  const users = await User.find({ _id: { $in: desired } }).select('role roles status');
   if (users.length !== desired.length) {
     throw new ApiError(400, 'USER_NOT_FOUND', 'One or more users were not found');
   }
@@ -300,7 +313,7 @@ async function assertExternalUsers(userIds, expectedRole) {
     if (user.status !== 'active') {
       throw new ApiError(400, 'USER_NOT_ACTIVE', 'Only active users can be assigned external access');
     }
-    if (user.role !== expectedRole) {
+    if (!hasRole(user, expectedRole)) {
       throw new ApiError(
         400,
         'INVALID_EXTERNAL_USER',

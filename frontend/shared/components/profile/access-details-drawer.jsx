@@ -2,7 +2,8 @@
 
 import { useEffect } from 'react';
 import { ENVIRONMENTS } from '@pms/shared';
-import { capRole, capStatus } from '@/shared/lib/profile-utils.js';
+import RoleBadges from '@/shared/components/role-badges.jsx';
+import { capStatus } from '@/shared/lib/profile-utils.js';
 
 export default function AccessDetailsDrawer({
   open,
@@ -58,7 +59,7 @@ export default function AccessDetailsDrawer({
             <dl className="profile-dl">
               <div className="profile-dl__row">
                 <dt>System role</dt>
-                <dd>{capRole(user.role)}</dd>
+                <dd><RoleBadges user={user} /></dd>
               </div>
               <div className="profile-dl__row">
                 <dt>Account type</dt>

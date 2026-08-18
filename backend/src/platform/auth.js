@@ -1,7 +1,7 @@
 import { ApiError } from './errors.js';
 import User from '../modules/users/user.model.js';
 import { verifyAccessToken } from '../modules/auth/token.service.js';
-import { hasPermission } from '@pms/shared';
+import { hasAnyRole, can } from '@pms/shared';
 
 const unauthenticated = () => new ApiError(401, 'UNAUTHENTICATED', 'Authentication required');
 
@@ -46,7 +46,7 @@ export function auth(config) {
 export function requireRole(...roles) {
   return function checkRole(req, _res, next) {
     if (!req.user) return next(new ApiError(401, 'UNAUTHENTICATED', 'Authentication required'));
-    if (!roles.includes(req.user.role)) {
+    if (!hasAnyRole(req.user, ...roles)) {
       // 403, not 404: nothing is hidden in this product, so there is no
       // existence to conceal.
       return next(new ApiError(403, 'FORBIDDEN', `Requires one of: ${roles.join(', ')}`));
@@ -63,7 +63,7 @@ export function requireRole(...roles) {
 export function requirePermission(permission) {
   return function checkPermission(req, _res, next) {
     if (!req.user) return next(new ApiError(401, 'UNAUTHENTICATED', 'Authentication required'));
-    if (!hasPermission(req.user.role, permission)) {
+    if (!can(req.user, permission)) {
       return next(new ApiError(403, 'FORBIDDEN', `Requires permission: ${permission}`));
     }
     return next();

@@ -95,7 +95,7 @@ function ProjectPanel({
           <div className="project-form-intro">
             <h5 className="project-form-heading">Project team</h5>
             <p className="project-form-hint">
-              Assign one team to this project and set each member&apos;s project role.
+              Assign one team to this project. Member roles come from each person&apos;s profile.
             </p>
           </div>
 

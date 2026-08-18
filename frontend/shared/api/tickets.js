@@ -40,6 +40,12 @@ export const addComment = (id, body) =>
 export const uploadAttachments = (id, formData) =>
   apiFetch(`/tickets/${encodeURIComponent(id)}/attachments`, { method: 'POST', formData });
 
+export const deleteAttachment = (id, attachmentId) =>
+  apiFetch(
+    `/tickets/${encodeURIComponent(id)}/attachments/${encodeURIComponent(attachmentId)}`,
+    { method: 'DELETE' },
+  );
+
 export const attachmentDownloadUrl = (id, attachmentId) =>
   `/tickets/${encodeURIComponent(id)}/attachments/${encodeURIComponent(attachmentId)}/download`;
 

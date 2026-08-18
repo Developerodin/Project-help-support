@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
-import { ROLES, ROLE_IDS, DEFAULT_NOTIFICATION_PREFS } from '@pms/shared';
+import { ROLES, ROLE_IDS, DEFAULT_NOTIFICATION_PREFS, pickPrimaryRole } from '@pms/shared';
 import toJSON from '../../platform/toJSON.plugin.js';
 
 export const MAX_REFRESH_TOKENS = 10;
@@ -49,6 +49,17 @@ const userSchema = new mongoose.Schema(
     },
     password: { type: String, required: true, minlength: 8, private: true, select: false },
     role: { type: String, enum: ROLES, default: ROLE_IDS.READ_ONLY, index: true },
+    /** All global roles held by this user. Effective permissions = union of roles. */
+    roles: {
+      type: [{ type: String, enum: ROLES }],
+      default: undefined,
+      validate: {
+        validator(v) {
+          return !v || v.length > 0;
+        },
+        message: 'roles must contain at least one role when set',
+      },
+    },
     /** Reserved for a future open-intake path. Unused in build 1. */
     kind: { type: String, enum: ['internal', 'reporter'], default: 'internal' },
     status: {
@@ -88,6 +99,13 @@ const userSchema = new mongoose.Schema(
 userSchema.plugin(toJSON);
 
 userSchema.pre('save', async function normaliseAndHash(next) {
+  if (this.roles?.length) {
+    this.roles = [...new Set(this.roles)];
+    this.role = pickPrimaryRole(this.roles);
+  } else if (this.role) {
+    this.roles = [this.role];
+  }
+
   if (this.isModified('password')) {
     this.password = await bcrypt.hash(this.password, BCRYPT_ROUNDS);
   }
@@ -99,6 +117,12 @@ userSchema.pre('save', async function normaliseAndHash(next) {
     this.consumedRefreshTokens = this.consumedRefreshTokens.slice(-MAX_CONSUMED_TOKENS);
   }
   next();
+});
+
+userSchema.post('init', function hydrateRoles() {
+  if (!this.roles?.length && this.role) {
+    this.roles = [this.role];
+  }
 });
 
 userSchema.methods.isPasswordMatch = async function isPasswordMatch(plain) {

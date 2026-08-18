@@ -52,26 +52,57 @@ export function isAllowedAttachment(file) {
   return type.startsWith('image/') || type.startsWith('video/');
 }
 
-/** @param {File[]} existing @param {File[]} incoming */
-export function validateAttachmentBatch(existing, incoming) {
-  const errors = [];
-  const valid = [];
+export function sameAttachmentFile(a, b) {
+  const nameA = typeof a === 'string' ? a : a?.name || '';
+  const sizeA = typeof a === 'string' ? 0 : a?.size ?? 0;
+  const nameB = typeof b === 'string' ? b : b?.name || '';
+  const sizeB = typeof b === 'string' ? 0 : b?.size ?? 0;
+  return nameA === nameB && sizeA === sizeB;
+}
 
-  if (existing.length + incoming.length > MAX_ATTACHMENT_FILES) {
-    errors.push('Maximum 10 files allowed.');
-    return { errors, valid: [] };
-  }
+/**
+ * Per-file validation for incoming selections against pending + uploaded lists.
+ * Invalid files are returned with `error` so the UI can show them inline.
+ * @param {Array<File|{ file: File }>} pending
+ * @param {Array<{ name: string, size?: number }>} uploaded
+ * @param {File[]} incoming
+ */
+export function validateIncomingAttachments(pending, uploaded, incoming) {
+  const pendingFiles = pending.map((item) => item.file || item);
+  const known = [
+    ...pendingFiles,
+    ...uploaded.map((item) => ({ name: item.name, size: item.size })),
+  ];
+  const results = [];
 
   for (const file of incoming) {
-    if (file.size > MAX_ATTACHMENT_BYTES) {
-      errors.push(`${file.name}: exceeds 25 MB limit`);
-    } else if (!isAllowedAttachment(file)) {
-      errors.push(`${file.name}: type not allowed`);
-    } else {
-      valid.push(file);
+    let error = null;
+
+    if (!isAllowedAttachment(file)) {
+      error = 'Type not allowed';
+    } else if (file.size > MAX_ATTACHMENT_BYTES) {
+      error = 'Exceeds 25 MB limit';
+    } else if (
+      known.some((item) => sameAttachmentFile(item, file))
+      || results.some((item) => item.file && sameAttachmentFile(item.file, file))
+    ) {
+      error = 'Already added';
+    } else if (known.length + results.filter((item) => !item.error).length >= MAX_ATTACHMENT_FILES) {
+      error = 'Maximum 10 files allowed';
     }
+
+    if (!error) known.push(file);
+    results.push({ file, error });
   }
 
+  return results;
+}
+
+/** @param {File[]} existing @param {File[]} incoming */
+export function validateAttachmentBatch(existing, incoming) {
+  const results = validateIncomingAttachments(existing, [], incoming);
+  const errors = results.filter((item) => item.error).map((item) => `${item.file.name}: ${item.error}`);
+  const valid = results.filter((item) => !item.error).map((item) => item.file);
   return { errors, valid };
 }
 

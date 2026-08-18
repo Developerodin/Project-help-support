@@ -1,9 +1,9 @@
 ﻿'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ROLE_IDS } from '@pms/shared';
+import { ROLE_IDS, ADMIN_ROLES, ESTIMATE_DATE_EDITOR_ROLES, hasAnyRole } from '@pms/shared';
 import {
-  getTicket, patchTicket, transitionTicket, addComment, uploadAttachments, assignTicket,
+  getTicket, patchTicket, transitionTicket, addComment, uploadAttachments, deleteAttachment, assignTicket,
   watchTicket, unwatchTicket, setBlocked, clearBlocked,
 } from '@/shared/api/tickets.js';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
@@ -22,6 +22,7 @@ import {
 } from '@/shared/lib/api-error.js';
 import TicketHeader from './ticket-header.jsx';
 import TicketDetailsTab from './ticket-details-tab.jsx';
+import TicketAttachmentsTab from './ticket-attachments-tab.jsx';
 import TicketMetadataRail from './ticket-metadata-rail.jsx';
 import TicketStageBar from './ticket-stage-bar.jsx';
 import TicketHistory from './ticket-history.jsx';
@@ -46,11 +47,13 @@ function TicketDrawerContent({
   const [railCollapsed, setRailCollapsed] = useState(false);
   const discussionRef = useRef(null);
   const detailsRef = useRef(null);
+  const attachmentsRef = useRef(null);
   const historyRef = useRef(null);
 
   const panelRefs = {
     discussion: discussionRef,
     details: detailsRef,
+    attachments: attachmentsRef,
     history: historyRef,
   };
 
@@ -116,8 +119,10 @@ function TicketDrawerContent({
   const watching = Boolean(
     ticket.watchers?.some((w) => String(w.id || w._id) === String(user?.id || user?._id)),
   );
-  const canAssign = user?.role === ROLE_IDS.SUPER_ADMIN || user?.role === ROLE_IDS.ADMIN
-    || user?.role === ROLE_IDS.PROJECT_ADMIN;
+  const canAssign = hasAnyRole(user, ...ADMIN_ROLES, ROLE_IDS.PROJECT_ADMIN);
+  const canEditEstimates = hasAnyRole(user, ...ESTIMATE_DATE_EDITOR_ROLES);
+  const canSeeMetadataRail = hasAnyRole(user, ...ADMIN_ROLES, ROLE_IDS.DEVELOPER);
+  const showMetadataRail = canSeeMetadataRail && tab === 'details';
   const onAssign = canAssign
     ? run((patch) => assignTicket(ticket.ticketId, {
       revision: ticket.revision,
@@ -159,7 +164,7 @@ function TicketDrawerContent({
       </div>
 
       <div className="drawer-body">
-        <div className="ticket-workspace">
+        <div className={`ticket-workspace${showMetadataRail ? '' : ' ticket-workspace--full'}`}>
           <main className="ticket-main">
             <div className="tabs" role="tablist" aria-label="Ticket detail">
               <button
@@ -178,6 +183,15 @@ function TicketDrawerContent({
                 onClick={() => selectTab('details')}
               >
                 Details
+              </button>
+              <button
+                type="button" className="tab" role="tab" id="tab-attachments"
+                aria-selected={tab === 'attachments'}
+                aria-controls="panel-attachments"
+                onClick={() => selectTab('attachments')}
+              >
+                Attachments
+                <span className="n">{ticket.attachments?.length || 0}</span>
               </button>
               <button
                 type="button" className="tab" role="tab" id="tab-history"
@@ -219,6 +233,29 @@ function TicketDrawerContent({
                 />
               </div>
               <div
+                id="panel-attachments"
+                role="tabpanel"
+                aria-labelledby="tab-attachments"
+                tabIndex={-1}
+                ref={attachmentsRef}
+                hidden={tab !== 'attachments'}
+              >
+                <TicketAttachmentsTab
+                  ticket={ticket}
+                  user={user}
+                  onUpload={async (form) => {
+                    await uploadAttachments(ticket.ticketId, form);
+                    await load();
+                    onChanged?.();
+                  }}
+                  onDelete={async (attachmentId) => {
+                    await deleteAttachment(ticket.ticketId, attachmentId);
+                    await load();
+                    onChanged?.();
+                  }}
+                />
+              </div>
+              <div
                 id="panel-history"
                 role="tabpanel"
                 aria-labelledby="tab-history"
@@ -231,30 +268,32 @@ function TicketDrawerContent({
             </div>
           </main>
 
-          <TicketMetadataRail
-            ticket={ticket}
-            fieldErrors={fieldErrors}
-            onFieldEdit={clearFieldError}
-            canAssign={canAssign}
-            assignment={assignment}
-            onSave={run((body) => patchTicket(ticket.ticketId, body))}
-            onUpload={run((form) => uploadAttachments(ticket.ticketId, form), { rethrow: true })}
-            onBlock={async () => {
-              if (!blockReason.trim()) return;
-              await run(() => setBlocked(ticket.ticketId, {
+          {showMetadataRail && (
+            <TicketMetadataRail
+              ticket={ticket}
+              fieldErrors={fieldErrors}
+              onFieldEdit={clearFieldError}
+              canAssign={canAssign}
+              canEditEstimates={canEditEstimates}
+              assignment={assignment}
+              onSave={run((body) => patchTicket(ticket.ticketId, body))}
+              onBlock={async () => {
+                if (!blockReason.trim()) return;
+                await run(() => setBlocked(ticket.ticketId, {
+                  revision: ticket.revision,
+                  reason: blockReason,
+                }))();
+                setBlockReason('');
+              }}
+              onUnblock={run(() => clearBlocked(ticket.ticketId, {
                 revision: ticket.revision,
-                reason: blockReason,
-              }))();
-              setBlockReason('');
-            }}
-            onUnblock={run(() => clearBlocked(ticket.ticketId, {
-              revision: ticket.revision,
-            }))}
-            blockReason={blockReason}
-            setBlockReason={setBlockReason}
-            collapsed={railCollapsed}
-            onToggleCollapsed={() => setRailCollapsed((prev) => !prev)}
-          />
+              }))}
+              blockReason={blockReason}
+              setBlockReason={setBlockReason}
+              collapsed={railCollapsed}
+              onToggleCollapsed={() => setRailCollapsed((prev) => !prev)}
+            />
+          )}
         </div>
       </div>
 

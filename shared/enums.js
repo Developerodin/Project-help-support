@@ -73,6 +73,11 @@ export const PROJECT_ADMIN_ROLES = Object.freeze([
   ROLE_IDS.SUPER_ADMIN, ROLE_IDS.ADMIN, ROLE_IDS.PROJECT_ADMIN,
 ]);
 
+/** Roles that may set or change ticket resolution/release estimate dates. */
+export const ESTIMATE_DATE_EDITOR_ROLES = Object.freeze([
+  ROLE_IDS.SUPER_ADMIN, ROLE_IDS.ADMIN, ROLE_IDS.PROJECT_ADMIN, ROLE_IDS.DEVELOPER,
+]);
+
 /** Per-project role on a team assigned to a project. Distinct from global User.role — do not conflate with ROLE_IDS. */
 export const PROJECT_TEAM_ROLES = Object.freeze(['team_lead', 'developer', 'qa', 'member']);
 

@@ -38,7 +38,7 @@ export default function AdminPage() {
 
   if (!user) return null;
 
-  if (!canAccessAdminPanel(user.role)) {
+  if (!canAccessAdminPanel(user)) {
     return (
       <div className="admin-page">
         <nav className="crumb" aria-label="Breadcrumb">

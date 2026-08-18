@@ -17,14 +17,14 @@ export default function TicketHistory({ ticket }) {
 
   if (history.length === 0) {
     return (
-      <section aria-label="History">
+      <section className="history-tab" aria-label="History">
         <p className="meta">No stage changes recorded yet.</p>
       </section>
     );
   }
 
   return (
-    <section aria-label="History">
+    <section className="history-tab" aria-label="History">
       <ol className="trail">
         {history.map((entry) => {
           const isReopen = entry.from && stageIndex(entry.from) > stageIndex(entry.to);

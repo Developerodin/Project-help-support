@@ -1,10 +1,22 @@
-import { ROLE_IDS, NOTIFICATION_EVENTS } from '@pms/shared';
+import { ROLE_IDS, NOTIFICATION_EVENTS, isSuperAdmin, hasAnyRole, pickPrimaryRole } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
 import Notification from '../notifications/notification.model.js';
 import Team from '../teams/team.model.js';
 import Ticket from '../tickets/ticket.model.js';
 import User from './user.model.js';
+import { NOT_SUPER_ADMIN_FILTER, userHasRoleQuery } from './user-role-query.js';
+
+function normaliseRolesInput(body) {
+  if (body.roles?.length) {
+    const roles = [...new Set(body.roles)];
+    return { ...body, roles, role: pickPrimaryRole(roles) };
+  }
+  if (body.role) {
+    return { ...body, roles: [body.role] };
+  }
+  return body;
+}
 
 /**
  * Super Admin is hidden from normal user listing/search APIs for every caller.
@@ -13,8 +25,8 @@ import User from './user.model.js';
 export async function listUsers(actor, query = {}) {
   const filter = {};
   if (query.role === ROLE_IDS.SUPER_ADMIN) filter._id = { $in: [] };
-  else if (query.role) filter.role = query.role;
-  else filter.role = { $ne: ROLE_IDS.SUPER_ADMIN };
+  else if (query.role) Object.assign(filter, userHasRoleQuery(query.role));
+  else Object.assign(filter, NOT_SUPER_ADMIN_FILTER);
 
   if (query.status) filter.status = query.status;
   if (query.q) {
@@ -32,7 +44,7 @@ export async function listUsers(actor, query = {}) {
 }
 
 function assertVisibleToActor(actor, target) {
-  if (target.role === ROLE_IDS.SUPER_ADMIN) {
+  if (isSuperAdmin(target)) {
     throw new ApiError(404, 'USER_NOT_FOUND', 'User not found');
   }
 }
@@ -45,11 +57,12 @@ export async function getUser(actor, id) {
 }
 
 export async function updateUser(actor, id, body) {
-  if (String(actor._id) === String(id) && (body.role || body.status)) {
+  if (String(actor._id) === String(id) && (body.role || body.roles || body.status)) {
     throw new ApiError(400, 'CANNOT_MODIFY_SELF', 'You cannot change your own role or status');
   }
 
-  if (body.role === ROLE_IDS.SUPER_ADMIN) {
+  const nextBody = normaliseRolesInput(body);
+  if (nextBody.roles?.includes(ROLE_IDS.SUPER_ADMIN)) {
     throw new ApiError(
       403,
       'SUPER_ADMIN_PROTECTED',
@@ -61,7 +74,7 @@ export async function updateUser(actor, id, body) {
   if (!existing) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found');
   assertVisibleToActor(actor, existing);
 
-  const user = await User.findByIdAndUpdate(id, { $set: body }, { new: true, runValidators: true });
+  const user = await User.findByIdAndUpdate(id, { $set: nextBody }, { new: true, runValidators: true });
   return user.toJSON();
 }
 
@@ -100,15 +113,19 @@ export async function deleteUser(actor, id) {
   if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found');
   assertVisibleToActor(actor, user);
 
-  if (user.role === ROLE_IDS.ADMIN) {
-    const otherAdmins = await User.countDocuments({ role: ROLE_IDS.ADMIN, _id: { $ne: user._id } });
+  if (hasAnyRole(user, ROLE_IDS.ADMIN)) {
+    const otherAdmins = await User.countDocuments({
+      ...userHasRoleQuery(ROLE_IDS.ADMIN),
+      _id: { $ne: user._id },
+    });
     if (otherAdmins === 0) {
       throw new ApiError(400, 'LAST_ADMIN', 'Cannot delete the last admin');
     }
   }
-  if (user.role === ROLE_IDS.SUPER_ADMIN) {
+  if (isSuperAdmin(user)) {
     const otherSuperAdmins = await User.countDocuments({
-      role: ROLE_IDS.SUPER_ADMIN, _id: { $ne: user._id },
+      ...userHasRoleQuery(ROLE_IDS.SUPER_ADMIN),
+      _id: { $ne: user._id },
     });
     if (otherSuperAdmins === 0) {
       throw new ApiError(400, 'LAST_SUPER_ADMIN', 'Cannot delete the last Super Admin');

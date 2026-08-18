@@ -2,15 +2,16 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { PEOPLE_ASSIGNABLE_ROLES, ROLE_IDS, IMPERSONATION_INITIATOR_ROLES } from '@pms/shared';
+import { PEOPLE_ASSIGNABLE_ROLES, ROLE_IDS, IMPERSONATION_INITIATOR_ROLES, getUserRoles, hasAnyRole, isSuperAdmin } from '@pms/shared';
 import { listUsers, inviteUser, patchUser, resendInvite, deleteUser } from '@/shared/api/users.js';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import ConfirmDialog from '@/shared/components/confirm-dialog.jsx';
 import InviteDialog from '@/shared/components/invite-dialog.jsx';
+import RoleMultiSelect from '@/shared/components/role-multi-select.jsx';
 import Icon, { initials } from '@/shared/components/icons.jsx';
 import { normalizeApiError } from '@/shared/lib/api-error.js';
 import { showToast } from '@/shared/lib/toast.js';
-import { capRole } from '@/shared/lib/profile-utils.js';
+import { capRoles } from '@/shared/lib/profile-utils.js';
 
 function ActionButton({
   label,
@@ -60,10 +61,10 @@ function ActionButton({
 export default function UsersPage() {
   const router = useRouter();
   const { user: currentUser, startImpersonation } = useAuth();
-  const canImpersonate = IMPERSONATION_INITIATOR_ROLES.includes(currentUser?.role);
+  const canImpersonate = hasAnyRole(currentUser, ...IMPERSONATION_INITIATOR_ROLES);
   const assignableRoles = PEOPLE_ASSIGNABLE_ROLES;
   const [users, setUsers] = useState([]);
-  const [draft, setDraft] = useState({ email: '', role: ROLE_IDS.DEVELOPER });
+  const [draft, setDraft] = useState({ email: '', roles: [ROLE_IDS.DEVELOPER] });
   const [error, setError] = useState(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteBusy, setInviteBusy] = useState(false);
@@ -108,7 +109,7 @@ export default function UsersPage() {
     setInviteBusy(true);
     try {
       await inviteUser(draft);
-      setDraft({ email: '', role: ROLE_IDS.DEVELOPER });
+      setDraft({ email: '', roles: [ROLE_IDS.DEVELOPER] });
       setInviteOpen(false);
       showToast('Invite sent');
       reload();
@@ -123,7 +124,7 @@ export default function UsersPage() {
     if (inviteBusy) return;
     setInviteOpen(false);
     setError(null);
-    setDraft({ email: '', role: ROLE_IDS.DEVELOPER });
+    setDraft({ email: '', roles: [ROLE_IDS.DEVELOPER] });
   }
 
   async function patchRow(id, body, actionKey, successMessage) {
@@ -235,7 +236,7 @@ export default function UsersPage() {
       <div className="page-head">
         <div>
           <h1>People</h1>
-          <p className="sub">Invite someone, set their role, deactivate without deleting history.</p>
+          <p className="sub">Invite someone, set their roles, deactivate without deleting history.</p>
         </div>
         <span className="spacer" />
         <button
@@ -250,12 +251,12 @@ export default function UsersPage() {
       <InviteDialog
         open={inviteOpen}
         email={draft.email}
-        role={draft.role}
+        role={draft.roles}
         roles={assignableRoles}
         error={error}
         busy={inviteBusy}
         onEmailChange={(event) => setDraft({ ...draft, email: event.target.value })}
-        onRoleChange={(event) => setDraft({ ...draft, role: event.target.value })}
+        onRoleChange={(roles) => setDraft({ ...draft, roles })}
         onConfirm={invite}
         onCancel={closeInvite}
       />
@@ -266,7 +267,7 @@ export default function UsersPage() {
             <tr>
               <th>Person</th>
               <th>Email</th>
-              <th>Role</th>
+              <th>Roles</th>
               <th>Status</th>
               <th />
             </tr>
@@ -289,16 +290,13 @@ export default function UsersPage() {
                   </td>
                   <td>{user.email}</td>
                   <td>
-                    <select
-                      aria-label={`Role for ${user.name || user.email}`}
-                      value={user.role}
-                      onChange={(e) => patchRow(user.id, { role: e.target.value }, `${user.id}:role`)}
-                      disabled={Boolean(rowBusy[`${user.id}:role`])}
-                    >
-                      {assignableRoles.map((role) => (
-                        <option key={role} value={role}>{capRole(role)}</option>
-                      ))}
-                    </select>
+                    <RoleMultiSelect
+                      value={getUserRoles(user)}
+                      options={assignableRoles}
+                      ariaLabel={`Roles for ${user.name || user.email}`}
+                      busy={Boolean(rowBusy[`${user.id}:role`])}
+                      onChange={(roles) => patchRow(user.id, { roles }, `${user.id}:role`)}
+                    />
                   </td>
                   <td><span className="chip">{user.status}</span></td>
                   <td>
@@ -340,8 +338,8 @@ export default function UsersPage() {
                         />
                       )}
                       {canImpersonate && user.status === 'active' && user.id !== currentUser?.id
-                        && user.role !== ROLE_IDS.SUPER_ADMIN
-                        && !(currentUser?.role === ROLE_IDS.ADMIN && user.role === ROLE_IDS.ADMIN) && (
+                        && !isSuperAdmin(user)
+                        && !(hasAnyRole(currentUser, ROLE_IDS.ADMIN) && hasAnyRole(user, ROLE_IDS.ADMIN)) && (
                         <ActionButton
                           label="Impersonate"
                           icon="eye"
@@ -372,7 +370,7 @@ export default function UsersPage() {
 
       <ConfirmDialog
         open={Boolean(confirmDeactivate)}
-        title={`Deactivate ${capRole(confirmDeactivate?.role)}?`}
+        title={`Deactivate ${capRoles(confirmDeactivate)}?`}
         message={
           confirmDeactivate
             ? `${confirmDeactivate.name || confirmDeactivate.email} will lose access, but their ticket history stays.`
