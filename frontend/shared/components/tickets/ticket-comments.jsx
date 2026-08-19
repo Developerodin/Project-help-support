@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { isExternalUser } from '@pms/shared';
-import Icon, { initials } from '../icons.jsx';
+import Icon from '../icons.jsx';
 import AttachmentUploadLoader from '../attachment-upload-loader.jsx';
 import { attachmentErrorMessage } from '@/shared/lib/api-error.js';
 import {
@@ -12,15 +12,6 @@ import {
   validateAttachmentBatch,
   buildAttachmentFormData,
 } from '@/shared/lib/attachment-config.js';
-import {
-  Attachment,
-  AttachmentAction,
-  AttachmentActions,
-  AttachmentContent,
-  AttachmentGroup,
-  AttachmentMedia,
-  AttachmentTitle,
-} from '../ui/attachment.jsx';
 import { Bubble, BubbleContent, BubbleGroup } from '../ui/bubble.jsx';
 import { Message } from '../ui/message.jsx';
 import {
@@ -74,7 +65,7 @@ function isSystemComment(comment) {
 
 function bubbleVariant(comment, user) {
   if (isSystemComment(comment)) return 'muted';
-  if (comment.internal) return 'outline';
+  if (comment.internal) return 'muted';
   if (isOwnComment(comment, user)) return 'default';
   return 'secondary';
 }
@@ -150,6 +141,12 @@ function CommentBubble({ comment, user, ticketId, showHeader }) {
     >
       <Bubble variant={variant} align={align}>
         <BubbleContent>
+          {comment.internal && (
+            <span className="bubble-internal-cue" title="Internal note">
+              <Icon name="lock" size={12} aria-hidden="true" />
+              <span className="sr-only">Internal note</span>
+            </span>
+          )}
           {comment.content && <p className="bubble-text">{comment.content}</p>}
           {comment.attachments?.map((file) => (
             <CommentAttachment
@@ -260,29 +257,24 @@ export default function TicketComments({ ticket, user, onAdd, onUpload }) {
         )}
 
         {pendingFiles.length > 0 && (
-          <AttachmentGroup aria-label="Files to attach">
+          <ul className="composer-attachments" aria-label="Files to attach">
             {pendingFiles.map((file, index) => (
-              <Attachment key={`${file.name}-${file.size}-${index}`} state="idle" size="xs" orientation="horizontal">
-                <AttachmentMedia variant="icon">
-                  <Icon name="clip" size={12} aria-hidden="true" />
-                </AttachmentMedia>
-                <AttachmentContent>
-                  <AttachmentTitle title={file.name}>{file.name}</AttachmentTitle>
-                  <span className="sz">{formatFileSize(file.size)}</span>
-                </AttachmentContent>
-                <AttachmentActions>
-                  <AttachmentAction
-                    variant="destructive"
-                    aria-label={`Remove ${file.name}`}
-                    disabled={uploading}
-                    onClick={() => setPendingFiles((prev) => prev.filter((_, i) => i !== index))}
-                  >
-                    <Icon name="x" size={12} aria-hidden="true" />
-                  </AttachmentAction>
-                </AttachmentActions>
-              </Attachment>
+              <li key={`${file.name}-${file.size}-${index}`} className="composer-attachment-chip">
+                <Icon name="clip" size={12} aria-hidden="true" />
+                <span className="nm" title={file.name}>{file.name}</span>
+                <span className="sz">{formatFileSize(file.size)}</span>
+                <button
+                  type="button"
+                  className="composer-icon-btn"
+                  aria-label={`Remove ${file.name}`}
+                  disabled={uploading}
+                  onClick={() => setPendingFiles((prev) => prev.filter((_, i) => i !== index))}
+                >
+                  <Icon name="x" size={12} />
+                </button>
+              </li>
             ))}
-          </AttachmentGroup>
+          </ul>
         )}
 
         {uploading && (
@@ -360,7 +352,6 @@ export default function TicketComments({ ticket, user, onAdd, onUpload }) {
   );
 }
 
-// Re-export helpers for tests
 export {
   bubbleAlign,
   bubbleVariant,
