@@ -243,7 +243,22 @@ const CLIENT_VISIBLE_ACTIONS = new Set(['created']);
 
 function pickPerson(person) {
   if (!person) return null;
-  return { id: person.id ?? person._id, name: person.name };
+  // A populated Mongoose/BSON document exposes an `.id` getter that returns the
+  // raw 12-byte ObjectId buffer, not a string — `person.id ?? person._id` would
+  // silently take that branch. `_id` must be checked first.
+  return { id: String(person._id ?? person.id), name: person.name ?? null };
+}
+
+function publicAttachment(attachment) {
+  // Drops `key` (storage key), `uploadedBy` (internal staff id), and `clientRef`
+  // (internal dedupe token) — none belong in an external response.
+  return {
+    id: String(attachment._id ?? attachment.id),
+    name: attachment.name,
+    size: attachment.size,
+    mimeType: attachment.mimeType,
+    uploadedAt: attachment.uploadedAt,
+  };
 }
 
 function publicComment(comment) {
@@ -252,7 +267,7 @@ function publicComment(comment) {
     content: comment.content,
     createdAt: comment.createdAt,
     editedAt: comment.editedAt ?? null,
-    attachments: comment.attachments ?? [],
+    attachments: (comment.attachments ?? []).map(publicAttachment),
     commentedBy: pickPerson(comment.commentedBy),
   };
 }
