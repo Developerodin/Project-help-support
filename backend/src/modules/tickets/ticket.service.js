@@ -150,7 +150,7 @@ export async function getTicket(actor, idOrKey) {
   const ticket = await resolveTicketDoc(idOrKey, { populate: DETAIL_POPULATE });
   await assertCanViewTicket(actor, ticket);
   const json = ticket.toJSON();
-  return isExternalUser(actor) ? sanitizeExternalTicket(json) : json;
+  return isExternalUser(actor) ? sanitizeExternalTicket(json, { viewerId: actor._id }) : json;
 }
 
 function scopeFilter(scope, actorId) {
@@ -268,7 +268,7 @@ export async function listTickets(actor, query = {}) {
     ...page,
     results: page.results.map((t) => {
       const json = t.toJSON();
-      return isExternalUser(actor) ? sanitizeExternalTicket(json) : json;
+      return isExternalUser(actor) ? sanitizeExternalTicket(json, { viewerId: actor._id }) : json;
     }),
   };
 }
@@ -476,12 +476,14 @@ export async function assignTicket(actor, idOrKey, { assignedTo, team, revision 
 /** Watch/unwatch carry no revision: $addToSet and $pull are already idempotent. */
 export async function watchTicket(actor, idOrKey) {
   const ticket = await resolveTicketDoc(idOrKey);
+  await assertCanViewTicket(actor, ticket);
   await Ticket.updateOne({ _id: ticket._id }, { $addToSet: { watchers: actor._id } });
   return getTicket(actor, String(ticket._id));
 }
 
 export async function unwatchTicket(actor, idOrKey) {
   const ticket = await resolveTicketDoc(idOrKey);
+  await assertCanViewTicket(actor, ticket);
   await Ticket.updateOne({ _id: ticket._id }, { $pull: { watchers: actor._id } });
   return getTicket(actor, String(ticket._id));
 }

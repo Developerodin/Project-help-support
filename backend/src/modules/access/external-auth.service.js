@@ -304,8 +304,31 @@ function internalCommentAttachmentIds(comments) {
   return ids;
 }
 
+/**
+ * External responses never expose other watchers (often internal staff).
+ * When `viewerId` is supplied, include only that viewer if they are watching —
+ * enough for the Watch toggle without leaking the rest of the list.
+ */
+function selfOnlyWatchers(watchers, viewerId) {
+  if (!viewerId) return [];
+  const viewer = String(viewerId);
+  const match = (watchers || []).find((w) => String(w?._id ?? w?.id ?? w) === viewer);
+  if (!match) return [];
+
+  // Populated / lean person docs: prefer `_id`, then a string `id`. Bare
+  // ObjectId refs expose a misleading `.id` buffer getter — do not use that.
+  if (match && typeof match === 'object') {
+    const id = match._id ?? (typeof match.id === 'string' ? match.id : null);
+    if (id != null || typeof match.name === 'string') {
+      return [{ id: String(id ?? viewer), name: match.name ?? null }];
+    }
+  }
+
+  return [{ id: viewer, name: null }];
+}
+
 /** Strip internal-only ticket fields for external API responses. */
-export function sanitizeExternalTicket(ticketJson) {
+export function sanitizeExternalTicket(ticketJson, { viewerId } = {}) {
   const {
     comments,
     activityLog,
@@ -327,7 +350,7 @@ export function sanitizeExternalTicket(ticketJson) {
     assignedTo: pickPerson(rest.assignedTo),
     testedBy: null,
     team: pickPerson(rest.team),
-    watchers: [],
+    watchers: selfOnlyWatchers(watchers, viewerId),
     attachments: visibleAttachments,
     comments: (comments || []).filter((c) => c.internal !== true).map(publicComment),
     activityLog: (activityLog || [])

@@ -40,17 +40,19 @@ export async function createInAppNotifications(event, ticket, recipients, config
 /** The populated `ticket` on a notification is a full internal document — an
  * external recipient must see it through the same sanitizer every other
  * external-facing ticket read goes through. */
-function externalizeNotification(notificationJson, external) {
-  if (!external || !notificationJson.ticket) return notificationJson;
-  return { ...notificationJson, ticket: sanitizeExternalTicket(notificationJson.ticket) };
+function externalizeNotification(notificationJson, actor) {
+  if (!isExternalUser(actor) || !notificationJson.ticket) return notificationJson;
+  return {
+    ...notificationJson,
+    ticket: sanitizeExternalTicket(notificationJson.ticket, { viewerId: actor._id }),
+  };
 }
 
 export async function listNotifications(actor, query = {}) {
   const filter = { user: actor._id };
   if (String(query.unread) === 'true') filter.readAt = null;
 
-  const external = isExternalUser(actor);
-  if (external) {
+  if (isExternalUser(actor)) {
     const ticketScope = await buildExternalTicketFilter(actor);
     const visibleIds = await Ticket.find(ticketScope).distinct('_id');
     filter.ticket = { $in: visibleIds.length ? visibleIds : [null] };
@@ -61,7 +63,7 @@ export async function listNotifications(actor, query = {}) {
   });
   return {
     ...page,
-    results: page.results.map((n) => externalizeNotification(n.toJSON(), external)),
+    results: page.results.map((n) => externalizeNotification(n.toJSON(), actor)),
   };
 }
 
@@ -71,8 +73,7 @@ export async function markRead(actor, id) {
     throw new ApiError(404, 'NOTIFICATION_NOT_FOUND', 'Notification not found');
   }
 
-  const external = isExternalUser(actor);
-  if (external && notification.ticket) {
+  if (isExternalUser(actor) && notification.ticket) {
     const ticketScope = await buildExternalTicketFilter(actor);
     const visibleIds = await Ticket.find(ticketScope).distinct('_id');
     const ticketId = String(notification.ticket._id ?? notification.ticket);
@@ -85,7 +86,7 @@ export async function markRead(actor, id) {
     notification.readAt = new Date();
     await notification.save();
   }
-  return externalizeNotification(notification.toJSON(), external);
+  return externalizeNotification(notification.toJSON(), actor);
 }
 
 export async function markAllRead(actor) {

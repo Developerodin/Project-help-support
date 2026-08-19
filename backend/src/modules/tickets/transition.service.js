@@ -192,7 +192,7 @@ export async function transitionTicket(actor, idOrKey, { to, revision, note, rea
   // knows nothing about recipients. Phase 4's notification module consumes it.
   const json = written.toJSON();
   return {
-    ticket: isExternalUser(actor) ? sanitizeExternalTicket(json) : json,
+    ticket: isExternalUser(actor) ? sanitizeExternalTicket(json, { viewerId: actor._id }) : json,
     event: { type, from, to, actorId: String(actor._id), note, reason, at: now },
     detail: () => getTicket(actor, String(written._id)),
   };
