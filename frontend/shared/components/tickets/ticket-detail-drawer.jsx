@@ -161,48 +161,47 @@ function TicketDrawerContent({
             onTransition={run((body) => transitionTicket(ticket.ticketId, body))}
           />
         </div>
+        <div className="tabs" role="tablist" aria-label="Ticket detail">
+          <button
+            type="button" className="tab" role="tab" id="tab-discussion"
+            aria-selected={tab === 'discussion'}
+            aria-controls="panel-discussion"
+            onClick={() => selectTab('discussion')}
+          >
+            Discussion
+            <span className="n">{ticket.comments?.length || 0}</span>
+          </button>
+          <button
+            type="button" className="tab" role="tab" id="tab-details"
+            aria-selected={tab === 'details'}
+            aria-controls="panel-details"
+            onClick={() => selectTab('details')}
+          >
+            Details
+          </button>
+          <button
+            type="button" className="tab" role="tab" id="tab-attachments"
+            aria-selected={tab === 'attachments'}
+            aria-controls="panel-attachments"
+            onClick={() => selectTab('attachments')}
+          >
+            Attachments
+            <span className="n">{ticket.attachments?.length || 0}</span>
+          </button>
+          <button
+            type="button" className="tab" role="tab" id="tab-history"
+            aria-selected={tab === 'history'}
+            aria-controls="panel-history"
+            onClick={() => selectTab('history')}
+          >
+            History
+          </button>
+        </div>
       </div>
 
       <div className="drawer-body">
         <div className={`ticket-workspace${showMetadataRail ? '' : ' ticket-workspace--full'}`}>
           <main className="ticket-main">
-            <div className="tabs" role="tablist" aria-label="Ticket detail">
-              <button
-                type="button" className="tab" role="tab" id="tab-discussion"
-                aria-selected={tab === 'discussion'}
-                aria-controls="panel-discussion"
-                onClick={() => selectTab('discussion')}
-              >
-                Discussion
-                <span className="n">{ticket.comments?.length || 0}</span>
-              </button>
-              <button
-                type="button" className="tab" role="tab" id="tab-details"
-                aria-selected={tab === 'details'}
-                aria-controls="panel-details"
-                onClick={() => selectTab('details')}
-              >
-                Details
-              </button>
-              <button
-                type="button" className="tab" role="tab" id="tab-attachments"
-                aria-selected={tab === 'attachments'}
-                aria-controls="panel-attachments"
-                onClick={() => selectTab('attachments')}
-              >
-                Attachments
-                <span className="n">{ticket.attachments?.length || 0}</span>
-              </button>
-              <button
-                type="button" className="tab" role="tab" id="tab-history"
-                aria-selected={tab === 'history'}
-                aria-controls="panel-history"
-                onClick={() => selectTab('history')}
-              >
-                History
-              </button>
-            </div>
-
             <div className="drawer-main-scroll drawer-main-panels">
               <div
                 id="panel-discussion"
