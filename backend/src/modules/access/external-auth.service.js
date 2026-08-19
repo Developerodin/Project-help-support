@@ -238,6 +238,37 @@ export async function canExternalViewTicket(actor, ticket) {
   return creatorCoversClientBoundary(creatorId, clientId, projectId);
 }
 
+/** Stage moves come from stageHistory; every other action describes internal handling. */
+const CLIENT_VISIBLE_ACTIONS = new Set(['created']);
+
+function pickPerson(person) {
+  if (!person) return null;
+  return { id: person.id ?? person._id, name: person.name };
+}
+
+function publicComment(comment) {
+  return {
+    id: comment.id ?? comment._id,
+    content: comment.content,
+    createdAt: comment.createdAt,
+    editedAt: comment.editedAt ?? null,
+    attachments: comment.attachments ?? [],
+    commentedBy: pickPerson(comment.commentedBy),
+  };
+}
+
+function publicStageEntry(entry) {
+  // `note` and `decision` carry close reasons and QA rejection remarks — internal
+  // judgements about the client's own ticket.
+  return {
+    id: entry.id ?? entry._id,
+    from: entry.from ?? null,
+    to: entry.to,
+    at: entry.at,
+    by: pickPerson(entry.by),
+  };
+}
+
 /** Strip internal-only ticket fields for external API responses. */
 export function sanitizeExternalTicket(ticketJson) {
   const {
@@ -277,9 +308,17 @@ export function sanitizeExternalTicket(ticketJson) {
     testedBy: null,
     team,
     watchers: [],
-    comments: [],
-    activityLog: [],
-    stageHistory: [],
+    comments: (comments || []).filter((c) => c.internal !== true).map(publicComment),
+    activityLog: (activityLog || [])
+      .filter((entry) => CLIENT_VISIBLE_ACTIONS.has(entry.action))
+      .map((entry) => ({
+        id: entry.id ?? entry._id,
+        action: entry.action,
+        at: entry.at,
+        performedBy: pickPerson(entry.performedBy),
+        changes: [],
+      })),
+    stageHistory: (stageHistory || []).map(publicStageEntry),
   };
 }
 
