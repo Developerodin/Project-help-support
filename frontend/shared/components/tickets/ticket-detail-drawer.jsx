@@ -127,6 +127,26 @@ function TicketDrawerContent({
     eagerLoad: canAssign,
   });
 
+  const TAB_ORDER = ['discussion', 'details', 'attachments', 'history'];
+
+  const onTabKeyDown = useCallback((event) => {
+    const index = TAB_ORDER.indexOf(tab);
+    let next = null;
+    if (event.key === 'ArrowRight') next = TAB_ORDER[(index + 1) % TAB_ORDER.length];
+    if (event.key === 'ArrowLeft') next = TAB_ORDER[(index - 1 + TAB_ORDER.length) % TAB_ORDER.length];
+    if (event.key === 'Home') next = TAB_ORDER[0];
+    if (event.key === 'End') next = TAB_ORDER[TAB_ORDER.length - 1];
+    if (!next) return;
+    event.preventDefault();
+    setTab(next);
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`tab-${next}`);
+      el?.focus();
+      const still = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+      el?.scrollIntoView?.({ inline: 'nearest', block: 'nearest', behavior: still ? 'auto' : 'smooth' });
+    });
+  }, [tab]);
+
   return (
     <>
       <div className="drawer-head">
@@ -151,11 +171,12 @@ function TicketDrawerContent({
             onTransition={run((body) => transitionTicket(ticket.ticketId, body))}
           />
         </div>
-        <div className="tabs" role="tablist" aria-label="Ticket detail">
+        <div className="tabs" role="tablist" aria-label="Ticket detail" onKeyDown={onTabKeyDown}>
           <button
             type="button" className="tab" role="tab" id="tab-discussion"
             aria-selected={tab === 'discussion'}
             aria-controls="panel-discussion"
+            tabIndex={tab === 'discussion' ? 0 : -1}
             onClick={() => selectTab('discussion')}
           >
             Discussion
@@ -165,6 +186,7 @@ function TicketDrawerContent({
             type="button" className="tab" role="tab" id="tab-details"
             aria-selected={tab === 'details'}
             aria-controls="panel-details"
+            tabIndex={tab === 'details' ? 0 : -1}
             onClick={() => selectTab('details')}
           >
             Details
@@ -173,6 +195,7 @@ function TicketDrawerContent({
             type="button" className="tab" role="tab" id="tab-attachments"
             aria-selected={tab === 'attachments'}
             aria-controls="panel-attachments"
+            tabIndex={tab === 'attachments' ? 0 : -1}
             onClick={() => selectTab('attachments')}
           >
             Attachments
@@ -182,6 +205,7 @@ function TicketDrawerContent({
             type="button" className="tab" role="tab" id="tab-history"
             aria-selected={tab === 'history'}
             aria-controls="panel-history"
+            tabIndex={tab === 'history' ? 0 : -1}
             onClick={() => selectTab('history')}
           >
             History

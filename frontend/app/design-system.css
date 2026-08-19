@@ -646,6 +646,14 @@ input[type="checkbox"]{ accent-color:var(--sig); width:14px; height:14px; cursor
 .blocknote svg{ flex:none; margin-top:1px; }
 .drawer-rail{ padding:2px 0 14px; }
 .tabs{ display:flex; gap:2px; }
+.tab{ flex:none; }
+@media (max-width:560px){
+  .tabs{
+    overflow-x:auto; overflow-y:hidden;
+    scrollbar-width:none; padding-bottom:2px;
+  }
+  .tabs::-webkit-scrollbar{ display:none; }
+}
 .tab{
   padding:7px 11px; font-size:0.8125rem; font-weight:500; color:var(--ink-2);
   border-bottom:2px solid transparent; margin-bottom:-1px;
