@@ -78,6 +78,11 @@ const commentSchema = new mongoose.Schema(
     attachments: { type: [attachmentSchema], default: [] },
     clientRef: { type: String },
     editedAt: { type: Date },
+    /**
+     * False means every viewer on the ticket, including Client and Client Tester.
+     * True restricts the comment to internal roles. Default public, per product rule.
+     */
+    internal: { type: Boolean, default: false },
   },
   { timestamps: { createdAt: true, updatedAt: false } },
 );

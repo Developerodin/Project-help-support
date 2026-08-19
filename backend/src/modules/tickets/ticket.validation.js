@@ -133,6 +133,7 @@ export const addCommentSchema = {
     // Client-generated per submission. Its absence is allowed, but means a
     // retried request creates a second comment.
     clientRef: Joi.string().trim().max(64),
+    internal: Joi.boolean().default(false),
   }),
 };
 

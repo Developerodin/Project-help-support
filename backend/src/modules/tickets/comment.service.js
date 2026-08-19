@@ -1,6 +1,7 @@
-import { ADMIN_ROLES, hasAnyRole } from '@pms/shared';
+import { ADMIN_ROLES, hasAnyRole, isExternalUser } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { assertActiveUsers } from '../teams/team.service.js';
+import { canExternalViewTicket } from '../access/external-auth.service.js';
 import Ticket from './ticket.model.js';
 import { resolveTicketDoc } from './ticket.service.js';
 
@@ -24,11 +25,28 @@ export function findComment(ticket, commentId) {
  * evaluated as part of the same single-document write, so of two concurrent
  * submissions exactly one matches and the other returns null.
  */
-export async function addComment(actor, idOrKey, { content, mentions = [], clientRef }) {
+export async function addComment(actor, idOrKey, { content, mentions = [], clientRef, internal = false }) {
   const ticket = await resolveTicketDoc(idOrKey);
+
+  // An external actor may only comment on a ticket they can see, and may never
+  // hide a comment from the team serving them. The scope failure is a 403; the
+  // flag is coerced with no error surface, because no legitimate external caller
+  // can set it and a crafted one deserves no feedback.
+  const external = isExternalUser(actor);
+  if (external && !(await canExternalViewTicket(actor, ticket))) {
+    throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this ticket');
+  }
+
   await assertActiveUsers(mentions, { allowSuperAdmin: true });
 
-  const entry = { content, commentedBy: actor._id, mentions, clientRef, createdAt: new Date() };
+  const entry = {
+    content,
+    commentedBy: actor._id,
+    mentions,
+    clientRef,
+    internal: external ? false : Boolean(internal),
+    createdAt: new Date(),
+  };
 
   const filter = clientRef
     ? { _id: ticket._id, 'comments.clientRef': { $ne: clientRef } }
