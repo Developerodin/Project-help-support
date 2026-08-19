@@ -416,44 +416,30 @@ main{ min-width:0; display:flex; flex-direction:column; }
 .rail-xs{ width:78px; height:6px; flex:none; }
 .rail-md{ width:100%; height:8px; }
 
-/* Interactive rail in the drawer: segments are the transition control. */
-.railboard{ display:flex; gap:1px; width:100%; align-items:flex-start; }
-.railseg{
-  flex:1 1 0; min-width:0; display:flex; flex-direction:column; gap:5px;
-  text-align:left; padding:0; border-radius:0;
-}
+/* Read-only stage strip in the drawer header. */
+.stageline{ display:flex; align-items:center; gap:12px; }
+.railboard{ display:flex; gap:1px; flex:1; min-width:0; margin:0; padding:0; list-style:none; }
+.railseg{ flex:1 1 0; min-width:0; }
 .railseg.lane-start{ margin-left:6px; }
-.railseg .bar{ height:9px; background:var(--rule); border-radius:1px; }
-/* Locked is styled first so a passed stage always reads as passed, never as
-   forbidden: history is the one thing the rail must never misreport. */
-.railseg.locked .bar{
-  background:repeating-linear-gradient(135deg, var(--rule) 0 2px, transparent 2px 4px);
-  box-shadow:inset 0 0 0 1px var(--rule);
+.railseg .bar{ display:block; height:5px; border-radius:1px; background:var(--rule); }
+.railseg.done .bar{ background:var(--sig-line); }
+.railseg.now .bar{ background:var(--sig); height:7px; margin-top:-1px; }
+.stagenow{ flex:none; margin:0; font-size:0.8125rem; color:var(--ink-2); }
+.stagenow b{ color:var(--ink); font-weight:600; }
+.ctxstrip{
+  display:flex; flex-wrap:wrap; align-items:center; gap:4px 14px;
+  margin-top:10px; font-size:0.75rem; color:var(--ink-2);
 }
-.railseg.done .bar{ background:var(--sig-line); box-shadow:none; }
-.railseg.now .bar{ background:var(--sig); height:13px; margin-top:-4px; box-shadow:none; }
-.railseg .nm{
-  font-size:0.625rem; line-height:1.25; color:var(--ink-3); font-weight:500;
-  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+.ctxstrip__item{ display:inline-flex; align-items:center; gap:6px; min-width:0; }
+.ctxstrip__item + .ctxstrip__item::before{
+  content:"·"; color:var(--ink-3); margin-right:8px;
 }
-.railseg.now .nm{ color:var(--sig); font-weight:600; }
-.railseg.done .nm{ color:var(--ink-2); }
-.railseg.open:not(.now):hover .bar{ background:var(--sig-hi); }
-.railseg.open:not(.now):hover .nm{ color:var(--ink); }
-.railseg.locked{ cursor:not-allowed; }
-.railseg.done, .railseg.now{ cursor:default; }
-
-.railkey{ display:flex; gap:14px; margin-top:10px; flex-wrap:wrap; align-items:center; }
-.railkey > span{ display:inline-flex; align-items:center; gap:5px; font-size:0.6875rem; color:var(--ink-3); }
-.railkey i{ width:14px; height:6px; border-radius:1px; display:block; flex:none; }
-
-.lanebar{ display:flex; gap:1px; width:100%; margin-bottom:5px; }
-.lanebar > span{
-  font-size:0.625rem; color:var(--ink-3); font-weight:600; min-width:0;
-  letter-spacing:0.05em; text-transform:uppercase; padding-left:1px;
-  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+.ctxstrip .empty{ color:var(--ink-3); font-style:italic; }
+.ctxstrip b{ font-weight:600; color:var(--ink); font-variant-numeric:tabular-nums; }
+.ctxstrip b.late{ color:var(--alarm); }
+@media (max-width:560px){
+  .ctxstrip__item--secondary{ display:none; }
 }
-.lanebar > span.lane-start{ margin-left:6px; }
 
 /* ============================================================ Board */
 .board{ display:flex; gap:10px; align-items:flex-start; overflow-x:auto; padding-bottom:12px; }
@@ -707,8 +693,6 @@ input[type="checkbox"]{ accent-color:var(--sig); width:14px; height:14px; cursor
 .due.late .fill{ background:var(--alarm); }
 .due .read{ display:flex; align-items:baseline; gap:6px; font-size:0.75rem; color:var(--ink-2); flex-wrap:wrap; }
 .due .read b, .due .read span{ white-space:nowrap; }
-.stagenow{ font-size:0.75rem; color:var(--ink-2); margin-bottom:9px; }
-.stagenow b{ color:var(--ink); font-weight:600; }
 .due .read b{ font-family:var(--mono); font-weight:700; color:var(--ink); }
 .due.late .read b{ color:var(--alarm); }
 
