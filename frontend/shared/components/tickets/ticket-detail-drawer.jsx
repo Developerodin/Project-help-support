@@ -31,6 +31,11 @@ import TicketDrawerFooter from './ticket-drawer-footer.jsx';
 import { useTicketAssignment } from './use-ticket-assignment.js';
 import AppLoader from '../app-loader.jsx';
 
+function nestedDialogOpen(drawerNode) {
+  const layers = document.querySelectorAll('[role="dialog"], [role="alertdialog"]');
+  return Array.from(layers).some((el) => el !== drawerNode);
+}
+
 function TicketDrawerContent({
   ticket,
   user,
@@ -76,9 +81,14 @@ function TicketDrawerContent({
     const firstFieldId = validationDialog?.firstFieldId;
     setValidationDialog(null);
     if (firstFieldId) {
-      window.setTimeout(() => document.getElementById(firstFieldId)?.focus(), 0);
+      window.setTimeout(() => {
+        if (!document.getElementById(firstFieldId)) {
+          selectTab('details');
+        }
+        window.setTimeout(() => document.getElementById(firstFieldId)?.focus(), 0);
+      }, 0);
     }
-  }, [validationDialog]);
+  }, [validationDialog, selectTab]);
 
   const run = (operation, { rethrow = false } = {}) => async (...args) => {
     setError(null);
@@ -331,6 +341,8 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
   const { user } = useAuth();
   const { activeProjectId, setActiveProjectId } = useProject();
   const activeProjectIdRef = useRef(activeProjectId);
+  const drawerRef = useRef(null);
+  const openerRef = useRef(null);
   const [ticket, setTicket] = useState(null);
   const [error, setError] = useState(null);
 
@@ -351,17 +363,61 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
   useEffect(() => { load().catch(setError); }, [load]);
 
   useEffect(() => {
-    const onKey = (event) => { if (event.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+    openerRef.current = document.activeElement;
+    return () => {
+      const opener = openerRef.current;
+      if (opener instanceof HTMLElement && document.contains(opener)) opener.focus();
+    };
+  }, [ticketId]);
+
+  useEffect(() => {
+    if (!ticket) return;
+    drawerRef.current?.focus();
+  }, [ticket, ticketId]);
+
+  useEffect(() => {
+    const node = drawerRef.current;
+    if (!ticket || !node) return undefined;
+
+    function onKeyDown(event) {
+      if (event.key === 'Escape') {
+        if (nestedDialogOpen(node)) return;
+        event.stopPropagation();
+        onClose();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      if (nestedDialogOpen(node)) return;
+
+      const focusables = node.querySelectorAll(
+        'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusables.length) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+
+      if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      } else if (event.shiftKey && (document.activeElement === first || document.activeElement === node)) {
+        event.preventDefault();
+        last.focus();
+      }
+    }
+
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
+  }, [ticket, ticketId, onClose]);
 
   return (
     <>
       <div className={`scrim${ticket ? ' on' : ''}`} onClick={onClose} />
       <aside
         role="dialog"
+        aria-modal="true"
         aria-label={ticket ? `Ticket ${ticket.ticketId}` : 'Ticket detail'}
+        ref={drawerRef}
+        tabIndex={-1}
         className={`ticket-drawer drawer${ticket ? ' on' : ''}`}
       >
         {!ticket && (
