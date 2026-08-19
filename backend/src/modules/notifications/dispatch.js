@@ -1,4 +1,4 @@
-import { NOTIFICATION_EVENTS } from '@pms/shared';
+import { NOTIFICATION_EVENTS, isExternalUser } from '@pms/shared';
 import logger from '../../platform/logger.js';
 import { getTransport } from '../../platform/mailer.js';
 import Ticket from '../tickets/ticket.model.js';
@@ -53,14 +53,43 @@ async function resolveTicketForEmail(ticket) {
   return Ticket.findById(id).populate(EMAIL_TICKET_POPULATE);
 }
 
-async function fanOut(eventKey, ticket, actor, context, config, deps) {
+/** `note`/`reason` carry internal judgement (close reasons, QA rejections) about
+ * the client's own ticket — never in an external recipient's email context. */
+function stripExternalContext(context) {
+  const { note: _note, reason: _reason, ...safe } = context;
+  return safe;
+}
+
+async function fanOut(eventKey, ticket, actor, context, config, deps, { hideFromExternal = false } = {}) {
   const recipients = await getNotificationRecipients(eventKey, ticket, actor, context);
   if (recipients.length === 0) return;
 
+  // An internal comment must not surface to an external recipient on ANY
+  // channel — not even as "someone commented" — so they are dropped entirely
+  // before either channel runs, rather than merely having context stripped.
+  const visible = hideFromExternal
+    ? recipients.filter((r) => !isExternalUser(r.user))
+    : recipients;
+  if (visible.length === 0) return;
+
   const emailTicket = await resolveTicketForEmail(ticket);
 
-  await createInAppNotifications(eventKey, ticket, recipients, config);
-  await sendTicketEmail(eventKey, emailTicket, recipients, context, config, deps);
+  await createInAppNotifications(eventKey, ticket, visible, config);
+
+  // Context is built ONCE per event and would otherwise be shared verbatim
+  // across every recipient's email. Split it here, at send time, rather than
+  // threading a per-recipient context through sendTicketEmail/renderTicketEmail.
+  const internalRecipients = visible.filter((r) => !isExternalUser(r.user));
+  const externalRecipients = visible.filter((r) => isExternalUser(r.user));
+
+  if (internalRecipients.length) {
+    await sendTicketEmail(eventKey, emailTicket, internalRecipients, context, config, deps);
+  }
+  if (externalRecipients.length) {
+    await sendTicketEmail(
+      eventKey, emailTicket, externalRecipients, stripExternalContext(context), config, deps,
+    );
+  }
 }
 
 /**
@@ -77,7 +106,16 @@ export async function dispatchTicketEvent({ event, ticket, actor, config, deps =
 
     const context = buildEmailContext(event, ticket, actor);
 
-    await fanOut(event.type, ticket, actor, context, config, deps);
+    // Computed once, from the same comment lookup buildEmailContext already
+    // did, and reused for both fan-outs below: an internal comment must be
+    // invisible to an external recipient whether they hear about it as a
+    // comment or as a mention.
+    const commentIsInternal = event.type === 'TICKET_COMMENTED'
+      && findCommentOnTicket(ticket, event.commentId)?.internal === true;
+
+    await fanOut(event.type, ticket, actor, context, config, deps, {
+      hideFromExternal: commentIsInternal,
+    });
 
     // TICKET_MENTIONED is its OWN fan-out with its own recipient set and its own
     // preference key — it never unions the comment audience, or mentioning one
@@ -86,6 +124,7 @@ export async function dispatchTicketEvent({ event, ticket, actor, config, deps =
       await fanOut(
         'TICKET_MENTIONED', ticket, actor,
         { ...context, mentions: event.mentions }, config, deps,
+        { hideFromExternal: commentIsInternal },
       );
     }
   } catch (err) {

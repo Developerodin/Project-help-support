@@ -284,6 +284,26 @@ function publicStageEntry(entry) {
   };
 }
 
+const attachmentId = (a) => String(a._id ?? a.id);
+
+/**
+ * Ids of attachments that live inside an `internal: true` comment — collected
+ * from the RAW comments array, before it is filtered down to the public set.
+ * A ticket-level attachment sharing one of these ids was uploaded onto an
+ * internal comment and must not appear in the external attachments list
+ * either, even though the ticket-level array itself carries no `internal` flag.
+ */
+function internalCommentAttachmentIds(comments) {
+  const ids = new Set();
+  for (const comment of comments || []) {
+    if (comment.internal !== true) continue;
+    for (const attachment of comment.attachments || []) {
+      ids.add(attachmentId(attachment));
+    }
+  }
+  return ids;
+}
+
 /** Strip internal-only ticket fields for external API responses. */
 export function sanitizeExternalTicket(ticketJson) {
   const {
@@ -292,37 +312,23 @@ export function sanitizeExternalTicket(ticketJson) {
     stageHistory,
     watchers,
     testedBy,
+    attachments,
     ...rest
   } = ticketJson;
 
-  const createdBy = rest.createdBy
-    ? {
-      id: rest.createdBy.id ?? rest.createdBy._id,
-      name: rest.createdBy.name,
-    }
-    : rest.createdBy;
-
-  const assignedTo = rest.assignedTo
-    ? {
-      id: rest.assignedTo.id ?? rest.assignedTo._id,
-      name: rest.assignedTo.name,
-    }
-    : null;
-
-  const team = rest.team
-    ? {
-      id: rest.team.id ?? rest.team._id,
-      name: rest.team.name,
-    }
-    : null;
+  const hiddenAttachmentIds = internalCommentAttachmentIds(comments);
+  const visibleAttachments = (attachments || [])
+    .filter((a) => !hiddenAttachmentIds.has(attachmentId(a)))
+    .map(publicAttachment);
 
   return {
     ...rest,
-    createdBy,
-    assignedTo,
+    createdBy: pickPerson(rest.createdBy),
+    assignedTo: pickPerson(rest.assignedTo),
     testedBy: null,
-    team,
+    team: pickPerson(rest.team),
     watchers: [],
+    attachments: visibleAttachments,
     comments: (comments || []).filter((c) => c.internal !== true).map(publicComment),
     activityLog: (activityLog || [])
       .filter((entry) => CLIENT_VISIBLE_ACTIONS.has(entry.action))

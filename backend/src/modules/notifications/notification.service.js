@@ -1,7 +1,7 @@
 import { isExternalUser } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
-import { buildExternalTicketFilter } from '../access/external-auth.service.js';
+import { buildExternalTicketFilter, sanitizeExternalTicket } from '../access/external-auth.service.js';
 import Ticket from '../tickets/ticket.model.js';
 import Notification from './notification.model.js';
 
@@ -37,11 +37,20 @@ export async function createInAppNotifications(event, ticket, recipients, config
   return Notification.insertMany(rows);
 }
 
+/** The populated `ticket` on a notification is a full internal document — an
+ * external recipient must see it through the same sanitizer every other
+ * external-facing ticket read goes through. */
+function externalizeNotification(notificationJson, external) {
+  if (!external || !notificationJson.ticket) return notificationJson;
+  return { ...notificationJson, ticket: sanitizeExternalTicket(notificationJson.ticket) };
+}
+
 export async function listNotifications(actor, query = {}) {
   const filter = { user: actor._id };
   if (String(query.unread) === 'true') filter.readAt = null;
 
-  if (isExternalUser(actor)) {
+  const external = isExternalUser(actor);
+  if (external) {
     const ticketScope = await buildExternalTicketFilter(actor);
     const visibleIds = await Ticket.find(ticketScope).distinct('_id');
     filter.ticket = { $in: visibleIds.length ? visibleIds : [null] };
@@ -50,7 +59,10 @@ export async function listNotifications(actor, query = {}) {
   const page = await paginate(Notification, filter, {
     page: query.page, limit: query.limit, sortBy: 'createdAt:desc', populate: ['ticket'],
   });
-  return { ...page, results: page.results.map((n) => n.toJSON()) };
+  return {
+    ...page,
+    results: page.results.map((n) => externalizeNotification(n.toJSON(), external)),
+  };
 }
 
 export async function markRead(actor, id) {
@@ -59,7 +71,8 @@ export async function markRead(actor, id) {
     throw new ApiError(404, 'NOTIFICATION_NOT_FOUND', 'Notification not found');
   }
 
-  if (isExternalUser(actor) && notification.ticket) {
+  const external = isExternalUser(actor);
+  if (external && notification.ticket) {
     const ticketScope = await buildExternalTicketFilter(actor);
     const visibleIds = await Ticket.find(ticketScope).distinct('_id');
     const ticketId = String(notification.ticket._id ?? notification.ticket);
@@ -72,7 +85,7 @@ export async function markRead(actor, id) {
     notification.readAt = new Date();
     await notification.save();
   }
-  return notification.toJSON();
+  return externalizeNotification(notification.toJSON(), external);
 }
 
 export async function markAllRead(actor) {

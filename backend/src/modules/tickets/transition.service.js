@@ -65,7 +65,7 @@ export function checkGuards(to, ticket) {
 }
 
 /** Layer 2 for this endpoint: the same relationship rule as an ordinary edit. */
-export async function assertMayTransition(actor, ticket, to) {
+async function assertMayTransition(actor, ticket, to) {
   const clientClosingLive =
     isExternalUser(actor) && ticket.status === 'live' && to === 'closed'
     && (await canExternalViewTicket(actor, ticket));

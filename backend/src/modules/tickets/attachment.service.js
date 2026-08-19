@@ -79,7 +79,12 @@ export async function addAttachments(actor, idOrKey, files, config, opts = {}) {
     }
   }
 
-  if (commentId) findComment(ticket, commentId);
+  if (commentId) {
+    const targetComment = findComment(ticket, commentId);
+    if (isExternalUser(actor) && targetComment.internal === true) {
+      throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this ticket');
+    }
+  }
 
   // Validate EVERY file before uploading ANY of them: a batch that half-uploads
   // and then rejects leaves orphan objects in the bucket.
@@ -221,6 +226,14 @@ export async function removeAttachment(actor, idOrKey, attachmentId, config, opt
   return { id: String(attachment._id) };
 }
 
+/** Whether attachmentId is attached to a comment marked internal on this ticket. */
+function attachmentBelongsToInternalComment(ticket, attachmentId) {
+  return (ticket.comments || []).some(
+    (comment) => comment.internal === true
+      && (comment.attachments || []).some((a) => sameId(a, attachmentId)),
+  );
+}
+
 /**
  * The full auth stack has already run as middleware. This confirms the
  * attachment belongs to THIS ticket, and only then mints a URL.
@@ -231,6 +244,13 @@ export async function downloadUrl(actor, idOrKey, attachmentId, config, opts = {
 
   const ticket = await resolveTicketDoc(idOrKey);
   await assertCanViewTicket(actor, ticket);
+
+  // A ticket in scope may still carry an internal comment; its attachment is
+  // not — same message as the scope gate, no oracle differential.
+  if (isExternalUser(actor) && attachmentBelongsToInternalComment(ticket, attachmentId)) {
+    throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this ticket');
+  }
+
   const attachment = findAttachment(ticket, attachmentId);
 
   return storage.presignGet(config, attachment.key);
