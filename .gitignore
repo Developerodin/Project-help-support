@@ -16,6 +16,8 @@ coverage/
 scripts/
 
 # Local/agent documentation - not for remote
+.claude/
+.superpowers/
 docs/
 
 # Local dev scratch: records whichever port the frontend last used. Nothing
