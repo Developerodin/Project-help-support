@@ -180,23 +180,12 @@ export default function TicketComments({ ticket, user, onAdd, onUpload }) {
         )}
 
         <div className={`composer-row${internalOnly ? ' composer-row--internal' : ''}`}>
-          <button
-            type="button"
-            className="composer-icon-btn"
-            aria-label={`Attach files. ${ATTACHMENT_HINT}`}
-            title={`Attach files. ${ATTACHMENT_HINT}`}
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-          >
-            <Icon name="clip" size={15} />
-          </button>
-
           <textarea
             id="new-comment"
             rows={1}
             className="composer-textarea"
-            aria-label="Add a comment"
-            placeholder={internalOnly ? 'Internal note · Add a comment...' : 'Add a comment...'}
+            aria-label={internalOnly ? 'Add an internal note' : 'Add a comment'}
+            placeholder={internalOnly ? 'Add an internal note...' : 'Add a comment...'}
             value={content}
             onChange={(event) => setContent(event.target.value)}
             onKeyDown={handleCommentKeyDown}
@@ -216,6 +205,17 @@ export default function TicketComments({ ticket, user, onAdd, onUpload }) {
               <Icon name="lock" size={15} />
             </button>
           )}
+
+          <button
+            type="button"
+            className="composer-icon-btn"
+            aria-label={`Attach files. ${ATTACHMENT_HINT}`}
+            title={`Attach files. ${ATTACHMENT_HINT}`}
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+          >
+            <Icon name="clip" size={15} />
+          </button>
 
           <button
             type="button"
