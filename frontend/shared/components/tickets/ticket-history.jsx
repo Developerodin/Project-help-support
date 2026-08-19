@@ -32,9 +32,17 @@ function groupByDay(events) {
   return groups;
 }
 
+function formatChangeLine(change) {
+  const { label, from, to } = change;
+  if (from && to) return `${label}: ${from} → ${to}`;
+  if (to) return `${label}: ${to}`;
+  if (from) return `${label}: cleared`;
+  return label;
+}
+
 function EventRow({ event, onOpenDiscussion }) {
   const [open, setOpen] = useState(false);
-  const rolled = event.collapsed?.length ? event.collapsed : null;
+  const expandable = event.changes?.length > 0;
 
   return (
     <li className={`trail-item trail-item--${event.kind}`}>
@@ -50,10 +58,13 @@ function EventRow({ event, onOpenDiscussion }) {
       {event.href === 'discussion' ? (
         <button type="button" className="trail-summary trail-jump" onClick={onOpenDiscussion}>
           {event.summary}
+          {event.commentPreview && (
+            <span className="trail-preview"> — {event.commentPreview}</span>
+          )}
           <span aria-hidden="true"> ↗</span>
           <span className="sr"> — open in Discussion</span>
         </button>
-      ) : rolled ? (
+      ) : expandable ? (
         <button
           type="button"
           className="trail-summary trail-jump"
@@ -67,9 +78,11 @@ function EventRow({ event, onOpenDiscussion }) {
         <p className="trail-summary">{event.summary}</p>
       )}
 
-      {rolled && open && (
+      {expandable && open && (
         <ul className="trail-rolled">
-          {rolled.map((child) => <li key={child.id}>{child.summary}</li>)}
+          {event.changes.map((change, index) => (
+            <li key={`${change.label}-${index}`}>{formatChangeLine(change)}</li>
+          ))}
         </ul>
       )}
 

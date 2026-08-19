@@ -1,4 +1,5 @@
 import { stageLabel } from '@pms/shared';
+import { formatDateOnly } from './ticket-drawer-utils.js';
 
 /** stageHistory is the richer source for transitions — it carries decision and note. */
 const TRANSITION_ACTIONS = new Set(['transitioned', 'reopened']);
@@ -6,7 +7,25 @@ const TRANSITION_ACTIONS = new Set(['transitioned', 'reopened']);
 /** Lower sorts first when timestamps tie. */
 const SOURCE_PRIORITY = { stage: 0, activity: 1, comment: 2 };
 
-const COLLAPSE_WINDOW_MS = 5 * 60 * 1000;
+const DATE_FIELDS = new Set(['estimatedResolutionAt', 'expectedReleaseDate']);
+const ID_LIKE = /^[a-f0-9]{24}$/i;
+const COMMENT_PREVIEW_LEN = 100;
+
+const FIELD_LABELS = {
+  assignedTo: 'Assignee',
+  team: 'Team',
+  priority: 'Priority',
+  severity: 'Severity',
+  environment: 'Environment',
+  category: 'Category',
+  module: 'Module',
+  page: 'Page',
+  title: 'Title',
+  description: 'Description',
+  estimatedResolutionAt: 'Resolution estimate',
+  expectedReleaseDate: 'Expected release',
+  labels: 'Labels',
+};
 
 function actorOf(person) {
   return { name: person?.name || 'Someone' };
@@ -32,37 +51,37 @@ function labelStage(key) {
   }
 }
 
-/**
- * Schema keys are not user-facing language. A key with no entry here yields a
- * generic sentence rather than leaking the key itself.
- */
-const FIELD_LABELS = {
-  assignedTo: 'the assignee',
-  team: 'the team',
-  priority: 'priority',
-  severity: 'severity',
-  environment: 'environment',
-  category: 'category',
-  module: 'module',
-  page: 'page',
-  title: 'the title',
-  description: 'the description',
-  estimatedResolutionAt: 'the resolution estimate',
-  expectedReleaseDate: 'the expected release',
-  labels: 'labels',
-};
-
-const ID_LIKE = /^[a-f0-9]{24}$/i;
-
-/**
- * `changes[]` values are heterogeneous by construction. assignTicket pushes
- * `{ from: ticket.assignedTo, to: assignedTo }` where `from` is a populated User
- * document and `to` is a raw ObjectId string, so naive interpolation renders
- * "[object Object]" and a 24-character id on the most common change in the system.
- * Anything not safely displayable resolves to null and the sentence omits it.
- */
-function displayValue(value) {
+function normalizeForCompare(value, field) {
   if (value == null || value === '') return null;
+  if (DATE_FIELDS.has(field) || value instanceof Date) {
+    const ms = value instanceof Date ? value.getTime() : Date.parse(String(value));
+    if (!Number.isNaN(ms)) return new Date(ms).toISOString().slice(0, 10);
+  }
+  if (typeof value === 'object') {
+    if (value.name) return value.name;
+    if (value._id) return String(value._id);
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) return JSON.stringify([...value].sort());
+  return String(value).toLowerCase();
+}
+
+function isNoOpChange(change) {
+  if (!change?.field) return true;
+  return normalizeForCompare(change.from, change.field) === normalizeForCompare(change.to, change.field);
+}
+
+function filterNoOpChanges(changes) {
+  if (!Array.isArray(changes)) return [];
+  return changes.filter((change) => !isNoOpChange(change));
+}
+
+function formatValue(value, field) {
+  if (value == null || value === '') return null;
+  if (DATE_FIELDS.has(field)) {
+    const ms = value instanceof Date ? value.getTime() : Date.parse(String(value));
+    if (!Number.isNaN(ms)) return formatDateOnly(new Date(ms).toISOString());
+  }
   if (typeof value === 'object') return value.name || null;
   const str = String(value);
   if (ID_LIKE.test(str)) return null;
@@ -70,15 +89,31 @@ function displayValue(value) {
   return str;
 }
 
-function describeChange(change) {
+function toChangeEntry(change) {
   const label = FIELD_LABELS[change?.field];
-  if (!label) return 'Updated this ticket';
-  const from = displayValue(change.from);
-  const to = displayValue(change.to);
-  if (from && to) return `Changed ${label} from ${from} to ${to}`;
-  if (to) return `Set ${label} to ${to}`;
-  if (from) return `Cleared ${label}`;
-  return `Changed ${label}`;
+  if (!label) return null;
+  return {
+    label,
+    from: formatValue(change.from, change.field),
+    to: formatValue(change.to, change.field),
+  };
+}
+
+function buildChanges(changes) {
+  return filterNoOpChanges(changes).map(toChangeEntry).filter(Boolean);
+}
+
+function updateSummary(changeCount) {
+  if (changeCount <= 1) return 'Updated ticket';
+  return `Updated ticket · ${changeCount} changes`;
+}
+
+function truncatePreview(text) {
+  if (!text) return null;
+  const clean = String(text).trim();
+  if (!clean) return null;
+  if (clean.length <= COMMENT_PREVIEW_LEN) return clean;
+  return `${clean.slice(0, COMMENT_PREVIEW_LEN).trimEnd()}…`;
 }
 
 function fromActivity(entry, index) {
@@ -88,40 +123,59 @@ function fromActivity(entry, index) {
     detail: null,
     href: null,
     source: 'activity',
+    changes: [],
+    commentPreview: null,
   };
-  const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+  const rawChanges = Array.isArray(entry?.changes) ? entry.changes : [];
   const id = idOf(entry, index, 'act');
 
   switch (entry?.action) {
     case 'created':
       return [{ ...base, id, kind: 'created', summary: 'Opened this ticket' }];
     case 'assigned': {
-      const change = changes.find((c) => c?.field === 'assignedTo');
-      if (!change) return [{ ...base, id, kind: 'change', summary: 'Changed the assignment' }];
-      const to = displayValue(change.to);
-      if (to) return [{ ...base, id, kind: 'change', summary: `Assigned to ${to}` }];
-      // `to` present but unresolvable means a reassignment we cannot name.
+      const change = rawChanges.find((c) => c?.field === 'assignedTo');
+      const changes = buildChanges(change ? [change] : []);
+      const to = change ? formatValue(change.to, 'assignedTo') : null;
+      let summary;
+      if (to) summary = `Assigned to ${to}`;
+      else if (change?.to) summary = 'Changed the assignee';
+      else summary = 'Unassigned this ticket';
       return [{
-        ...base, id, kind: 'change',
-        summary: change.to ? 'Changed the assignee' : 'Unassigned this ticket',
+        ...base,
+        id,
+        kind: 'update',
+        summary,
+        changes,
+        collapsed: changes.length > 0,
       }];
     }
-    case 'updated':
-      if (!changes.length) return [{ ...base, id, kind: 'change', summary: 'Updated this ticket' }];
-      return changes.map((change, i) => ({
-        ...base, id: `${id}#${i}`, kind: 'change', summary: describeChange(change),
-      }));
-    case 'attachments_added': {
-      const n = changes.length || 1;
+    case 'updated': {
+      const changes = buildChanges(rawChanges);
+      if (!changes.length) return [];
       return [{
-        ...base, id, kind: 'file',
+        ...base,
+        id,
+        kind: 'update',
+        summary: updateSummary(changes.length),
+        changes,
+        collapsed: changes.length > 0,
+      }];
+    }
+    case 'attachments_added': {
+      const n = filterNoOpChanges(rawChanges).length || rawChanges.length || 1;
+      return [{
+        ...base,
+        id,
+        kind: 'file',
         summary: `Attached ${n} file${n === 1 ? '' : 's'}`,
       }];
     }
     case 'attachment_removed': {
-      const name = displayValue(changes[0]?.from);
+      const name = formatValue(rawChanges[0]?.from, 'attachment');
       return [{
-        ...base, id, kind: 'file',
+        ...base,
+        id,
+        kind: 'file',
         summary: name ? `Removed ${name}` : 'Removed an attachment',
       }];
     }
@@ -134,18 +188,13 @@ function fromActivity(entry, index) {
     case 'comment_deleted':
       return [{ ...base, id, kind: 'comment', summary: 'Deleted a comment' }];
     default:
-      // Never surface a raw action name or an interpolated undefined.
-      return [{ ...base, id, kind: 'change', summary: 'Updated this ticket' }];
+      return [{ ...base, id, kind: 'update', summary: 'Updated ticket' }];
   }
 }
 
 function fromStage(entry, index, skipInitial) {
   const to = labelStage(entry?.to);
   if (!to) return [];
-  // ticket.service.js seeds every new ticket with a from-less stageHistory row
-  // AND an activityLog `created` entry at the same timestamp. When activityLog
-  // already records creation, the from-less stage row is a twin, not new
-  // information — legacy tickets with no activityLog keep "Set to <stage>".
   if (skipInitial && !entry?.from) return [];
   const from = labelStage(entry?.from);
   return [{
@@ -157,6 +206,8 @@ function fromStage(entry, index, skipInitial) {
     detail: entry?.note || null,
     href: null,
     source: 'stage',
+    changes: [],
+    commentPreview: null,
   }];
 }
 
@@ -166,11 +217,12 @@ function fromComment(entry, index) {
     at: timeOf(entry?.createdAt),
     actor: actorOf(entry?.commentedBy),
     kind: 'comment',
-    // The body never enters the feed — Discussion owns it.
     summary: 'Commented',
+    commentPreview: truncatePreview(entry?.content),
     detail: null,
     href: 'discussion',
     source: 'comment',
+    changes: [],
   }];
 }
 
@@ -200,55 +252,6 @@ function compare(a, b) {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
-/**
- * Strictly consecutive same-actor `change` events inside the window fold into
- * one row. Siblings expanded from ONE `updated` entry (ids `act:a1#0`,
- * `act:a1#1`, sharing a parent and a timestamp) are exempt — the spec requires
- * one sentence per change for a single save, and without this exemption the
- * expansion would immediately re-collapse into "Made N changes".
- *
- * The exemption is a property of the PARENT GROUP, not of adjacency in the
- * run: comparing only against the accumulating run head (the previous
- * approach) lets a later sibling from a different multi-change parent slip
- * into an already-open run, splitting one save across two rows. Instead,
- * precompute how many `change` events share each parent id; any event whose
- * parent has more than one member can never be a collapse member or target.
- * Two same-parent singles cannot exist, so no parent-equality check is needed.
- */
-const parentOf = (id) => String(id).split('#')[0];
-
-function collapseRuns(events) {
-  const parentCounts = new Map();
-  for (const event of events) {
-    if (event.kind !== 'change') continue;
-    const parent = parentOf(event.id);
-    parentCounts.set(parent, (parentCounts.get(parent) || 0) + 1);
-  }
-  const isExempt = (event) => event.kind === 'change' && parentCounts.get(parentOf(event.id)) > 1;
-
-  const out = [];
-  for (const event of events) {
-    const prev = out[out.length - 1];
-    const sameRun = prev
-      && prev.kind === 'change'
-      && event.kind === 'change'
-      && !isExempt(prev)
-      && !isExempt(event)
-      && prev.actor.name === event.actor.name
-      && prev.at && event.at
-      && Math.abs(Date.parse(prev.at) - Date.parse(event.at)) <= COLLAPSE_WINDOW_MS;
-
-    if (!sameRun) {
-      out.push({ ...event });
-      continue;
-    }
-    if (!prev.collapsed) prev.collapsed = [{ ...prev }];
-    prev.collapsed.push({ ...event });
-    prev.summary = `Made ${prev.collapsed.length} changes`;
-  }
-  return out;
-}
-
 export function buildActivityFeed(ticket) {
   const hasCreatedActivity = Array.isArray(ticket?.activityLog)
     && ticket.activityLog.some((e) => e?.action === 'created');
@@ -259,5 +262,5 @@ export function buildActivityFeed(ticket) {
   const stages = mapAll(ticket?.stageHistory, (entry, i) => fromStage(entry, i, hasCreatedActivity));
   const comments = mapAll(ticket?.comments, fromComment);
 
-  return collapseRuns([...stages, ...activity, ...comments].sort(compare));
+  return [...stages, ...activity, ...comments].sort(compare);
 }

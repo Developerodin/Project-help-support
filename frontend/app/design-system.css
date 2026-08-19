@@ -749,7 +749,12 @@ input[type="checkbox"]{ accent-color:var(--sig); width:14px; height:14px; cursor
 .sidecol input[type="date"], .sidecol textarea{
   width:100%; margin:4px 0; font-size:0.8125rem;
   padding:0 8px; border:1px solid var(--rule); border-radius:var(--r);
-  background:var(--paper); outline:none;
+  background:var(--panel); color:var(--ink); outline:none;
+}
+.panel .sidecol input[type="date"], .panel .sidecol textarea{ background:var(--panel-2); }
+.sidecol input[type="date"]:disabled, .sidecol textarea:disabled{
+  background:var(--rule-soft); color:var(--ink-3); border-color:var(--rule-soft);
+  opacity:0.8; cursor:not-allowed;
 }
 .sidecol input[type="date"]{ height:30px; }
 .sidecol textarea{ padding:6px 8px; line-height:1.5; resize:vertical; }
@@ -849,7 +854,8 @@ input[type="checkbox"]{ accent-color:var(--sig); width:14px; height:14px; cursor
 .trail-item--block::before{ background:var(--alarm); border-color:var(--alarm); }
 .trail-item--comment::before{ border-color:var(--ink-3); border-style:double; border-width:3px; }
 .trail-item--file::before{ border-radius:1px; }
-.trail-item--change::before{ width:5px; height:5px; top:13px; }
+.trail-item--update::before{ width:5px; height:5px; top:13px; }
+.trail-preview{ color:var(--ink-2); }
 .trail-jump{
   display:block; width:100%; margin:1px 0 0; padding:0;
   border:none; background:none; text-align:left; cursor:pointer;
