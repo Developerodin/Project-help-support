@@ -1988,7 +1988,8 @@ a.button3{ display:block; text-align:center; text-decoration:none; cursor:pointe
   min-height:0;
 }
 .ticket-workspace--full,
-.drawer .ticket-workspace--full{
+.drawer .ticket-workspace.ticket-workspace--full{
+  /* ponytail: extra class beats the later `.drawer .ticket-workspace` two-column rule */
   grid-template-columns:minmax(0, 1fr);
   gap:0;
 }
