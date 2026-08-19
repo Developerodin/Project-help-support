@@ -770,6 +770,15 @@ input[type="checkbox"]{ accent-color:var(--sig); width:14px; height:14px; cursor
   background:var(--panel);
 }
 .composer-row:focus-within{ border-color:var(--sig); }
+.composer-row--internal{
+  border-color:var(--ink-3);
+  background:color-mix(in srgb, var(--panel) 88%, var(--ink-3));
+}
+.composer-row--internal:focus-within{ border-color:var(--ink-2); }
+.composer-internal-toggle.is-active{
+  color:var(--ink);
+  background:color-mix(in srgb, var(--rule-soft) 70%, var(--ink-3));
+}
 .composer-textarea{
   flex:1; min-width:0;
   border:0; outline:0; background:transparent;
@@ -809,12 +818,6 @@ input[type="checkbox"]{ accent-color:var(--sig); width:14px; height:14px; cursor
 .composer-attachment-chip .sz{ color:var(--ink-3); flex:none; }
 .composer-error{ margin:0 0 6px; }
 .composer-uploading{ margin-bottom:6px; }
-.composer-internal{
-  display:inline-flex; align-items:center; gap:6px;
-  margin-bottom:6px;
-  font-size:0.75rem; color:var(--ink-2); cursor:pointer;
-}
-.composer-internal input{ margin:0; }
 .comment-internal{
   font-size:0.6875rem; font-weight:600; letter-spacing:0.04em;
   color:var(--ink-3); background:none;

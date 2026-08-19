@@ -28,12 +28,11 @@ export function findComment(ticket, commentId) {
 export async function addComment(actor, idOrKey, { content, mentions = [], clientRef, internal = false }) {
   const ticket = await resolveTicketDoc(idOrKey);
 
-  // An external actor may only comment on a ticket they can see, and may never
-  // hide a comment from the team serving them. The scope failure is a 403; the
-  // flag is coerced with no error surface, because no legitimate external caller
-  // can set it and a crafted one deserves no feedback.
   const external = isExternalUser(actor);
   if (external && !(await canExternalViewTicket(actor, ticket))) {
+    throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this ticket');
+  }
+  if (external && internal === true) {
     throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this ticket');
   }
 

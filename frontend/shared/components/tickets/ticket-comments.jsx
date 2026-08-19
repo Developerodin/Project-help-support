@@ -70,12 +70,12 @@ function attachOnlyContent(files) {
 
 export default function TicketComments({ ticket, user, onAdd, onUpload }) {
   const [content, setContent] = useState('');
-  const [internal, setInternal] = useState(false);
+  const [internalOnly, setInternalOnly] = useState(false);
   const [pendingFiles, setPendingFiles] = useState([]);
   const [attachError, setAttachError] = useState(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
-  const canMarkInternal = Boolean(user) && !isExternalUser(user);
+  const canCreateInternalComment = Boolean(user) && !isExternalUser(user);
 
   function addFiles(incoming) {
     const { errors, valid } = validateAttachmentBatch(pendingFiles, incoming);
@@ -95,9 +95,9 @@ export default function TicketComments({ ticket, user, onAdd, onUpload }) {
         setPendingFiles([]);
         setContent('');
       } else if (content.trim()) {
-        await onAdd({ content: content.trim(), internal, clientRef: crypto.randomUUID() });
+        await onAdd({ content: content.trim(), internal: internalOnly, clientRef: crypto.randomUUID() });
         setContent('');
-        setInternal(false);
+        setInternalOnly(false);
       }
     } catch (err) {
       setAttachError(attachmentErrorMessage(err));
@@ -179,20 +179,7 @@ export default function TicketComments({ ticket, user, onAdd, onUpload }) {
           </div>
         )}
 
-        {canMarkInternal && (
-          <label className="composer-internal">
-            <input
-              type="checkbox"
-              checked={internal}
-              onChange={(event) => setInternal(event.target.checked)}
-              disabled={uploading}
-            />
-            Internal only
-            <span className="meta"> — hidden from the client</span>
-          </label>
-        )}
-
-        <div className="composer-row">
+        <div className={`composer-row${internalOnly ? ' composer-row--internal' : ''}`}>
           <button
             type="button"
             className="composer-icon-btn"
@@ -209,18 +196,32 @@ export default function TicketComments({ ticket, user, onAdd, onUpload }) {
             rows={1}
             className="composer-textarea"
             aria-label="Add a comment"
-            placeholder="Add a comment..."
+            placeholder={internalOnly ? 'Internal note · Add a comment...' : 'Add a comment...'}
             value={content}
             onChange={(event) => setContent(event.target.value)}
             onKeyDown={handleCommentKeyDown}
             disabled={uploading}
           />
 
+          {canCreateInternalComment && (
+            <button
+              type="button"
+              className={`composer-icon-btn composer-internal-toggle${internalOnly ? ' is-active' : ''}`}
+              aria-pressed={internalOnly}
+              aria-label={internalOnly ? 'Internal note enabled' : 'Make internal note'}
+              title="Only visible to internal team members"
+              disabled={uploading}
+              onClick={() => setInternalOnly((prev) => !prev)}
+            >
+              <Icon name="lock" size={15} />
+            </button>
+          )}
+
           <button
             type="button"
             className="composer-icon-btn composer-send"
-            aria-label={uploading ? 'Posting comment' : internal ? 'Comment internally' : 'Send comment'}
-            title={uploading ? 'Posting comment' : internal ? 'Comment internally' : 'Send comment'}
+            aria-label={uploading ? 'Posting comment' : internalOnly ? 'Comment internally' : 'Send comment'}
+            title={uploading ? 'Posting comment' : internalOnly ? 'Comment internally' : 'Send comment'}
             disabled={!canSubmit || uploading}
             onClick={submit}
             aria-busy={uploading || undefined}
