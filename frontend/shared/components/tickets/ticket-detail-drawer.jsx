@@ -237,6 +237,7 @@ function TicketDrawerContent({
               >
                 <TicketComments
                   ticket={ticket}
+                  user={user}
                   onAdd={run((body) => addComment(ticket.ticketId, body), { rethrow: true })}
                   onUpload={run((form) => uploadAttachments(ticket.ticketId, form), { rethrow: true })}
                 />

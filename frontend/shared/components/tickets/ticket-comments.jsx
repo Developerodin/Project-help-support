@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { isExternalUser } from '@pms/shared';
 import Icon, { initials } from '../icons.jsx';
 import AttachmentUploadLoader from '../attachment-upload-loader.jsx';
 import { attachmentErrorMessage } from '@/shared/lib/api-error.js';
@@ -67,12 +68,14 @@ function attachOnlyContent(files) {
   return `Attached ${files.length} files`;
 }
 
-export default function TicketComments({ ticket, onAdd, onUpload }) {
+export default function TicketComments({ ticket, user, onAdd, onUpload }) {
   const [content, setContent] = useState('');
+  const [internal, setInternal] = useState(false);
   const [pendingFiles, setPendingFiles] = useState([]);
   const [attachError, setAttachError] = useState(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
+  const canMarkInternal = Boolean(user) && !isExternalUser(user);
 
   function addFiles(incoming) {
     const { errors, valid } = validateAttachmentBatch(pendingFiles, incoming);
@@ -92,8 +95,9 @@ export default function TicketComments({ ticket, onAdd, onUpload }) {
         setPendingFiles([]);
         setContent('');
       } else if (content.trim()) {
-        await onAdd({ content: content.trim(), clientRef: crypto.randomUUID() });
+        await onAdd({ content: content.trim(), internal, clientRef: crypto.randomUUID() });
         setContent('');
+        setInternal(false);
       }
     } catch (err) {
       setAttachError(attachmentErrorMessage(err));
@@ -125,10 +129,11 @@ export default function TicketComments({ ticket, onAdd, onUpload }) {
           <div className="body">
             <div className="who">
               <b>{comment.commentedBy?.name || 'Someone'}</b>
-              <span className="when">
-                {formatWhen(comment.createdAt)}
-                {comment.editedAt && ' (edited)'}
-              </span>
+                <span className="when">
+                  {formatWhen(comment.createdAt)}
+                  {comment.editedAt && ' (edited)'}
+                </span>
+                {comment.internal && <span className="chip comment-internal">Internal</span>}
             </div>
             <p>{comment.content}</p>
             {comment.attachments?.map((file) => (
@@ -174,6 +179,19 @@ export default function TicketComments({ ticket, onAdd, onUpload }) {
           </div>
         )}
 
+        {canMarkInternal && (
+          <label className="composer-internal">
+            <input
+              type="checkbox"
+              checked={internal}
+              onChange={(event) => setInternal(event.target.checked)}
+              disabled={uploading}
+            />
+            Internal only
+            <span className="meta"> — hidden from the client</span>
+          </label>
+        )}
+
         <div className="composer-row">
           <button
             type="button"
@@ -201,8 +219,8 @@ export default function TicketComments({ ticket, onAdd, onUpload }) {
           <button
             type="button"
             className="composer-icon-btn composer-send"
-            aria-label="Send comment"
-            title="Send comment"
+            aria-label={uploading ? 'Posting comment' : internal ? 'Comment internally' : 'Send comment'}
+            title={uploading ? 'Posting comment' : internal ? 'Comment internally' : 'Send comment'}
             disabled={!canSubmit || uploading}
             onClick={submit}
             aria-busy={uploading || undefined}
