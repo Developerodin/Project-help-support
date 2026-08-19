@@ -5,7 +5,7 @@ import {
 } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { assertActiveUsers } from '../teams/team.service.js';
-import { canExternalViewTicket } from '../access/external-auth.service.js';
+import { canExternalViewTicket, sanitizeExternalTicket } from '../access/external-auth.service.js';
 import Ticket from './ticket.model.js';
 import {
   QA_TESTER_STAGES,
@@ -190,8 +190,9 @@ export async function transitionTicket(actor, idOrKey, { to, revision, note, rea
 
   // The event is RETURNED rather than dispatched: the stage machine emits, and
   // knows nothing about recipients. Phase 4's notification module consumes it.
+  const json = written.toJSON();
   return {
-    ticket: written.toJSON(),
+    ticket: isExternalUser(actor) ? sanitizeExternalTicket(json) : json,
     event: { type, from, to, actorId: String(actor._id), note, reason, at: now },
     detail: () => getTicket(actor, String(written._id)),
   };
