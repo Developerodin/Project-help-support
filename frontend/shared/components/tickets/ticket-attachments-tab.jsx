@@ -1,10 +1,23 @@
 'use client';
 
-import { useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { ROLE_IDS, hasAnyRole } from '@pms/shared';
 import Icon from '../icons.jsx';
 import ConfirmDialog from '../confirm-dialog.jsx';
 import AttachmentUploadLoader from '../attachment-upload-loader.jsx';
+import {
+  Attachment,
+  AttachmentAction,
+  AttachmentActions,
+  AttachmentContent,
+  AttachmentDescription,
+  AttachmentList,
+  AttachmentListItem,
+  AttachmentMedia,
+  AttachmentTitle,
+  AttachmentTrigger,
+  attachmentStateFromPending,
+} from '../ui/attachment.jsx';
 import { attachmentErrorMessage } from '@/shared/lib/api-error.js';
 import {
   ATTACHMENT_ACCEPT,
@@ -32,25 +45,161 @@ function canDeleteAttachment(attachment, user) {
   return hasAnyRole(user, ROLE_IDS.ADMIN, ROLE_IDS.SUPER_ADMIN) || String(uploaderId) === String(userId);
 }
 
-function PendingStatus({ status, error }) {
-  if (status === 'uploading') {
-    return (
-      <span className="attach-pending-status attach-pending-status--uploading">
-        Uploading…
-      </span>
-    );
-  }
-  if (status === 'failed') {
-    return (
-      <span className="attach-pending-status attach-pending-status--failed">
-        {error || 'Upload failed'}
-      </span>
-    );
-  }
+function pendingStatusLabel(status, error) {
+  if (status === 'uploading') return 'Uploading…';
+  if (status === 'failed') return error || 'Upload failed';
+  return 'Ready to upload';
+}
+
+function LocalImagePreview({ file, alt }) {
+  const [url, setUrl] = useState(null);
+
+  useEffect(() => {
+    if (!file || !isImage(file)) return undefined;
+    const objectUrl = URL.createObjectURL(file);
+    setUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [file]);
+
+  if (!url) return <Icon name="clip" size={16} aria-hidden="true" />;
+
+  return <img src={url} alt={alt} />;
+}
+
+function UploadedAttachmentRow({
+  attachment,
+  ticketId,
+  user,
+  onDelete,
+  thumbFailed,
+  onThumbError,
+}) {
+  const attachmentId = attachment._id || attachment.id;
+  const showDelete = onDelete && canDeleteAttachment(attachment, user);
+  const image = isImage(attachment) && !thumbFailed;
+
   return (
-    <span className="attach-pending-status attach-pending-status--ready">
-      Ready to upload
-    </span>
+    <AttachmentListItem>
+      <Attachment state="done" size="default" orientation="horizontal">
+        <AttachmentMedia variant={image ? 'image' : 'icon'}>
+          {image ? (
+            <AttachmentTrigger asChild>
+              <TicketAttachmentImage
+                ticketId={ticketId}
+                attachmentId={attachmentId}
+                alt=""
+                className="attach-thumb"
+                onError={onThumbError}
+              />
+            </AttachmentTrigger>
+          ) : (
+            <Icon name="clip" size={16} aria-hidden="true" />
+          )}
+        </AttachmentMedia>
+
+        <AttachmentContent>
+          <AttachmentTitle>
+            <AttachmentTrigger asChild>
+              <TicketAttachmentLink
+                ticketId={ticketId}
+                attachmentId={attachmentId}
+              >
+                <span title={attachment.name}>{attachment.name}</span>
+              </TicketAttachmentLink>
+            </AttachmentTrigger>
+          </AttachmentTitle>
+          <AttachmentDescription>
+            {attachment.size != null && (
+              <span className="sz">{formatFileSize(attachment.size)}</span>
+            )}
+            {attachment.uploadedBy?.name && <span>{attachment.uploadedBy.name}</span>}
+            {attachment.uploadedAt && (
+              <span>{formatUploadedAt(attachment.uploadedAt)}</span>
+            )}
+          </AttachmentDescription>
+        </AttachmentContent>
+
+        <AttachmentActions>
+          <AttachmentAction
+            asChild
+            aria-label={`Download ${attachment.name}`}
+          >
+            <TicketAttachmentLink
+              ticketId={ticketId}
+              attachmentId={attachmentId}
+            >
+              <Icon name="download" size={16} aria-hidden="true" />
+            </TicketAttachmentLink>
+          </AttachmentAction>
+          {showDelete && (
+            <AttachmentAction
+              variant="destructive"
+              aria-label={`Delete ${attachment.name}`}
+              onClick={() => onDelete({ id: attachmentId, name: attachment.name })}
+            >
+              <Icon name="trash" size={16} aria-hidden="true" />
+            </AttachmentAction>
+          )}
+        </AttachmentActions>
+      </Attachment>
+    </AttachmentListItem>
+  );
+}
+
+function PendingAttachmentRow({
+  item,
+  uploading,
+  onRetry,
+  onRemove,
+}) {
+  const state = attachmentStateFromPending(item.status);
+  const localImage = isImage(item.file);
+
+  return (
+    <AttachmentListItem>
+      <Attachment state={state} size="sm" orientation="horizontal">
+        <AttachmentMedia variant={localImage ? 'image' : 'icon'}>
+          {localImage ? (
+            <LocalImagePreview file={item.file} alt="" />
+          ) : (
+            <Icon name="clip" size={14} aria-hidden="true" />
+          )}
+        </AttachmentMedia>
+
+        <AttachmentContent>
+          <AttachmentTitle title={item.file.name}>{item.file.name}</AttachmentTitle>
+          <AttachmentDescription>
+            <span className="sz">{formatFileSize(item.file.size)}</span>
+            <span>{pendingStatusLabel(item.status, item.error)}</span>
+          </AttachmentDescription>
+          {item.status === 'uploading' && (
+            <div className="attachment-progress" aria-hidden="true">
+              <div className="attachment-progress__bar" />
+            </div>
+          )}
+        </AttachmentContent>
+
+        <AttachmentActions>
+          {item.status === 'failed' && (
+            <AttachmentAction
+              aria-label={`Retry ${item.file.name}`}
+              disabled={uploading}
+              onClick={() => onRetry(item.id)}
+            >
+              Retry
+            </AttachmentAction>
+          )}
+          <AttachmentAction
+            variant="destructive"
+            aria-label={`Remove ${item.file.name}`}
+            disabled={uploading && item.status === 'uploading'}
+            onClick={() => onRemove(item.id)}
+          >
+            <Icon name="x" size={14} aria-hidden="true" />
+          </AttachmentAction>
+        </AttachmentActions>
+      </Attachment>
+    </AttachmentListItem>
   );
 }
 
@@ -193,68 +342,23 @@ export default function TicketAttachmentsTab({
           Attachments ({attachments.length})
         </h3>
 
-        <ul className="attach-uploaded-list" aria-label="Uploaded attachments">
+        <AttachmentList aria-label="Uploaded attachments">
           {attachments.map((attachment) => {
             const attachmentId = attachment._id || attachment.id;
-            const showDelete = onDelete && canDeleteAttachment(attachment, user);
 
             return (
-              <li key={attachmentId} className="attach-uploaded-item">
-                {isImage(attachment) && !thumbFailed[attachmentId] ? (
-                  <TicketAttachmentImage
-                    ticketId={ticket.ticketId}
-                    attachmentId={attachmentId}
-                    alt=""
-                    className="attach-thumb"
-                    onError={() => setThumbFailed((prev) => ({ ...prev, [attachmentId]: true }))}
-                  />
-                ) : (
-                  <span className="attach-thumb attach-thumb--icon" aria-hidden="true">
-                    <Icon name="clip" size={16} />
-                  </span>
-                )}
-                <div className="attach-uploaded-body">
-                  <TicketAttachmentLink
-                    ticketId={ticket.ticketId}
-                    attachmentId={attachmentId}
-                    className="attach-uploaded-name"
-                  >
-                    <span className="nm" title={attachment.name}>{attachment.name}</span>
-                  </TicketAttachmentLink>
-                  <span className="attach-uploaded-meta">
-                    {attachment.size != null && (
-                      <span className="sz">{formatFileSize(attachment.size)}</span>
-                    )}
-                    {attachment.uploadedBy?.name && <span>{attachment.uploadedBy.name}</span>}
-                    {attachment.uploadedAt && (
-                      <span>{formatUploadedAt(attachment.uploadedAt)}</span>
-                    )}
-                  </span>
-                </div>
-                <div className="attach-uploaded-actions">
-                  <TicketAttachmentLink
-                    ticketId={ticket.ticketId}
-                    attachmentId={attachmentId}
-                    className="btn btn-ghost btn-sm attach-action-btn"
-                    aria-label={`Download ${attachment.name}`}
-                  >
-                    Download
-                  </TicketAttachmentLink>
-                  {showDelete && (
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm attach-action-btn attach-action-btn--danger"
-                      aria-label={`Delete ${attachment.name}`}
-                      onClick={() => setDeleteTarget({ id: attachmentId, name: attachment.name })}
-                    >
-                      Delete
-                    </button>
-                  )}
-                </div>
-              </li>
+              <UploadedAttachmentRow
+                key={attachmentId}
+                attachment={attachment}
+                ticketId={ticket.ticketId}
+                user={user}
+                onDelete={onDelete ? (target) => setDeleteTarget(target) : null}
+                thumbFailed={thumbFailed[attachmentId]}
+                onThumbError={() => setThumbFailed((prev) => ({ ...prev, [attachmentId]: true }))}
+              />
             );
           })}
-        </ul>
+        </AttachmentList>
       </div>
 
       {canUpload && (
@@ -310,50 +414,17 @@ export default function TicketAttachmentsTab({
           </div>
 
           {pendingFiles.length > 0 && (
-            <ul className="attach-pending-list" aria-label="Files to upload">
+            <AttachmentList aria-label="Files to upload">
               {pendingFiles.map((item) => (
-                <li
+                <PendingAttachmentRow
                   key={item.id}
-                  className={`attach-pending-item attach-pending-item--${item.status}`}
-                >
-                  <Icon name="clip" size={14} aria-hidden="true" />
-                  <div className="attach-pending-body">
-                    <div className="attach-pending-meta">
-                      <span className="nm" title={item.file.name}>{item.file.name}</span>
-                      <span className="sz">{formatFileSize(item.file.size)}</span>
-                    </div>
-                    <PendingStatus status={item.status} error={item.error} />
-                    {item.status === 'uploading' && (
-                      <div className="attach-progress" aria-hidden="true">
-                        <div className="attach-progress__bar" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="attach-pending-actions">
-                    {item.status === 'failed' && (
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        aria-label={`Retry ${item.file.name}`}
-                        disabled={uploading}
-                        onClick={() => retryPending(item.id)}
-                      >
-                        Retry
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-icon"
-                      aria-label={`Remove ${item.file.name}`}
-                      disabled={uploading && item.status === 'uploading'}
-                      onClick={() => removePending(item.id)}
-                    >
-                      <Icon name="x" size={14} />
-                    </button>
-                  </div>
-                </li>
+                  item={item}
+                  uploading={uploading}
+                  onRetry={retryPending}
+                  onRemove={removePending}
+                />
               ))}
-            </ul>
+            </AttachmentList>
           )}
 
           <div className="attach-upload-foot">

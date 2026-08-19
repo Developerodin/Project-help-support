@@ -230,6 +230,55 @@ main{ min-width:0; display:flex; flex-direction:column; }
 }
 .avatar-btn:hover{ border-color:var(--sig); }
 
+/* Avatar compound components — shadcn-inspired, token-driven */
+[data-slot="avatar"]{
+  position:relative; display:inline-flex; flex:none; align-items:center; justify-content:center;
+  overflow:hidden; border-radius:50%; vertical-align:middle; user-select:none;
+}
+[data-slot="avatar"][data-size="default"]{
+  width:32px; height:32px; font-size:0.6875rem;
+}
+[data-slot="avatar"][data-size="sm"]{
+  width:26px; height:26px; font-size:0.625rem;
+}
+[data-slot="avatar"][data-size="lg"]{
+  width:40px; height:40px; font-size:0.8125rem;
+}
+[data-slot="avatar-image"]{
+  width:100%; height:100%; object-fit:cover; aspect-ratio:1;
+}
+[data-slot="avatar-fallback"]{
+  display:flex; align-items:center; justify-content:center;
+  width:100%; height:100%; font-weight:600;
+  background:var(--sig-wash); color:var(--sig); border:1px solid var(--sig-line);
+}
+[data-slot="avatar-group"]{
+  display:inline-flex; align-items:center; flex-direction:row;
+}
+[data-slot="avatar-group"] > [data-slot="avatar"],
+[data-slot="avatar-group"] > [data-slot="avatar-group-count"]{
+  box-shadow:0 0 0 2px var(--panel);
+}
+[data-slot="avatar-group"] > [data-slot="avatar"] + [data-slot="avatar"],
+[data-slot="avatar-group"] > [data-slot="avatar"] + [data-slot="avatar-group-count"],
+[data-slot="avatar-group"] > [data-slot="avatar-group-count"]{
+  margin-inline-start:-8px;
+}
+[data-slot="avatar-group-count"]{
+  position:relative; display:inline-flex; flex:none; align-items:center; justify-content:center;
+  border-radius:50%; font-weight:600; font-variant-numeric:tabular-nums;
+  background:var(--panel-2); color:var(--ink-2); border:1px solid var(--rule);
+}
+[data-slot="avatar-group-count"][data-size="sm"]{
+  width:26px; height:26px; font-size:0.5625rem;
+}
+[data-slot="avatar-group-count"][data-size="default"]{
+  width:32px; height:32px; font-size:0.625rem;
+}
+[data-slot="avatar-group-count"][data-size="lg"]{
+  width:40px; height:40px; font-size:0.6875rem;
+}
+
 .profile-menu__panel{ right:0; left:auto; min-width:236px; }
 .profile-menu__head{
   display:flex; align-items:flex-start; gap:10px; padding:10px 10px 8px;
