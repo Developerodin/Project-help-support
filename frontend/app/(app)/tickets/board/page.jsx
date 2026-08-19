@@ -7,13 +7,11 @@ import {
   laneOf,
   wouldFailOwnershipGuard,
   canDragTicket,
-  canEditTicket,
   canInteractWithBoard,
   canTransition,
+  getBoardDragBlockReason,
   getBoardMoveBlockReason,
   getBoardReadOnlyNotice,
-  isExternalUser,
-  stageLabel,
 } from '@pms/shared';
 import { listTickets, transitionTicket, getTicket } from '@/shared/api/tickets.js';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
@@ -34,9 +32,11 @@ function BoardPage() {
   const [openTicketId, setOpenTicketId] = useState(null);
   const [error, setError] = useState(null);
   const [readOnlyNoticeDismissed, setReadOnlyNoticeDismissed] = useState(false);
-  const [pendingClose, setPendingClose] = useState(null);
-  const [closeReason, setCloseReason] = useState('');
-  const [closeBusy, setCloseBusy] = useState(false);
+  // Mirrors ticket-drawer-footer.jsx's pending {to, kind} pattern: 'reason'
+  // for a close, 'note' for a reopen. One dialog, one state shape, for both.
+  const [pendingAction, setPendingAction] = useState(null);
+  const [remarkText, setRemarkText] = useState('');
+  const [remarkBusy, setRemarkBusy] = useState(false);
 
   const boardInteractive = canInteractWithBoard(user);
   const readOnlyNotice = useMemo(() => getBoardReadOnlyNotice(user), [user]);
@@ -81,16 +81,16 @@ function BoardPage() {
   async function onDropTicket(ticketId, to) {
     setError(null);
 
-    const cached = ticketById[ticketId];
-    const current = cached || await getTicket(ticketId);
-
-    const blockReason = getBoardMoveBlockReason(user, current, to);
-    if (blockReason) {
-      showMoveError(blockReason);
-      return;
-    }
-
     try {
+      const cached = ticketById[ticketId];
+      const current = cached || await getTicket(ticketId);
+
+      const blockReason = getBoardMoveBlockReason(user, current, to);
+      if (blockReason) {
+        showMoveError(blockReason);
+        return;
+      }
+
       if (wouldFailOwnershipGuard(to, current)) {
         setError({
           status: 400,
@@ -101,9 +101,11 @@ function BoardPage() {
       }
 
       const verdict = canTransition(current.status, to, user, current);
-      if (verdict.isClose) {
-        setPendingClose({ ticketId, to, revision: current.revision });
-        setCloseReason('');
+      if (verdict.isClose || verdict.isReopen) {
+        setPendingAction({
+          ticketId, to, revision: current.revision, kind: verdict.isReopen ? 'note' : 'reason',
+        });
+        setRemarkText('');
         return;
       }
 
@@ -114,51 +116,29 @@ function BoardPage() {
     }
   }
 
-  async function confirmClose() {
-    if (!pendingClose) return;
-    setCloseBusy(true);
+  async function confirmPendingAction() {
+    if (!pendingAction) return;
+    setRemarkBusy(true);
     try {
       await performTransition(
-        pendingClose.ticketId,
-        pendingClose.to,
-        pendingClose.revision,
-        { reason: closeReason.trim() },
+        pendingAction.ticketId,
+        pendingAction.to,
+        pendingAction.revision,
+        { [pendingAction.kind]: remarkText.trim() },
       );
-      setPendingClose(null);
-      setCloseReason('');
+      setPendingAction(null);
+      setRemarkText('');
     } catch (err) {
       setError(friendlyTransitionError(err));
       reload();
     } finally {
-      setCloseBusy(false);
+      setRemarkBusy(false);
     }
   }
 
   function onBlockedDrag(ticket) {
-    if (isExternalUser(user)) {
-      if (ticket.status !== 'live') {
-        showMoveError({
-          code: 'CLIENT_BOARD_MOVE_FORBIDDEN',
-          title: 'Cannot move this ticket',
-          message: `You don't have permission to move this ticket from ${stageLabel(ticket.status)}. Clients can only close tickets that are Live.`,
-        });
-        return;
-      }
-    }
-
-    const readOnly = getBoardReadOnlyNotice(user);
-    if (readOnly) {
-      showMoveError(readOnly);
-      return;
-    }
-
-    if (!canEditTicket(user, ticket)) {
-      showMoveError({
-        code: 'TICKET_EDIT_FORBIDDEN',
-        title: 'Cannot move this ticket',
-        message: 'You don\'t have permission to move this ticket. Only the reporter, assignee, Project Admin, or Admin can change its stage.',
-      });
-    }
+    const blockReason = getBoardDragBlockReason(user, ticket);
+    if (blockReason) showMoveError(blockReason);
   }
 
   const open = (ticketId) => {
@@ -202,8 +182,7 @@ function BoardPage() {
         {showReadOnlyOverlay && (
           <div
             className="board-lock-overlay"
-            role="alert"
-            aria-live="polite"
+            role="status"
             aria-labelledby="board-lock-title"
             aria-describedby="board-lock-message"
           >
@@ -227,7 +206,7 @@ function BoardPage() {
           </div>
         )}
 
-        <div className="board" aria-hidden={showReadOnlyOverlay || undefined}>
+        <div className="board">
           {LANES.map((lane) => (
             <BoardLane
               key={lane.key}
@@ -248,17 +227,17 @@ function BoardPage() {
       )}
 
       <RemarkDialog
-        open={Boolean(pendingClose)}
-        title={`Close ${pendingClose?.ticketId || ''}`}
-        label="Reason (required to close)"
-        value={closeReason}
-        onChange={(event) => setCloseReason(event.target.value)}
-        busy={closeBusy}
-        onConfirm={confirmClose}
+        open={Boolean(pendingAction)}
+        title={`${pendingAction?.kind === 'note' ? 'Reopen' : 'Close'} ${pendingAction?.ticketId || ''}`}
+        label={pendingAction?.kind === 'note' ? 'Note (required to reopen)' : 'Reason (required to close)'}
+        value={remarkText}
+        onChange={(event) => setRemarkText(event.target.value)}
+        busy={remarkBusy}
+        onConfirm={confirmPendingAction}
         onCancel={() => {
-          if (closeBusy) return;
-          setPendingClose(null);
-          setCloseReason('');
+          if (remarkBusy) return;
+          setPendingAction(null);
+          setRemarkText('');
         }}
       />
     </>

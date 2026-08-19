@@ -12,35 +12,29 @@ export class ApiClientError extends Error {
 }
 
 export const ACCESS_TOKEN_STORAGE_KEY = 'prowplus_accessToken';
-/** Refresh token is stored in the httpOnly `prowplus_refreshToken` cookie (backend). */
-export const REFRESH_TOKEN_STORAGE_KEY = 'prowplus_refreshToken';
 
-function readStoredAccessToken() {
-  if (typeof window === 'undefined') return null;
-  try {
-    return window.localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function writeStoredAccessToken(token) {
+/**
+ * The access token lives in memory only (this module-level `let`) — never in
+ * localStorage. It resets on every reload; `AuthProvider`'s boot effect
+ * re-derives it from the httpOnly refresh cookie. An interim build persisted
+ * it to localStorage under ACCESS_TOKEN_STORAGE_KEY; purge that key once on
+ * module init so a stale token from that build is never read by anything
+ * that still checks storage directly.
+ */
+function purgeStoredAccessToken() {
   if (typeof window === 'undefined') return;
   try {
-    if (token) window.localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, token);
-    else window.localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
+    window.localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
   } catch {
     // Storage may be unavailable in private mode.
   }
 }
+purgeStoredAccessToken();
 
-let accessToken = readStoredAccessToken();
+let accessToken = null;
 let onSessionLost = null;
 
-export const setAccessToken = (token) => {
-  accessToken = token;
-  writeStoredAccessToken(token);
-};
+export const setAccessToken = (token) => { accessToken = token; };
 export const getAccessToken = () => accessToken;
 export const setSessionLostHandler = (fn) => { onSessionLost = fn; };
 

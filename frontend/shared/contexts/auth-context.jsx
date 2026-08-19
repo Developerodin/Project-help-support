@@ -50,6 +50,9 @@ export function AuthProvider({ children }) {
           setStatus(AUTHENTICATED);
         }
       } catch {
+        // The access token now lives in memory only — a failed boot refresh
+        // must not leave a stale one behind.
+        setAccessToken(null);
         if (!cancelled) {
           setUser(null);
           setStatus(AUTH_REQUIRED);

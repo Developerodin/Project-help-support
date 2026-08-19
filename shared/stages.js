@@ -1,4 +1,5 @@
-import { isExternalUser } from './permissions.js';
+import { isExternalUser, hasAnyRole } from './permissions.js';
+import { INTERNAL_ROLES } from './enums.js';
 
 /**
  * THE single source of truth for stage ordering AND gate metadata.
@@ -138,7 +139,12 @@ export function canTransition(from, to, actor, ticket) {
     return refuse('SAME_STAGE', `The ticket is already in ${toStage.label}`);
   }
 
-  if (isExternalUser(actor)) {
+  // A user holding an internal role is never treated as "external" here, even
+  // when they also hold an external one — a super_admin who happens to also be
+  // seeded as a client keeps full internal transitions, not the client
+  // carve-out. Mixing internal+external roles on one account is rejected
+  // upstream (see user.validation.js); this is defense in depth.
+  if (isExternalUser(actor) && !hasAnyRole(actor, ...INTERNAL_ROLES)) {
     if (from === 'live' && to === 'closed') {
       return { ok: true, isReopen: false, isClose: true, decision: null };
     }

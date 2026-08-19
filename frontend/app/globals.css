@@ -174,11 +174,12 @@
   position: relative;
 }
 
-.board-wrap--locked .board {
-  pointer-events: none;
-  user-select: none;
-}
-
+/*
+ * Read-only users must still be able to open a ticket by clicking a card, so
+ * the board itself keeps normal pointer-events. Gating happens at the drag
+ * level (draggable/canDrag, TicketCard) and lane level (canDrop), not by
+ * blanket-disabling the whole board.
+ */
 .board-lock-overlay {
   position: absolute;
   inset: 0;
@@ -189,6 +190,9 @@
   padding: 24px 16px;
   background: color-mix(in srgb, var(--paper) 72%, transparent);
   backdrop-filter: blur(1px);
+  /* Only the panel (its Dismiss/Open table view controls) should capture
+     clicks — the wash itself must let clicks on cards underneath through. */
+  pointer-events: none;
 }
 
 .board-lock-overlay__panel {
@@ -199,6 +203,7 @@
   background: var(--alarm-wash);
   color: var(--ink);
   box-shadow: 0 10px 30px color-mix(in srgb, var(--ink) 12%, transparent);
+  pointer-events: auto;
 }
 
 .board-lock-overlay__head {
@@ -231,10 +236,9 @@
   opacity: 0.92;
 }
 
-.card-locked {
-  cursor: default;
-}
-
+/* Locked cards are still clickable (open ticket) even though they cannot be
+   dragged — keep the button's default pointer cursor; only suppress the drag
+   transform. */
 .card-locked.dragging,
 .card-locked:active {
   transform: none;

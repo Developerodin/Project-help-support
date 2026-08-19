@@ -188,9 +188,10 @@ export default function TicketComments({ ticket, onAdd, onUpload }) {
             <Icon name="clip" size={15} />
           </button>
 
-          <input
+          <textarea
             id="new-comment"
-            type="text"
+            rows={1}
+            className="composer-textarea"
             aria-label="Add a comment"
             placeholder="Add a comment..."
             value={content}

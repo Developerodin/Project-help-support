@@ -3,14 +3,16 @@
 import { stageLabel } from '@pms/shared';
 import Icon, { initials, isOverdue, priorityChipClass, priorityLabel } from '../icons.jsx';
 
-export default function TicketCard({ ticket, onOpen, draggable: canDrag = true, onBlockedDrag }) {
+export default function TicketCard({
+  ticket, onOpen, draggable = true, canDrag = true, onBlockedDrag,
+}) {
   const late = isOverdue(ticket);
 
   return (
     <button
       type="button"
       className={`card${canDrag ? '' : ' card-locked'}`}
-      draggable={canDrag}
+      draggable={draggable}
       onDragStart={(e) => {
         if (!canDrag) {
           e.preventDefault();

@@ -1,5 +1,7 @@
 import Joi from 'joi';
-import { ROLES, NOTIFICATION_EVENTS, ROLE_IDS, PEOPLE_ASSIGNABLE_ROLES } from '@pms/shared';
+import {
+  ROLES, NOTIFICATION_EVENTS, ROLE_IDS, PEOPLE_ASSIGNABLE_ROLES, INTERNAL_ROLES, EXTERNAL_ROLES,
+} from '@pms/shared';
 
 const objectId = Joi.string().hex().length(24);
 // An unknown key is a 400 here, so a typo'd event never becomes a stored
@@ -18,10 +20,25 @@ export const listUsersSchema = {
   }),
 };
 
+// A single account is either fully internal (staff, permission bundles) or
+// fully external (client, AccessAssignment-scoped) — never both. Checked here,
+// once, so every schema below that accepts `roles` inherits the rule instead
+// of re-deriving it. shared/stages.js also treats a mixed actor as internal
+// (defense in depth), but this is the single point that should ever REJECT it.
+function rejectMixedRoleTypes(value, helpers) {
+  const hasInternal = value.some((role) => INTERNAL_ROLES.includes(role));
+  const hasExternal = value.some((role) => EXTERNAL_ROLES.includes(role));
+  if (hasInternal && hasExternal) {
+    return helpers.message('Roles cannot mix internal and external types');
+  }
+  return value;
+}
+
 const rolesArray = Joi.array()
   .items(Joi.string())
   .min(1)
-  .unique();
+  .unique()
+  .custom(rejectMixedRoleTypes, 'reject mixed internal/external roles');
 
 export const createUserSchema = {
   body: Joi.object({

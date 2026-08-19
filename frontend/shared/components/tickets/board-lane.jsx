@@ -54,7 +54,8 @@ export default function BoardLane({
               key={ticket.id || ticket.ticketId}
               ticket={ticket}
               onOpen={onOpen}
-              draggable={canDragTicket ? canDragTicket(ticket) : true}
+              draggable={canDrop}
+              canDrag={canDragTicket ? canDragTicket(ticket) : true}
               onBlockedDrag={onBlockedDrag}
             />
           ))}

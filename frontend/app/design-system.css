@@ -772,16 +772,22 @@ input[type="checkbox"]{ accent-color:var(--sig); width:14px; height:14px; cursor
   padding-bottom:env(safe-area-inset-bottom);
 }
 .composer-row{
-  display:flex; align-items:center; gap:6px;
+  display:flex; align-items:flex-end; gap:6px;
   min-height:44px; padding:4px 6px;
   border:1px solid var(--rule); border-radius:999px;
   background:var(--panel);
 }
 .composer-row:focus-within{ border-color:var(--sig); }
-.composer-row input{
+.composer-textarea{
   flex:1; min-width:0;
   border:0; outline:0; background:transparent;
-  padding:8px 4px; font-size:0.875rem;
+  padding:8px 4px; font-size:0.875rem; font-family:inherit;
+  line-height:1.4; resize:none;
+  /* Auto-grows with content up to ~6 lines, then scrolls — no JS resize
+     handler needed. field-sizing is a no-op (rows=1 height) where unsupported. */
+  field-sizing:content;
+  max-height:calc(1.4em * 6 + 16px);
+  overflow-y:auto;
 }
 .composer-icon-btn{
   flex:none; width:32px; height:32px;

@@ -49,14 +49,22 @@ export function describeStagePermittees(stageKey, { forReopen = false } = {}) {
   return formatPermitteeList(parts);
 }
 
+/**
+ * Normalize a populated reference OR a raw id into a comparable string.
+ * Mirrors backend sameId — createdBy/assignedTo may arrive un-populated (a
+ * raw ObjectId/string) depending on the query, and `.id`/`._id` on a raw
+ * string is always undefined, so a naive lookup silently drops ownership.
+ */
+const idOf = (value) => (value == null ? '' : String(value._id ?? value.id ?? value));
+
 /** Client-side mirror of backend assertCanEditTicket. */
 export function canEditTicket(actor, ticket) {
   if (!actor || !ticket) return false;
 
   const privileged = hasAnyRole(actor, ...ADMIN_ROLES, ROLE_IDS.PROJECT_ADMIN);
-  const actorId = String(actor.id || actor._id || '');
-  const createdById = String(ticket.createdBy?.id || ticket.createdBy?._id || '');
-  const assignedToId = String(ticket.assignedTo?.id || ticket.assignedTo?._id || '');
+  const actorId = idOf(actor);
+  const createdById = idOf(ticket.createdBy);
+  const assignedToId = idOf(ticket.assignedTo);
 
   return privileged || (actorId && (actorId === createdById || actorId === assignedToId));
 }
@@ -143,6 +151,37 @@ export function getBoardMoveBlockReason(actor, ticket, toStage) {
     }
 
     return buildBlock(verdict.code, verdict.reason || 'This move is not allowed.');
+  }
+
+  return null;
+}
+
+/**
+ * Explain why a card cannot even be picked up for dragging — called from
+ * onDragStart, before any drop target/lane is known. Distinct from
+ * getBoardMoveBlockReason, which explains a specific attempted move once a
+ * `toStage` is known; this is the single shared source for the "why can't I
+ * drag this at all" strings, so callers never hand-roll a near-duplicate.
+ */
+export function getBoardDragBlockReason(actor, ticket) {
+  if (!actor || !ticket) return null;
+
+  if (isExternalUser(actor)) {
+    if (ticket.status === 'live') return null;
+    return buildBlock(
+      'CLIENT_BOARD_MOVE_FORBIDDEN',
+      `You don't have permission to move this ticket from ${stageLabel(ticket.status)}. Clients can only close tickets that are Live.`,
+    );
+  }
+
+  const readOnly = getBoardReadOnlyNotice(actor);
+  if (readOnly) return readOnly;
+
+  if (!canEditTicket(actor, ticket)) {
+    return buildBlock(
+      'TICKET_EDIT_FORBIDDEN',
+      'You don\'t have permission to move this ticket. Only the reporter, assignee, Project Admin, or Admin can change its stage.',
+    );
   }
 
   return null;
