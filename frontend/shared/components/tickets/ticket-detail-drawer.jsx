@@ -262,7 +262,7 @@ function TicketDrawerContent({
                 ref={historyRef}
                 hidden={tab !== 'history'}
               >
-                <TicketHistory ticket={ticket} />
+                <TicketHistory ticket={ticket} onOpenDiscussion={() => selectTab('discussion')} />
               </div>
             </div>
           </main>
