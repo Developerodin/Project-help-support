@@ -19,8 +19,8 @@ function idOf(entry, index, prefix) {
 
 function timeOf(value) {
   if (!value) return null;
-  const iso = value instanceof Date ? value.toISOString() : String(value);
-  return Number.isNaN(Date.parse(iso)) ? null : iso;
+  const ms = value instanceof Date ? value.getTime() : Date.parse(value);
+  return Number.isNaN(ms) ? null : new Date(ms).toISOString();
 }
 
 function labelStage(key) {
@@ -119,7 +119,7 @@ function fromActivity(entry, index) {
       }];
     }
     case 'attachment_removed': {
-      const name = changes[0]?.from;
+      const name = displayValue(changes[0]?.from);
       return [{
         ...base, id, kind: 'file',
         summary: name ? `Removed ${name}` : 'Removed an attachment',
@@ -139,9 +139,14 @@ function fromActivity(entry, index) {
   }
 }
 
-function fromStage(entry, index) {
+function fromStage(entry, index, skipInitial) {
   const to = labelStage(entry?.to);
   if (!to) return [];
+  // ticket.service.js seeds every new ticket with a from-less stageHistory row
+  // AND an activityLog `created` entry at the same timestamp. When activityLog
+  // already records creation, the from-less stage row is a twin, not new
+  // information — legacy tickets with no activityLog keep "Set to <stage>".
+  if (skipInitial && !entry?.from) return [];
   const from = labelStage(entry?.from);
   return [{
     id: idOf(entry, index, 'stage'),
@@ -201,18 +206,35 @@ function compare(a, b) {
  * `act:a1#1`, sharing a parent and a timestamp) are exempt — the spec requires
  * one sentence per change for a single save, and without this exemption the
  * expansion would immediately re-collapse into "Made N changes".
+ *
+ * The exemption is a property of the PARENT GROUP, not of adjacency in the
+ * run: comparing only against the accumulating run head (the previous
+ * approach) lets a later sibling from a different multi-change parent slip
+ * into an already-open run, splitting one save across two rows. Instead,
+ * precompute how many `change` events share each parent id; any event whose
+ * parent has more than one member can never be a collapse member or target.
+ * Two same-parent singles cannot exist, so no parent-equality check is needed.
  */
 const parentOf = (id) => String(id).split('#')[0];
 
 function collapseRuns(events) {
+  const parentCounts = new Map();
+  for (const event of events) {
+    if (event.kind !== 'change') continue;
+    const parent = parentOf(event.id);
+    parentCounts.set(parent, (parentCounts.get(parent) || 0) + 1);
+  }
+  const isExempt = (event) => event.kind === 'change' && parentCounts.get(parentOf(event.id)) > 1;
+
   const out = [];
   for (const event of events) {
     const prev = out[out.length - 1];
     const sameRun = prev
       && prev.kind === 'change'
       && event.kind === 'change'
+      && !isExempt(prev)
+      && !isExempt(event)
       && prev.actor.name === event.actor.name
-      && parentOf(prev.id) !== parentOf(event.id)
       && prev.at && event.at
       && Math.abs(Date.parse(prev.at) - Date.parse(event.at)) <= COLLAPSE_WINDOW_MS;
 
@@ -220,7 +242,7 @@ function collapseRuns(events) {
       out.push({ ...event });
       continue;
     }
-    if (!prev.collapsed) prev.collapsed = [{ ...prev, collapsed: undefined }];
+    if (!prev.collapsed) prev.collapsed = [{ ...prev }];
     prev.collapsed.push({ ...event });
     prev.summary = `Made ${prev.collapsed.length} changes`;
   }
@@ -228,10 +250,13 @@ function collapseRuns(events) {
 }
 
 export function buildActivityFeed(ticket) {
+  const hasCreatedActivity = Array.isArray(ticket?.activityLog)
+    && ticket.activityLog.some((e) => e?.action === 'created');
+
   const activity = mapAll(ticket?.activityLog, (entry, i) => (
     TRANSITION_ACTIONS.has(entry?.action) ? [] : fromActivity(entry, i)
   ));
-  const stages = mapAll(ticket?.stageHistory, fromStage);
+  const stages = mapAll(ticket?.stageHistory, (entry, i) => fromStage(entry, i, hasCreatedActivity));
   const comments = mapAll(ticket?.comments, fromComment);
 
   return collapseRuns([...stages, ...activity, ...comments].sort(compare));
