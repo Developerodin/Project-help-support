@@ -7,7 +7,6 @@ import AttachmentUploadLoader from '../attachment-upload-loader.jsx';
 import { attachmentErrorMessage } from '@/shared/lib/api-error.js';
 import {
   ATTACHMENT_ACCEPT,
-  ATTACHMENT_HINT,
   formatFileSize,
   validateAttachmentBatch,
   buildAttachmentFormData,
@@ -313,8 +312,8 @@ export default function TicketComments({ ticket, user, onAdd, onUpload }) {
           <button
             type="button"
             className="composer-icon-btn"
-            aria-label={`Attach files. ${ATTACHMENT_HINT}`}
-            title={`Attach files. ${ATTACHMENT_HINT}`}
+            aria-label="Attach files"
+            title="Attach files"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
           >
