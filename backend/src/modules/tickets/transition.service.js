@@ -5,6 +5,7 @@ import {
 } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { assertActiveUsers } from '../teams/team.service.js';
+import { canExternalViewTicket } from '../access/external-auth.service.js';
 import Ticket from './ticket.model.js';
 import {
   QA_TESTER_STAGES,
@@ -64,9 +65,10 @@ export function checkGuards(to, ticket) {
 }
 
 /** Layer 2 for this endpoint: the same relationship rule as an ordinary edit. */
-export function assertMayTransition(actor, ticket, to) {
+export async function assertMayTransition(actor, ticket, to) {
   const clientClosingLive =
-    isExternalUser(actor) && ticket.status === 'live' && to === 'closed';
+    isExternalUser(actor) && ticket.status === 'live' && to === 'closed'
+    && (await canExternalViewTicket(actor, ticket));
   if (!clientClosingLive) {
     assertCanEditTicket(actor, ticket);
   }
@@ -92,7 +94,7 @@ function conflict(current) {
  */
 export async function transitionTicket(actor, idOrKey, { to, revision, note, reason }) {
   const ticket = await resolveTicketDoc(idOrKey);
-  assertMayTransition(actor, ticket, to);
+  await assertMayTransition(actor, ticket, to);
 
   // Replay / stale client: compare revision before canTransition so a
   // already-applied (from->to) does not surface as SAME_STAGE 400.

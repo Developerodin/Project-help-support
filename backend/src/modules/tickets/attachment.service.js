@@ -1,11 +1,12 @@
 import mongoose from 'mongoose';
-import { ADMIN_ROLES, hasAnyRole } from '@pms/shared';
+import { ADMIN_ROLES, hasAnyRole, isExternalUser } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { sniffType, safeKey } from '../../platform/upload.js';
 import * as defaultStorage from '../../platform/s3.js';
 import Ticket from './ticket.model.js';
 import { resolveTicketDoc, assertCanEditTicket, assertCanViewTicket } from './ticket.service.js';
 import { findComment } from './comment.service.js';
+import { canExternalViewTicket } from '../access/external-auth.service.js';
 
 const sameId = (a, b) => !!a && !!b && String(a._id ?? a) === String(b._id ?? b);
 
@@ -60,6 +61,10 @@ export async function addAttachments(actor, idOrKey, files, config, opts = {}) {
 
   const ticket = await resolveTicketDoc(idOrKey);
   assertCanEditTicket(actor, ticket);
+
+  if (isExternalUser(actor) && !(await canExternalViewTicket(actor, ticket))) {
+    throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this ticket');
+  }
 
   const replayedAttachments = attachmentReplay(ticket, clientRef);
   if (replayedAttachments) {
@@ -135,6 +140,7 @@ export async function addAttachments(actor, idOrKey, files, config, opts = {}) {
       mentions: [],
       attachments: entries.map((entry) => ({ ...entry })),
       clientRef: commentClientRef,
+      internal: false,
       createdAt,
     };
     commentCreated = true;

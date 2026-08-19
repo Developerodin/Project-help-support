@@ -142,7 +142,17 @@ export async function deleteComment(actor, idOrKey, commentId) {
  */
 export async function toggleReaction(actor, idOrKey, commentId, emoji) {
   const ticket = await resolveTicketDoc(idOrKey);
+
+  const external = isExternalUser(actor);
+  if (external && !(await canExternalViewTicket(actor, ticket))) {
+    throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this ticket');
+  }
+
   const comment = findComment(ticket, commentId);
+  if (external && comment.internal === true) {
+    throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this ticket');
+  }
+
   const commentObjectId = comment._id;
   const actorId = actor._id;
 
