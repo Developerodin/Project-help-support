@@ -2083,6 +2083,12 @@ a.button3{ display:block; text-align:center; text-decoration:none; cursor:pointe
   outline:2px solid var(--sig); outline-offset:-2px; border-radius:var(--r);
 }
 .detail-tab{ display:flex; flex-direction:column; gap:18px; padding-bottom:24px; }
+.detail-tab--with-rail{
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) minmax(220px, 28%);
+  gap:22px;
+  align-items:start;
+}
 .discussion-tab{ display:flex; flex-direction:column; min-height:100%; }
 .history-tab{ padding-bottom:24px; }
 .attach-tab{ display:flex; flex-direction:column; gap:20px; padding-bottom:24px; }
@@ -2116,24 +2122,19 @@ a.button3{ display:block; text-align:center; text-decoration:none; cursor:pointe
   margin:0; font-size:0.875rem; line-height:1.55; color:var(--ink);
   max-width:72ch; white-space:pre-wrap;
 }
-.detail-estimates{ margin:0; }
-.detail-estimates-note{ margin:10px 0 0; color:var(--alarm); }
+.detail-estimates-note{ margin:0; color:var(--alarm); }
 .metadata-rail{
   align-self:start;
   border-left:1px solid var(--rule-soft);
   padding-left:18px;
 }
-.metadata-rail-head{ display:none; }
 .metadata-rail-body{ display:block; }
-.drawer .ticket-workspace,
-.drawer .drawer-split{ grid-template-columns:minmax(0, 1fr) minmax(220px, 28%); gap:22px; }
 .drawer .metadata-rail{
   order:0; display:flex; flex-direction:column; gap:0;
   border-radius:0; background:transparent;
 }
 @media (max-width:1180px){
-  .drawer .ticket-workspace,
-  .drawer .drawer-split{ grid-template-columns:minmax(0, 1fr); gap:0; }
+  .detail-tab--with-rail{ grid-template-columns:minmax(0, 1fr); gap:0; }
   .metadata-rail{
     border-left:none; padding-left:0;
     border-top:1px solid var(--rule); padding-top:14px; margin-top:18px;

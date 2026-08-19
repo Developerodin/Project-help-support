@@ -44,7 +44,6 @@ function TicketDrawerContent({
   const [validationDialog, setValidationDialog] = useState(null);
   const [tab, setTab] = useState('discussion');
   const [blockReason, setBlockReason] = useState('');
-  const [railCollapsed, setRailCollapsed] = useState(false);
   const discussionRef = useRef(null);
   const detailsRef = useRef(null);
   const attachmentsRef = useRef(null);
@@ -62,15 +61,6 @@ function TicketDrawerContent({
     requestAnimationFrame(() => {
       panelRefs[next]?.current?.focus();
     });
-  }, []);
-
-  useEffect(() => {
-    if (typeof window.matchMedia !== 'function') return undefined;
-    const mq = window.matchMedia('(max-width: 767px)');
-    const sync = () => setRailCollapsed(mq.matches);
-    sync();
-    mq.addEventListener('change', sync);
-    return () => mq.removeEventListener('change', sync);
   }, []);
 
   const clearFieldError = useCallback((key) => {
@@ -200,7 +190,7 @@ function TicketDrawerContent({
       </div>
 
       <div className="drawer-body">
-        <div className={`ticket-workspace${showMetadataRail ? '' : ' ticket-workspace--full'}`}>
+        <div className="ticket-workspace ticket-workspace--full">
           <main className="ticket-main">
             <div className="drawer-main-scroll drawer-main-panels">
               <div
@@ -225,11 +215,38 @@ function TicketDrawerContent({
                 ref={detailsRef}
                 hidden={tab !== 'details'}
               >
-                <TicketDetailsTab
-                  ticket={ticket}
-                  canAssign={canAssign}
-                  assignment={assignment}
-                />
+                <div className={`detail-tab${showMetadataRail ? ' detail-tab--with-rail' : ''}`}>
+                  <TicketDetailsTab
+                    ticket={ticket}
+                    canAssign={canAssign}
+                    assignment={assignment}
+                    railPresent={showMetadataRail}
+                  />
+                  {showMetadataRail && (
+                    <TicketMetadataRail
+                      ticket={ticket}
+                      fieldErrors={fieldErrors}
+                      onFieldEdit={clearFieldError}
+                      canAssign={canAssign}
+                      canEditEstimates={canEditEstimates}
+                      assignment={assignment}
+                      onSave={run((body) => patchTicket(ticket.ticketId, body))}
+                      onBlock={async () => {
+                        if (!blockReason.trim()) return;
+                        await run(() => setBlocked(ticket.ticketId, {
+                          revision: ticket.revision,
+                          reason: blockReason,
+                        }))();
+                        setBlockReason('');
+                      }}
+                      onUnblock={run(() => clearBlocked(ticket.ticketId, {
+                        revision: ticket.revision,
+                      }))}
+                      blockReason={blockReason}
+                      setBlockReason={setBlockReason}
+                    />
+                  )}
+                </div>
               </div>
               <div
                 id="panel-attachments"
@@ -266,33 +283,6 @@ function TicketDrawerContent({
               </div>
             </div>
           </main>
-
-          {showMetadataRail && (
-            <TicketMetadataRail
-              ticket={ticket}
-              fieldErrors={fieldErrors}
-              onFieldEdit={clearFieldError}
-              canAssign={canAssign}
-              canEditEstimates={canEditEstimates}
-              assignment={assignment}
-              onSave={run((body) => patchTicket(ticket.ticketId, body))}
-              onBlock={async () => {
-                if (!blockReason.trim()) return;
-                await run(() => setBlocked(ticket.ticketId, {
-                  revision: ticket.revision,
-                  reason: blockReason,
-                }))();
-                setBlockReason('');
-              }}
-              onUnblock={run(() => clearBlocked(ticket.ticketId, {
-                revision: ticket.revision,
-              }))}
-              blockReason={blockReason}
-              setBlockReason={setBlockReason}
-              collapsed={railCollapsed}
-              onToggleCollapsed={() => setRailCollapsed((prev) => !prev)}
-            />
-          )}
         </div>
       </div>
 

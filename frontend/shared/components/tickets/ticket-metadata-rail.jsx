@@ -43,7 +43,7 @@ function WatcherAvatar({ name }) {
 
 export default function TicketMetadataRail({
   ticket, onSave, canAssign = false, canEditEstimates = false, assignment, onBlock, onUnblock, blockReason, setBlockReason,
-  fieldErrors = {}, onFieldEdit, collapsed = false, onToggleCollapsed,
+  fieldErrors = {}, onFieldEdit,
 }) {
   const [localDateErrors, setLocalDateErrors] = useState({});
   const [draft, setDraft] = useState({
@@ -127,23 +127,10 @@ export default function TicketMetadataRail({
 
   return (
     <aside
-      className={`metadata-rail sidecol${collapsed ? ' collapsed' : ''}`}
+      className="metadata-rail sidecol"
       aria-label="Ticket metadata"
     >
-      <div className="metadata-rail-head">
-        <h2 className="sr">Metadata</h2>
-        {onToggleCollapsed && (
-          <button
-            type="button"
-            className="btn btn-sm metadata-rail-toggle"
-            aria-expanded={!collapsed}
-            onClick={onToggleCollapsed}
-          >
-            <Icon name="layer" size={12} />
-            {collapsed ? 'View details' : 'Hide details'}
-          </button>
-        )}
-      </div>
+      <h2 className="sr">Metadata</h2>
 
       <div className="metadata-rail-body">
         <div className="siderow">

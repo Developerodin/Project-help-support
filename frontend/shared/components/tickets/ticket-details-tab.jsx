@@ -66,6 +66,7 @@ export default function TicketDetailsTab({
   ticket,
   canAssign = false,
   assignment,
+  railPresent = false,
 }) {
   const elapsed = ticket.createdAt ? daysBetween(ticket.createdAt) : 0;
   const projectName = ticket.project?.name || ticket.project?.key || ticket.projectKey;
@@ -103,7 +104,7 @@ export default function TicketDetailsTab({
   }
 
   return (
-    <div className="detail-tab">
+    <>
       <h2 className="sr">Details</h2>
 
       <div className="detail-fields">
@@ -131,62 +132,70 @@ export default function TicketDetailsTab({
         <DetailField label="Stage">
           {stageLabel(ticket.status)}
         </DetailField>
-        <DetailField label="Reporter">
-          <PersonValue name={ticket.createdBy?.name} empty="—" />
-        </DetailField>
-        <DetailField label="Assignee">
-          {editable ? (
-            <AssignmentSelect
-              id="detail-assignee"
-              label="Assignee"
-              emptyLabel="Unassigned"
-              value={assigneeId}
-              options={assignment.userOptions}
-              loading={assignment.loadingUsers}
-              error={assignment.usersError}
-              assigning={assignment.assigningField === 'assignee'}
-              onChange={handleAssigneeChange}
-            />
-          ) : (
-            <PersonValue name={ticket.assignedTo?.name} />
-          )}
-        </DetailField>
-        <DetailField label="Team">
-          {editable ? (
-            <>
+        {!railPresent && (
+          <DetailField label="Reporter">
+            <PersonValue name={ticket.createdBy?.name} empty="—" />
+          </DetailField>
+        )}
+        {!railPresent && (
+          <DetailField label="Assignee">
+            {editable ? (
               <AssignmentSelect
-                id="detail-team"
-                label="Team"
-                emptyLabel="No team"
-                value={teamId}
-                options={assignment.teamOptions}
-                loading={assignment.loadingTeams}
-                error={assignment.teamsError}
-                assigning={assignment.assigningField === 'team'}
-                onChange={handleTeamChange}
-                disabled={assignment.projectTeamLocked}
+                id="detail-assignee"
+                label="Assignee"
+                emptyLabel="Unassigned"
+                value={assigneeId}
+                options={assignment.userOptions}
+                loading={assignment.loadingUsers}
+                error={assignment.usersError}
+                assigning={assignment.assigningField === 'assignee'}
+                onChange={handleAssigneeChange}
               />
-              {assignment.projectTeamLocked ? (
-                <span className="meta detail-select-hint">Set by project team</span>
-              ) : null}
-            </>
-          ) : (
-            ticket.team?.name || <EmptyValue>No team</EmptyValue>
-          )}
-        </DetailField>
-        <DetailField label="Created">
-          {ticket.createdAt ? (
-            <>
-              {formatWhen(ticket.createdAt)}
-              <span className="meta" style={{ display: 'block', marginTop: 4 }}>
-                {elapsed}
-                {' days open'}
-              </span>
-            </>
-          ) : (
-            <EmptyValue>—</EmptyValue>
-          )}
-        </DetailField>
+            ) : (
+              <PersonValue name={ticket.assignedTo?.name} />
+            )}
+          </DetailField>
+        )}
+        {!railPresent && (
+          <DetailField label="Team">
+            {editable ? (
+              <>
+                <AssignmentSelect
+                  id="detail-team"
+                  label="Team"
+                  emptyLabel="No team"
+                  value={teamId}
+                  options={assignment.teamOptions}
+                  loading={assignment.loadingTeams}
+                  error={assignment.teamsError}
+                  assigning={assignment.assigningField === 'team'}
+                  onChange={handleTeamChange}
+                  disabled={assignment.projectTeamLocked}
+                />
+                {assignment.projectTeamLocked ? (
+                  <span className="meta detail-select-hint">Set by project team</span>
+                ) : null}
+              </>
+            ) : (
+              ticket.team?.name || <EmptyValue>No team</EmptyValue>
+            )}
+          </DetailField>
+        )}
+        {!railPresent && (
+          <DetailField label="Created">
+            {ticket.createdAt ? (
+              <>
+                {formatWhen(ticket.createdAt)}
+                <span className="meta" style={{ display: 'block', marginTop: 4 }}>
+                  {elapsed}
+                  {' days open'}
+                </span>
+              </>
+            ) : (
+              <EmptyValue>—</EmptyValue>
+            )}
+          </DetailField>
+        )}
         <DetailField label="Updated">
           {ticket.updatedAt ? formatWhen(ticket.updatedAt) : <EmptyValue>—</EmptyValue>}
         </DetailField>
@@ -206,8 +215,7 @@ export default function TicketDetailsTab({
         )}
       </div>
 
-      <fieldset className="detail-estimates">
-        <legend>Estimates</legend>
+      {!railPresent && (
         <div className="detail-fields">
           <DetailField label="Resolution estimate">
             {ticket.estimatedResolutionAt
@@ -219,20 +227,16 @@ export default function TicketDetailsTab({
               ? formatDateOnly(ticket.expectedReleaseDate)
               : <EmptyValue>Not set</EmptyValue>}
           </DetailField>
-          <DetailField label="Days open">
-            {elapsed}
-          </DetailField>
+          <DetailField label="Days open">{elapsed}</DetailField>
           <DetailField label="In current stage">
             <span className="mono">{stageAgeDays(ticket)} days</span>
           </DetailField>
+          {!ticket.estimatedResolutionAt && !ticket.expectedReleaseDate && (
+            <p className="meta detail-estimates-note wide">Required before In Progress.</p>
+          )}
         </div>
-        {!ticket.estimatedResolutionAt && !ticket.expectedReleaseDate && (
-          <p className="meta detail-estimates-note">
-            Required before In Progress.
-          </p>
-        )}
-      </fieldset>
-    </div>
+      )}
+    </>
   );
 }
 
