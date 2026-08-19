@@ -21,6 +21,8 @@ import {
   AttachmentMedia,
   AttachmentTitle,
 } from '../ui/attachment.jsx';
+import { Bubble, BubbleContent, BubbleGroup } from '../ui/bubble.jsx';
+import { Message } from '../ui/message.jsx';
 import {
   TicketAttachmentImage,
   TicketAttachmentLink,
@@ -40,6 +42,64 @@ function isImageAttachment(file) {
   const mime = file.mimeType || file.type || '';
   if (mime.startsWith('image/')) return true;
   return /\.(png|jpe?g|gif|webp|bmp|tiff?|avif|ico)$/i.test(file.name || '');
+}
+
+function commentAuthorId(comment) {
+  const by = comment?.commentedBy;
+  if (!by) return null;
+  if (typeof by === 'string') return by;
+  return String(by._id || by.id || '');
+}
+
+function commentAuthorKey(comment) {
+  const by = comment?.commentedBy;
+  if (!by) return 'system';
+  if (typeof by === 'string') return by;
+  const id = by._id || by.id;
+  if (id) return String(id);
+  if (by.name) return `name:${by.name}`;
+  return 'unknown';
+}
+
+function isOwnComment(comment, user) {
+  if (!user) return false;
+  const authorId = commentAuthorId(comment);
+  const userId = String(user._id || user.id || '');
+  return Boolean(authorId && userId && authorId === userId);
+}
+
+function isSystemComment(comment) {
+  return Boolean(comment?.system || comment?.kind === 'system' || !comment?.commentedBy);
+}
+
+function bubbleVariant(comment, user) {
+  if (isSystemComment(comment)) return 'muted';
+  if (comment.internal) return 'outline';
+  if (isOwnComment(comment, user)) return 'default';
+  return 'secondary';
+}
+
+function bubbleAlign(comment, user) {
+  if (isSystemComment(comment)) return 'stretch';
+  if (isOwnComment(comment, user)) return 'end';
+  return 'start';
+}
+
+function groupComments(comments = []) {
+  const groups = [];
+
+  for (const comment of comments) {
+    const authorId = commentAuthorKey(comment);
+    const last = groups[groups.length - 1];
+
+    if (last && last.authorId === authorId) {
+      last.comments.push(comment);
+    } else {
+      groups.push({ authorId, comments: [comment] });
+    }
+  }
+
+  return groups;
 }
 
 function CommentAttachment({ ticketId, file }) {
@@ -72,6 +132,56 @@ function CommentAttachment({ ticketId, file }) {
   );
 }
 
+function CommentBubble({ comment, user, ticketId, showHeader }) {
+  const name = comment.commentedBy?.name || 'Someone';
+  const variant = bubbleVariant(comment, user);
+  const align = bubbleAlign(comment, user);
+  const when = formatWhen(comment.createdAt);
+  const edited = comment.editedAt ? ' (edited)' : '';
+
+  return (
+    <Message
+      align={align}
+      showHeader={showHeader}
+      name={name}
+      time={`${when}${edited}`}
+      timeIso={comment.createdAt}
+      meta={comment.internal ? <span className="chip comment-internal">Internal</span> : null}
+    >
+      <Bubble variant={variant} align={align}>
+        <BubbleContent>
+          {comment.content && <p className="bubble-text">{comment.content}</p>}
+          {comment.attachments?.map((file) => (
+            <CommentAttachment
+              key={file._id || file.id || file.name}
+              ticketId={ticketId}
+              file={file}
+            />
+          ))}
+        </BubbleContent>
+      </Bubble>
+    </Message>
+  );
+}
+
+function CommentBubbleGroup({ group, user, ticketId }) {
+  const align = bubbleAlign(group.comments[0], user);
+
+  return (
+    <BubbleGroup align={align}>
+      {group.comments.map((comment, index) => (
+        <CommentBubble
+          key={comment._id || comment.id || `${group.authorId}-${index}`}
+          comment={comment}
+          user={user}
+          ticketId={ticketId}
+          showHeader={index === 0}
+        />
+      ))}
+    </BubbleGroup>
+  );
+}
+
 function attachOnlyContent(files) {
   if (files.length === 1) return files[0].name;
   return `Attached ${files.length} files`;
@@ -85,6 +195,7 @@ export default function TicketComments({ ticket, user, onAdd, onUpload }) {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
   const canCreateInternalComment = Boolean(user) && !isExternalUser(user);
+  const commentGroups = groupComments(ticket.comments);
 
   function addFiles(incoming) {
     const { errors, valid } = validateAttachmentBatch(pendingFiles, incoming);
@@ -130,31 +241,18 @@ export default function TicketComments({ ticket, user, onAdd, onUpload }) {
         <p className="meta">No comments yet. Say what changed or what you need.</p>
       )}
 
-      {ticket.comments?.map((comment) => (
-        <article key={comment._id || comment.id} className="comment">
-          <span className="avatar sm" title={comment.commentedBy?.name || 'Someone'}>
-            {initials(comment.commentedBy?.name)}
-          </span>
-          <div className="body">
-            <div className="who">
-              <b>{comment.commentedBy?.name || 'Someone'}</b>
-                <span className="when">
-                  {formatWhen(comment.createdAt)}
-                  {comment.editedAt && ' (edited)'}
-                </span>
-                {comment.internal && <span className="chip comment-internal">Internal</span>}
-            </div>
-            <p>{comment.content}</p>
-            {comment.attachments?.map((file) => (
-              <CommentAttachment
-                key={file._id || file.id || file.name}
-                ticketId={ticket.ticketId}
-                file={file}
-              />
-            ))}
-          </div>
-        </article>
-      ))}
+      {commentGroups.length > 0 && (
+        <div className="message-list" role="log" aria-label="Comments" aria-live="polite">
+          {commentGroups.map((group) => (
+            <CommentBubbleGroup
+              key={group.comments.map((c) => c._id || c.id).join('-') || group.authorId}
+              group={group}
+              user={user}
+              ticketId={ticket.ticketId}
+            />
+          ))}
+        </div>
+      )}
 
       <div className="composer">
         {attachError && (
@@ -261,3 +359,13 @@ export default function TicketComments({ ticket, user, onAdd, onUpload }) {
     </section>
   );
 }
+
+// Re-export helpers for tests
+export {
+  bubbleAlign,
+  bubbleVariant,
+  commentAuthorId,
+  commentAuthorKey,
+  groupComments,
+  isOwnComment,
+};
