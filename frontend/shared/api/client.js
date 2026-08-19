@@ -11,15 +11,36 @@ export class ApiClientError extends Error {
   }
 }
 
-/**
- * The access token lives in memory only. localStorage would survive a tab close
- * and be readable by any script on the page; the refresh cookie is httpOnly and
- * is what actually carries the session across reloads.
- */
-let accessToken = null;
+export const ACCESS_TOKEN_STORAGE_KEY = 'prowplus_accessToken';
+/** Refresh token is stored in the httpOnly `prowplus_refreshToken` cookie (backend). */
+export const REFRESH_TOKEN_STORAGE_KEY = 'prowplus_refreshToken';
+
+function readStoredAccessToken() {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredAccessToken(token) {
+  if (typeof window === 'undefined') return;
+  try {
+    if (token) window.localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, token);
+    else window.localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
+  } catch {
+    // Storage may be unavailable in private mode.
+  }
+}
+
+let accessToken = readStoredAccessToken();
 let onSessionLost = null;
 
-export const setAccessToken = (token) => { accessToken = token; };
+export const setAccessToken = (token) => {
+  accessToken = token;
+  writeStoredAccessToken(token);
+};
 export const getAccessToken = () => accessToken;
 export const setSessionLostHandler = (fn) => { onSessionLost = fn; };
 

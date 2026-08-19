@@ -3,8 +3,8 @@ import { ApiError } from '../../platform/errors.js';
 import User from '../users/user.model.js';
 import * as authService from './auth.service.js';
 
-export const REFRESH_COOKIE = 'pms_refresh';
-export const IMPERSONATION_ADMIN_COOKIE = 'pms_impersonation_admin';
+export const REFRESH_COOKIE = 'prowplus_refreshToken';
+export const IMPERSONATION_ADMIN_COOKIE = 'prowplus_impersonation_admin';
 
 function refreshCookieOptions(config, expiresAt) {
   return {

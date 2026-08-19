@@ -1,3 +1,5 @@
+import { isExternalUser } from './permissions.js';
+
 /**
  * THE single source of truth for stage ordering AND gate metadata.
  *
@@ -8,12 +10,29 @@
  * Keys are stable and snake_case. Labels live beside them, so renaming a stage
  * is a one-line edit rather than a data migration.
  */
+/** Map global ROLE_IDS to legacy stage gate role strings. */
+const STAGE_ROLE_ALIASES = Object.freeze({
+  super_admin: 'admin',
+  project_admin: 'lead',
+  tester: 'qa',
+});
+
 function getUserRoles(user) {
   if (!user) return [];
   const roles = user.roles;
   if (Array.isArray(roles) && roles.length > 0) return [...new Set(roles)];
   if (user.role) return [user.role];
   return [];
+}
+
+function getActorStageRoles(actor) {
+  const roles = getUserRoles(actor);
+  const expanded = new Set(roles);
+  for (const role of roles) {
+    const alias = STAGE_ROLE_ALIASES[role];
+    if (alias) expanded.add(alias);
+  }
+  return [...expanded];
 }
 
 export const STAGES = Object.freeze([
@@ -92,7 +111,7 @@ function hasRelationship(relationship, actor, ticket) {
 }
 
 function passes({ roles, relationships }, actor, ticket) {
-  const actorRoles = getUserRoles(actor);
+  const actorRoles = getActorStageRoles(actor);
   if (roles.some((role) => actorRoles.includes(role))) return true;
   return relationships.some((rel) => hasRelationship(rel, actor, ticket));
 }
@@ -117,6 +136,16 @@ export function canTransition(from, to, actor, ticket) {
   if (!toStage) return refuse('UNKNOWN_STAGE', `"${to}" is not a stage`);
   if (fromStage.index === toStage.index) {
     return refuse('SAME_STAGE', `The ticket is already in ${toStage.label}`);
+  }
+
+  if (isExternalUser(actor)) {
+    if (from === 'live' && to === 'closed') {
+      return { ok: true, isReopen: false, isClose: true, decision: null };
+    }
+    return refuse(
+      'STAGE_NOT_PERMITTED',
+      'Clients may only move Live tickets to Closed',
+    );
   }
 
   const isReopen = toStage.index < fromStage.index;

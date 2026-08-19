@@ -3,15 +3,20 @@
 import { stageLabel } from '@pms/shared';
 import Icon, { initials, isOverdue, priorityChipClass, priorityLabel } from '../icons.jsx';
 
-export default function TicketCard({ ticket, onOpen }) {
+export default function TicketCard({ ticket, onOpen, draggable: canDrag = true, onBlockedDrag }) {
   const late = isOverdue(ticket);
 
   return (
     <button
       type="button"
-      className="card"
-      draggable
+      className={`card${canDrag ? '' : ' card-locked'}`}
+      draggable={canDrag}
       onDragStart={(e) => {
+        if (!canDrag) {
+          e.preventDefault();
+          onBlockedDrag?.(ticket);
+          return;
+        }
         e.dataTransfer.setData('text/plain', ticket.ticketId);
         e.currentTarget.classList.add('dragging');
       }}

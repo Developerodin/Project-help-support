@@ -765,14 +765,52 @@ input[type="checkbox"]{ accent-color:var(--sig); width:14px; height:14px; cursor
   border-color:var(--sig); box-shadow:0 0 0 3px var(--sig-wash);
 }
 
-.composer{ margin-top:14px; border:1px solid var(--rule); border-radius:var(--r-lg); background:var(--panel); }
-.composer:focus-within{ border-color:var(--sig); }
-.composer textarea{
-  width:100%; border:none; background:none; outline:none; resize:vertical;
-  min-height:74px; padding:10px 11px; font-size:0.875rem; line-height:1.55; display:block;
+.composer{
+  position:sticky; bottom:0; z-index:2;
+  margin-top:auto; padding-top:8px;
+  background:var(--paper);
+  padding-bottom:env(safe-area-inset-bottom);
 }
-.composer-foot{ display:flex; align-items:center; gap:8px; padding:7px 9px; border-top:1px solid var(--rule); flex-wrap:wrap; }
-.composer-foot .spacer{ flex:1; }
+.composer-row{
+  display:flex; align-items:center; gap:6px;
+  min-height:44px; padding:4px 6px;
+  border:1px solid var(--rule); border-radius:999px;
+  background:var(--panel);
+}
+.composer-row:focus-within{ border-color:var(--sig); }
+.composer-row input{
+  flex:1; min-width:0;
+  border:0; outline:0; background:transparent;
+  padding:8px 4px; font-size:0.875rem;
+}
+.composer-icon-btn{
+  flex:none; width:32px; height:32px;
+  display:inline-flex; align-items:center; justify-content:center;
+  border:0; border-radius:50%; background:transparent;
+  color:var(--ink-2); cursor:pointer;
+}
+.composer-icon-btn:hover:not(:disabled){
+  background:var(--rule-soft); color:var(--ink);
+}
+.composer-icon-btn:disabled{ opacity:0.35; cursor:default; }
+.composer-send:disabled{ opacity:0.35; cursor:default; }
+.composer-attachments{
+  display:flex; flex-wrap:wrap; gap:6px;
+  margin-bottom:6px; list-style:none; padding:0; margin-top:0;
+}
+.composer-attachment-chip{
+  display:inline-flex; align-items:center; gap:6px;
+  max-width:100%; padding:4px 6px 4px 8px;
+  border:1px solid var(--rule); border-radius:999px;
+  background:var(--panel); font-size:0.75rem;
+}
+.composer-attachment-chip .nm{
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  max-width:12rem;
+}
+.composer-attachment-chip .sz{ color:var(--ink-3); flex:none; }
+.composer-error{ margin:0 0 6px; }
+.composer-uploading{ margin-bottom:6px; }
 
 .trail{ position:relative; padding-left:18px; }
 .trail::before{ content:""; position:absolute; left:4px; top:6px; bottom:6px; width:1px; background:var(--rule); }

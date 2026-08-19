@@ -160,6 +160,86 @@
   color: var(--ink-3);
 }
 
+.banner-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.banner-dismiss {
+  flex: none;
+  align-self: flex-start;
+}
+
+.board-wrap {
+  position: relative;
+}
+
+.board-wrap--locked .board {
+  pointer-events: none;
+  user-select: none;
+}
+
+.board-lock-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 24px 16px;
+  background: color-mix(in srgb, var(--paper) 72%, transparent);
+  backdrop-filter: blur(1px);
+}
+
+.board-lock-overlay__panel {
+  width: min(100%, 520px);
+  padding: 14px 16px;
+  border: 1px solid var(--alarm);
+  border-radius: var(--r);
+  background: var(--alarm-wash);
+  color: var(--ink);
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--ink) 12%, transparent);
+}
+
+.board-lock-overlay__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.board-lock-overlay__head h2 {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.board-lock-overlay__panel p {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.board-lock-overlay__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.lane-locked {
+  opacity: 0.92;
+}
+
+.card-locked {
+  cursor: default;
+}
+
+.card-locked.dragging,
+.card-locked:active {
+  transform: none;
+}
+
 .siderow.bad input,
 .siderow.bad select,
 .siderow.bad textarea {

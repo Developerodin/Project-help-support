@@ -16,8 +16,6 @@ import {
   TicketAttachmentLink,
 } from './ticket-attachment.jsx';
 
-const COMPOSER_HINT = ATTACHMENT_HINT;
-
 function formatWhen(iso) {
   if (!iso) return '';
   return new Date(iso).toLocaleString(undefined, {
@@ -74,7 +72,7 @@ export default function TicketComments({ ticket, onAdd, onUpload }) {
   const [pendingFiles, setPendingFiles] = useState([]);
   const [attachError, setAttachError] = useState(null);
   const [uploading, setUploading] = useState(false);
-  const inputRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   function addFiles(incoming) {
     const { errors, valid } = validateAttachmentBatch(pendingFiles, incoming);
@@ -102,6 +100,13 @@ export default function TicketComments({ ticket, onAdd, onUpload }) {
     } finally {
       setUploading(false);
     }
+  }
+
+  function handleCommentKeyDown(event) {
+    if (event.nativeEvent?.isComposing) return;
+    if (event.key !== 'Enter' || event.shiftKey) return;
+    event.preventDefault();
+    submit();
   }
 
   const canSubmit = Boolean(content.trim() || pendingFiles.length);
@@ -140,24 +145,20 @@ export default function TicketComments({ ticket, onAdd, onUpload }) {
       </div>
 
       <div className="composer">
-        <textarea
-          id="new-comment"
-          rows={3}
-          placeholder="Add a comment. Type @ to notify someone."
-          aria-label="Add a comment"
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-        />
+        {attachError && (
+          <p className="composer-error field-hint invalid" role="alert">{attachError}</p>
+        )}
+
         {pendingFiles.length > 0 && (
-          <ul className="file-list composer-files" aria-label="Files to attach">
+          <ul className="composer-attachments" aria-label="Files to attach">
             {pendingFiles.map((file, index) => (
-              <li key={`${file.name}-${file.size}-${index}`}>
-                <Icon name="clip" size={12} />
+              <li key={`${file.name}-${file.size}-${index}`} className="composer-attachment-chip">
+                <Icon name="clip" size={12} aria-hidden="true" />
                 <span className="nm" title={file.name}>{file.name}</span>
                 <span className="sz">{formatFileSize(file.size)}</span>
                 <button
                   type="button"
-                  className="btn btn-ghost btn-icon"
+                  className="composer-icon-btn"
                   aria-label={`Remove ${file.name}`}
                   disabled={uploading}
                   onClick={() => setPendingFiles((prev) => prev.filter((_, i) => i !== index))}
@@ -168,25 +169,50 @@ export default function TicketComments({ ticket, onAdd, onUpload }) {
             ))}
           </ul>
         )}
-        <div className="composer-foot">
-          {uploading ? (
-            <div className="attach-upload-inline attach-upload-inline--composer">
-              <AttachmentUploadLoader variant="compact" />
-            </div>
-          ) : null}
+
+        {uploading && (
+          <div className="composer-uploading" aria-live="polite">
+            <AttachmentUploadLoader variant="compact" />
+          </div>
+        )}
+
+        <div className="composer-row">
           <button
             type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => inputRef.current?.click()}
+            className="composer-icon-btn"
+            aria-label={`Attach files. ${ATTACHMENT_HINT}`}
+            title={`Attach files. ${ATTACHMENT_HINT}`}
+            onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
           >
-            <Icon name="clip" size={13} />
-            Attach
+            <Icon name="clip" size={15} />
           </button>
-          <span className="meta">{COMPOSER_HINT}</span>
-          {attachError && <span className="field-hint invalid" role="alert">{attachError}</span>}
+
           <input
-            ref={inputRef}
+            id="new-comment"
+            type="text"
+            aria-label="Add a comment"
+            placeholder="Add a comment..."
+            value={content}
+            onChange={(event) => setContent(event.target.value)}
+            onKeyDown={handleCommentKeyDown}
+            disabled={uploading}
+          />
+
+          <button
+            type="button"
+            className="composer-icon-btn composer-send"
+            aria-label="Send comment"
+            title="Send comment"
+            disabled={!canSubmit || uploading}
+            onClick={submit}
+            aria-busy={uploading || undefined}
+          >
+            <Icon name="send" size={15} />
+          </button>
+
+          <input
+            ref={fileInputRef}
             type="file"
             multiple
             className="sr-only"
@@ -198,15 +224,6 @@ export default function TicketComments({ ticket, onAdd, onUpload }) {
               event.target.value = '';
             }}
           />
-          <span className="spacer" />
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            onClick={submit}
-            disabled={uploading || !canSubmit}
-          >
-            {pendingFiles.length && !content.trim() ? 'Attach files' : 'Comment'}
-          </button>
         </div>
       </div>
     </section>

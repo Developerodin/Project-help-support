@@ -161,6 +161,13 @@ export function friendlyTransitionError(error) {
   if (normalized.code === 'OWNERSHIP_REQUIRED') {
     return { ...normalized, message: OWNERSHIP_REQUIRED_MESSAGE };
   }
+  if (normalized.status === 403 || normalized.code === 'FORBIDDEN') {
+    return {
+      ...normalized,
+      title: 'Permission denied',
+      message: normalized.message || 'You do not have permission to move this ticket.',
+    };
+  }
   return normalized;
 }
 
