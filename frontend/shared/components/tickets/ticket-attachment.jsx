@@ -74,6 +74,7 @@ export function TicketAttachmentImage({
   alt,
   className,
   children,
+  onError,
 }) {
   const { url, loading, error, open } = useAttachmentDownloadUrl(ticketId, attachmentId);
 
@@ -86,7 +87,7 @@ export function TicketAttachmentImage({
       aria-busy={loading}
     >
       {url && !error ? (
-        <img src={url} alt={alt} />
+        <img src={url} alt={alt} onError={onError} />
       ) : (
         <span className="attach-img--pending">
           {loading ? 'Loading…' : (error ? 'Preview unavailable' : alt)}

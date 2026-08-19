@@ -12,7 +12,18 @@ import {
   formatFileSize,
   validateIncomingAttachments,
 } from '@/shared/lib/attachment-config.js';
-import { TicketAttachmentLink } from './ticket-attachment.jsx';
+import { TicketAttachmentImage, TicketAttachmentLink } from './ticket-attachment.jsx';
+
+function isImage(file) {
+  const mime = file.mimeType || file.type || '';
+  if (mime.startsWith('image/')) return true;
+  return /\.(png|jpe?g|gif|webp|bmp|tiff?|avif|ico)$/i.test(file.name || '');
+}
+
+function formatUploadedAt(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+}
 
 function canDeleteAttachment(attachment, user) {
   if (!user) return false;
@@ -25,7 +36,6 @@ function PendingStatus({ status, error }) {
   if (status === 'uploading') {
     return (
       <span className="attach-pending-status attach-pending-status--uploading">
-        <span className="attach-pending-status__icon" aria-hidden="true">↑</span>
         Uploading…
       </span>
     );
@@ -33,14 +43,12 @@ function PendingStatus({ status, error }) {
   if (status === 'failed') {
     return (
       <span className="attach-pending-status attach-pending-status--failed">
-        <span className="attach-pending-status__icon" aria-hidden="true">!</span>
         {error || 'Upload failed'}
       </span>
     );
   }
   return (
     <span className="attach-pending-status attach-pending-status--ready">
-      <span className="attach-pending-status__icon" aria-hidden="true">✓</span>
       Ready to upload
     </span>
   );
@@ -60,6 +68,7 @@ export default function TicketAttachmentsTab({
   const [uploading, setUploading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [thumbFailed, setThumbFailed] = useState({});
 
   const attachments = ticket.attachments ?? [];
   const readyCount = pendingFiles.filter((item) => item.status === 'ready').length;
@@ -184,20 +193,27 @@ export default function TicketAttachmentsTab({
           Attachments ({attachments.length})
         </h3>
 
-        {attachments.length === 0 ? (
-          <div className="attach-empty">
-            <p>No attachments yet</p>
-            <p className="attach-empty-hint">Add screenshots, logs, or documents to help triage faster.</p>
-          </div>
-        ) : (
-          <ul className="attach-uploaded-list" aria-label="Uploaded attachments">
-            {attachments.map((attachment) => {
-              const attachmentId = attachment._id || attachment.id;
-              const showDelete = onDelete && canDeleteAttachment(attachment, user);
+        <ul className="attach-uploaded-list" aria-label="Uploaded attachments">
+          {attachments.map((attachment) => {
+            const attachmentId = attachment._id || attachment.id;
+            const showDelete = onDelete && canDeleteAttachment(attachment, user);
 
-              return (
-                <li key={attachmentId} className="attach-uploaded-item">
-                  <Icon name="clip" size={14} aria-hidden="true" />
+            return (
+              <li key={attachmentId} className="attach-uploaded-item">
+                {isImage(attachment) && !thumbFailed[attachmentId] ? (
+                  <TicketAttachmentImage
+                    ticketId={ticket.ticketId}
+                    attachmentId={attachmentId}
+                    alt=""
+                    className="attach-thumb"
+                    onError={() => setThumbFailed((prev) => ({ ...prev, [attachmentId]: true }))}
+                  />
+                ) : (
+                  <span className="attach-thumb attach-thumb--icon" aria-hidden="true">
+                    <Icon name="clip" size={16} />
+                  </span>
+                )}
+                <div className="attach-uploaded-body">
                   <TicketAttachmentLink
                     ticketId={ticket.ticketId}
                     attachmentId={attachmentId}
@@ -205,34 +221,40 @@ export default function TicketAttachmentsTab({
                   >
                     <span className="nm" title={attachment.name}>{attachment.name}</span>
                   </TicketAttachmentLink>
-                  {attachment.size != null && (
-                    <span className="sz">{formatFileSize(attachment.size)}</span>
-                  )}
-                  <div className="attach-uploaded-actions">
-                    <TicketAttachmentLink
-                      ticketId={ticket.ticketId}
-                      attachmentId={attachmentId}
-                      className="btn btn-ghost btn-sm attach-action-btn"
-                      aria-label={`Download ${attachment.name}`}
-                    >
-                      Download
-                    </TicketAttachmentLink>
-                    {showDelete && (
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm attach-action-btn attach-action-btn--danger"
-                        aria-label={`Delete ${attachment.name}`}
-                        onClick={() => setDeleteTarget({ id: attachmentId, name: attachment.name })}
-                      >
-                        Delete
-                      </button>
+                  <span className="attach-uploaded-meta">
+                    {attachment.size != null && (
+                      <span className="sz">{formatFileSize(attachment.size)}</span>
                     )}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+                    {attachment.uploadedBy?.name && <span>{attachment.uploadedBy.name}</span>}
+                    {attachment.uploadedAt && (
+                      <span>{formatUploadedAt(attachment.uploadedAt)}</span>
+                    )}
+                  </span>
+                </div>
+                <div className="attach-uploaded-actions">
+                  <TicketAttachmentLink
+                    ticketId={ticket.ticketId}
+                    attachmentId={attachmentId}
+                    className="btn btn-ghost btn-sm attach-action-btn"
+                    aria-label={`Download ${attachment.name}`}
+                  >
+                    Download
+                  </TicketAttachmentLink>
+                  {showDelete && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm attach-action-btn attach-action-btn--danger"
+                      aria-label={`Delete ${attachment.name}`}
+                      onClick={() => setDeleteTarget({ id: attachmentId, name: attachment.name })}
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
       </div>
 
       {canUpload && (
@@ -261,7 +283,9 @@ export default function TicketAttachmentsTab({
           >
             <Icon name="clip" size={18} aria-hidden="true" />
             <p className="file-drop-title" id={hintId}>
-              Drag files here or <span className="browse">browse</span>
+              {attachments.length === 0
+                ? <>No files yet. Drag them here or <span className="browse">browse</span></>
+                : <>Drag files here or <span className="browse">browse</span></>}
             </p>
             <p className="file-drop-hint">{ATTACHMENT_HINT}</p>
             {dragState === 'invalid' && (
