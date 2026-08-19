@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { ADMIN_ROLES, hasAnyRole } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { sniffType, safeKey } from '../../platform/upload.js';
