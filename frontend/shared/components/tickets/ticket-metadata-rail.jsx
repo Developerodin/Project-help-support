@@ -3,6 +3,13 @@
 import { useState } from 'react';
 import { todayDateKey, validateTicketEstimateDates } from '@pms/shared';
 import Icon, { initials, isOverdue } from '../icons.jsx';
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarGroup,
+  AvatarGroupCount,
+  AvatarImage,
+} from '../ui/avatar.jsx';
 import TicketRailPicker from './ticket-rail-picker.jsx';
 import {
   dateValue, daysBetween, formatWhen, formatDateOnly, stageAgeDays,
@@ -37,8 +44,14 @@ function uniquePeople(...people) {
   return result;
 }
 
-function WatcherAvatar({ name }) {
-  return <span className="avatar sm" title={name}>{initials(name)}</span>;
+const WATCHER_AVATAR_LIMIT = 5;
+
+function watcherDisplayName(person) {
+  return person?.name || person?.email || 'Unknown';
+}
+
+function watcherAvatarSrc(person) {
+  return person?.avatarUrl || person?.avatar || null;
 }
 
 export default function TicketMetadataRail({
@@ -121,8 +134,8 @@ export default function TicketMetadataRail({
   const pct = span > 0 ? Math.min(100, Math.round((elapsed / span) * 100)) : 0;
   const daysLeft = estIso ? -daysBetween(`${estIso}T00:00:00Z`) : null;
   const allWatchers = uniquePeople(...(ticket.watchers || []));
-  const watcherAvatars = allWatchers.slice(0, 2);
-  const watcherExtra = Math.max(0, allWatchers.length - 2);
+  const visibleWatchers = allWatchers.slice(0, WATCHER_AVATAR_LIMIT);
+  const watcherExtra = Math.max(0, allWatchers.length - WATCHER_AVATAR_LIMIT);
   const canEditAssignment = canAssign && submitAssignment;
 
   return (
@@ -334,15 +347,35 @@ export default function TicketMetadataRail({
 
         <div className="siderow">
           <span className="lbl">Watchers</span>
-          <div className="teamgrid">
-            {watcherAvatars.map((person) => (
-              <WatcherAvatar key={personKey(person)} name={person.name} />
-            ))}
-            {watcherExtra > 0 && <span className="meta">+{watcherExtra} more</span>}
-            {!watcherAvatars.length && watcherExtra === 0 && (
-              <span className="v empty">None</span>
-            )}
-          </div>
+          {allWatchers.length > 0 ? (
+            <AvatarGroup aria-label="Watchers">
+              {visibleWatchers.map((person) => {
+                const name = watcherDisplayName(person);
+                return (
+                  <Avatar
+                    key={personKey(person)}
+                    size="sm"
+                    title={name}
+                    aria-label={name}
+                  >
+                    <AvatarImage src={watcherAvatarSrc(person)} alt={name} />
+                    <AvatarFallback>{initials(name)}</AvatarFallback>
+                  </Avatar>
+                );
+              })}
+              {watcherExtra > 0 && (
+                <AvatarGroupCount
+                  size="sm"
+                  title={`${watcherExtra} more watcher${watcherExtra === 1 ? '' : 's'}`}
+                  aria-label={`${watcherExtra} more watcher${watcherExtra === 1 ? '' : 's'}`}
+                >
+                  +{watcherExtra}
+                </AvatarGroupCount>
+              )}
+            </AvatarGroup>
+          ) : (
+            <span className="v empty">None</span>
+          )}
         </div>
 
         <div className="siderow">
