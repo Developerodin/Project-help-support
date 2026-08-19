@@ -13,6 +13,7 @@ import ProjectModulesEditor from '@/shared/components/project-modules-editor.jsx
 import ExternalUserMultiSelect from '@/shared/components/external-user-multi-select.jsx';
 import ValidationDialog from '@/shared/components/validation-dialog.jsx';
 import { formRowsToModules } from '@/shared/lib/project-modules.js';
+import { filterTeamsForProjectAssignment } from '@/shared/lib/team-scope.js';
 import { validateNewProjectDraft } from '@/shared/lib/validate-new-project.js';
 import { showToast } from '@/shared/lib/toast.js';
 
@@ -72,6 +73,11 @@ export default function NewProjectPage() {
   const selectedCompany = useMemo(
     () => companies.find((c) => c.id === draft.clientId),
     [companies, draft.clientId],
+  );
+
+  const globalTeams = useMemo(
+    () => filterTeamsForProjectAssignment(teams, null),
+    [teams],
   );
 
   const nameLen = draft.name.trim().length;
@@ -227,7 +233,7 @@ export default function NewProjectPage() {
                   onChange={set('team')}
                 >
                   <option value="">No team assigned</option>
-                  {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  {globalTeams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
                 <span className="help">Only global teams can be chosen here. Add project teams after creation.</span>
               </div>

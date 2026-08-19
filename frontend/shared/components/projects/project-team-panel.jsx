@@ -1,9 +1,15 @@
 'use client';
 
+import { useMemo } from 'react';
 import { capRole } from '@/shared/lib/profile-utils.js';
+import { filterTeamsForProjectAssignment } from '@/shared/lib/team-scope.js';
 
 export default function ProjectTeamPanel({ project, teams, onUpdated }) {
   const members = project.teamMembers || [];
+  const selectableTeams = useMemo(
+    () => filterTeamsForProjectAssignment(teams, project.id, project.team),
+    [teams, project.id, project.team],
+  );
 
   async function changeTeam(teamId) {
     await onUpdated(project.id, { team: teamId || null });
@@ -19,7 +25,7 @@ export default function ProjectTeamPanel({ project, teams, onUpdated }) {
           onChange={(e) => changeTeam(e.target.value)}
         >
           <option value="">No team assigned</option>
-          {teams.map((team) => (
+          {selectableTeams.map((team) => (
             <option key={team.id} value={team.id}>{team.name}</option>
           ))}
         </select>
