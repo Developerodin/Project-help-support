@@ -38,3 +38,4 @@ graphify-out/
 **/*.spec.jsx
 **/*.spec.ts
 **/*.spec.tsx
+.next-prod/

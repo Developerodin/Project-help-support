@@ -1,3 +1,4 @@
+import { PHASE_DEVELOPMENT_SERVER } from 'next/constants.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -18,4 +19,10 @@ const nextConfig = {
   outputFileTracingRoot: path.join(__dirname, '..'),
 };
 
-export default nextConfig;
+// `next dev` keeps .next; `next build`/`next start` use .next-prod. Sharing one
+// dist dir lets a build overwrite the webpack runtime a running dev server owns,
+// leaving chunks from two compilations side by side -> "Cannot find module './157.js'".
+export default (phase) => ({
+  ...nextConfig,
+  distDir: phase === PHASE_DEVELOPMENT_SERVER ? '.next' : '.next-prod',
+});
