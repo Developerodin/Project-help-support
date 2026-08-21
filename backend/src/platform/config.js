@@ -27,7 +27,7 @@ const present = (v) => typeof v === 'string' && v.trim().length > 0;
 function readRefreshCookieSameSite(env) {
   const raw = present(env.REFRESH_COOKIE_SAMESITE)
     ? env.REFRESH_COOKIE_SAMESITE.trim().toLowerCase()
-    : 'strict';
+    : 'none';
   if (!VALID_REFRESH_COOKIE_SAMESITE.has(raw)) {
     throw new Error(
       'Config error: REFRESH_COOKIE_SAMESITE must be one of strict, lax, or none.',
@@ -36,8 +36,11 @@ function readRefreshCookieSameSite(env) {
   return raw;
 }
 
-function readRefreshCookieSecure(env, isProduction) {
-  if (!present(env.REFRESH_COOKIE_SECURE)) return isProduction;
+function readRefreshCookieSecure(env, isProduction, sameSite) {
+  if (!present(env.REFRESH_COOKIE_SECURE)) {
+    if (sameSite === 'none' || isProduction) return true;
+    return false;
+  }
   const val = env.REFRESH_COOKIE_SECURE.trim().toLowerCase();
   if (val === 'true' || val === '1') return true;
   if (val === 'false' || val === '0') return false;
@@ -110,10 +113,11 @@ export function loadConfig(env = process.env) {
   const email = readGroup(env, 'email');
   const seed = readGroup(env, 'seed');
 
+  const sameSite = readRefreshCookieSameSite(env);
   const cookie = {
     domain: present(env.COOKIE_DOMAIN) ? env.COOKIE_DOMAIN.trim() : undefined,
-    secure: readRefreshCookieSecure(env, isProduction),
-    sameSite: readRefreshCookieSameSite(env),
+    sameSite,
+    secure: readRefreshCookieSecure(env, isProduction, sameSite),
   };
   assertRefreshCookiePolicy(cookie);
 
