@@ -5,7 +5,7 @@ import {
   ROLE_IDS, ADMIN_ROLES, ESTIMATE_DATE_EDITOR_ROLES, hasAnyRole, isExternalUser,
 } from '@pms/shared';
 import {
-  getTicket, patchTicket, transitionTicket, addComment, uploadAttachments, deleteAttachment, assignTicket,
+  getTicket, patchTicket, transitionTicket, addComment, editComment, deleteComment, uploadAttachments, deleteAttachment, assignTicket,
   watchTicket, unwatchTicket, setBlocked, clearBlocked,
 } from '@/shared/api/tickets.js';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
@@ -262,6 +262,8 @@ function TicketDrawerContent({
                   user={user}
                   onAdd={run((body) => addComment(ticket.ticketId, body), { rethrow: true })}
                   onUpload={run((form) => uploadAttachments(ticket.ticketId, form), { rethrow: true })}
+                  onEdit={run((commentId, body) => editComment(ticket.ticketId, commentId, body), { rethrow: true })}
+                  onDelete={run((commentId) => deleteComment(ticket.ticketId, commentId), { rethrow: true })}
                 />
               </div>
               <div

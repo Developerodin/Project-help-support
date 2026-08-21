@@ -213,6 +213,11 @@ export default function TicketDetailsTab({
             <p className="detail-prose">{ticket.description}</p>
           </DetailField>
         )}
+        {ticket.stepsToReproduce && (
+          <DetailField label="Steps to reproduce" wide>
+            <p className="detail-prose">{ticket.stepsToReproduce}</p>
+          </DetailField>
+        )}
       </div>
 
       {!railPresent && (

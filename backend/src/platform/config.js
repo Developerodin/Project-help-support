@@ -20,8 +20,38 @@ const PLACEHOLDERS = new Set([
 ]);
 
 const MIN_SECRET_LENGTH = 32;
+const VALID_REFRESH_COOKIE_SAMESITE = new Set(['strict', 'lax', 'none']);
 
 const present = (v) => typeof v === 'string' && v.trim().length > 0;
+
+function readRefreshCookieSameSite(env) {
+  const raw = present(env.REFRESH_COOKIE_SAMESITE)
+    ? env.REFRESH_COOKIE_SAMESITE.trim().toLowerCase()
+    : 'strict';
+  if (!VALID_REFRESH_COOKIE_SAMESITE.has(raw)) {
+    throw new Error(
+      'Config error: REFRESH_COOKIE_SAMESITE must be one of strict, lax, or none.',
+    );
+  }
+  return raw;
+}
+
+function readRefreshCookieSecure(env, isProduction) {
+  if (!present(env.REFRESH_COOKIE_SECURE)) return isProduction;
+  const val = env.REFRESH_COOKIE_SECURE.trim().toLowerCase();
+  if (val === 'true' || val === '1') return true;
+  if (val === 'false' || val === '0') return false;
+  throw new Error('Config error: REFRESH_COOKIE_SECURE must be true or false.');
+}
+
+function assertRefreshCookiePolicy(cookie) {
+  if (cookie.sameSite === 'none' && !cookie.secure) {
+    throw new Error(
+      'Config error: REFRESH_COOKIE_SAMESITE=none requires REFRESH_COOKIE_SECURE=true '
+      + '(browsers reject SameSite=None cookies without the Secure flag).',
+    );
+  }
+}
 
 /** Mirror Dharwin backend naming so copied .env files enable attachments. */
 function normalizeEnv(env) {
@@ -80,6 +110,13 @@ export function loadConfig(env = process.env) {
   const email = readGroup(env, 'email');
   const seed = readGroup(env, 'seed');
 
+  const cookie = {
+    domain: present(env.COOKIE_DOMAIN) ? env.COOKIE_DOMAIN.trim() : undefined,
+    secure: readRefreshCookieSecure(env, isProduction),
+    sameSite: readRefreshCookieSameSite(env),
+  };
+  assertRefreshCookiePolicy(cookie);
+
   return {
     nodeEnv,
     isProduction,
@@ -94,10 +131,7 @@ export function loadConfig(env = process.env) {
       refreshExpirationDays: present(env.JWT_REFRESH_EXPIRATION_DAYS)
         ? Number(env.JWT_REFRESH_EXPIRATION_DAYS) : 30,
     },
-    cookie: {
-      domain: present(env.COOKIE_DOMAIN) ? env.COOKIE_DOMAIN.trim() : undefined,
-      secure: isProduction,
-    },
+    cookie,
     features: {
       attachments: storage !== null,
       email: email !== null,

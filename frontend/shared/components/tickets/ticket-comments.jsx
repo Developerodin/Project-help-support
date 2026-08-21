@@ -1,10 +1,11 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { isExternalUser } from '@pms/shared';
+import { ADMIN_ROLES, hasAnyRole, isExternalUser } from '@pms/shared';
 import Icon from '../icons.jsx';
+import ConfirmDialog from '../confirm-dialog.jsx';
 import AttachmentUploadLoader from '../attachment-upload-loader.jsx';
-import { attachmentErrorMessage } from '@/shared/lib/api-error.js';
+import { attachmentErrorMessage, normalizeApiError } from '@/shared/lib/api-error.js';
 import {
   ATTACHMENT_ACCEPT,
   formatFileSize,
@@ -56,6 +57,20 @@ function isOwnComment(comment, user) {
   const authorId = commentAuthorId(comment);
   const userId = String(user._id || user.id || '');
   return Boolean(authorId && userId && authorId === userId);
+}
+
+function commentRecordId(comment) {
+  return comment?._id || comment?.id || null;
+}
+
+function canEditComment(comment, user) {
+  if (!user || isSystemComment(comment)) return false;
+  return isOwnComment(comment, user);
+}
+
+function canDeleteComment(comment, user) {
+  if (!user || isSystemComment(comment)) return false;
+  return isOwnComment(comment, user) || hasAnyRole(user, ...ADMIN_ROLES);
 }
 
 function isSystemComment(comment) {
@@ -122,12 +137,69 @@ function CommentAttachment({ ticketId, file }) {
   );
 }
 
-function CommentBubble({ comment, user, ticketId, showHeader }) {
+function CommentBubble({
+  comment,
+  user,
+  ticketId,
+  showHeader,
+  onEdit,
+  onDeleteRequest,
+  actionBusy,
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [editBusy, setEditBusy] = useState(false);
+  const [editError, setEditError] = useState(null);
+
   const name = comment.commentedBy?.name || 'Someone';
   const variant = bubbleVariant(comment, user);
   const align = bubbleAlign(comment, user);
   const when = formatWhen(comment.createdAt);
   const edited = comment.editedAt ? ' (edited)' : '';
+  const commentId = commentRecordId(comment);
+  const canEdit = Boolean(onEdit && canEditComment(comment, user));
+  const canDelete = Boolean(onDeleteRequest && canDeleteComment(comment, user));
+  const showActions = (canEdit || canDelete) && !editing;
+  const busy = editBusy || actionBusy;
+
+  function startEdit() {
+    setDraft(comment.content || '');
+    setEditError(null);
+    setEditing(true);
+  }
+
+  function cancelEdit() {
+    if (editBusy) return;
+    setEditing(false);
+    setEditError(null);
+  }
+
+  async function saveEdit() {
+    if (!draft.trim() || editBusy || !onEdit || !commentId) return;
+    setEditBusy(true);
+    setEditError(null);
+    try {
+      await onEdit(commentId, { content: draft.trim() });
+      setEditing(false);
+    } catch (err) {
+      setEditError(normalizeApiError(err)?.message || 'Could not save comment');
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
+  function handleEditKeyDown(event) {
+    if (event.nativeEvent?.isComposing) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      cancelEdit();
+      return;
+    }
+    if (event.key !== 'Enter' || event.shiftKey) return;
+    if (window.matchMedia?.('(hover: none)').matches) return;
+    event.preventDefault();
+    saveEdit();
+  }
 
   return (
     <Message
@@ -138,29 +210,97 @@ function CommentBubble({ comment, user, ticketId, showHeader }) {
       timeIso={comment.createdAt}
       meta={comment.internal ? <span className="chip comment-internal">Internal</span> : null}
     >
-      <Bubble variant={variant} align={align}>
-        <BubbleContent>
-          {comment.internal && (
-            <span className="bubble-internal-cue" title="Internal note">
-              <Icon name="lock" size={12} aria-hidden="true" />
-              <span className="sr-only">Internal note</span>
-            </span>
-          )}
-          {comment.content && <p className="bubble-text">{comment.content}</p>}
-          {comment.attachments?.map((file) => (
-            <CommentAttachment
-              key={file._id || file.id || file.name}
-              ticketId={ticketId}
-              file={file}
-            />
-          ))}
-        </BubbleContent>
-      </Bubble>
+      <div className="bubble-row">
+        <Bubble variant={variant} align={align}>
+          <BubbleContent>
+            {comment.internal && !editing && (
+              <span className="bubble-internal-cue" title="Internal note">
+                <Icon name="lock" size={12} aria-hidden="true" />
+                <span className="sr-only">Internal note</span>
+              </span>
+            )}
+            {editing ? (
+              <div className="bubble-edit">
+                <textarea
+                  rows={3}
+                  className="bubble-edit-field"
+                  aria-label="Edit comment"
+                  value={draft}
+                  disabled={busy}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={handleEditKeyDown}
+                />
+                {editError && (
+                  <p className="bubble-edit-error" role="alert">{editError}</p>
+                )}
+                <div className="bubble-edit-foot">
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={busy}
+                    onClick={cancelEdit}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    disabled={busy || !draft.trim()}
+                    aria-busy={editBusy || undefined}
+                    onClick={saveEdit}
+                  >
+                    {editBusy ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {comment.content && <p className="bubble-text">{comment.content}</p>}
+                {comment.attachments?.map((file) => (
+                  <CommentAttachment
+                    key={file._id || file.id || file.name}
+                    ticketId={ticketId}
+                    file={file}
+                  />
+                ))}
+              </>
+            )}
+          </BubbleContent>
+        </Bubble>
+        {showActions && (
+          <div className="bubble-actions" role="group" aria-label="Comment actions">
+            {canEdit && (
+              <button
+                type="button"
+                className="bubble-action-btn"
+                aria-label="Edit comment"
+                title="Edit comment"
+                disabled={busy}
+                onClick={startEdit}
+              >
+                <Icon name="pencil" size={14} />
+              </button>
+            )}
+            {canDelete && (
+              <button
+                type="button"
+                className="bubble-action-btn bubble-action-btn--danger"
+                aria-label="Delete comment"
+                title="Delete comment"
+                disabled={busy}
+                onClick={() => onDeleteRequest({ id: commentId, preview: comment.content })}
+              >
+                <Icon name="trash" size={14} />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     </Message>
   );
 }
 
-function CommentBubbleGroup({ group, user, ticketId }) {
+function CommentBubbleGroup({ group, user, ticketId, onEdit, onDeleteRequest, actionBusy }) {
   const align = bubbleAlign(group.comments[0], user);
 
   return (
@@ -172,6 +312,9 @@ function CommentBubbleGroup({ group, user, ticketId }) {
           user={user}
           ticketId={ticketId}
           showHeader={index === 0}
+          onEdit={onEdit}
+          onDeleteRequest={onDeleteRequest}
+          actionBusy={actionBusy}
         />
       ))}
     </BubbleGroup>
@@ -183,15 +326,18 @@ function attachOnlyContent(files) {
   return `Attached ${files.length} files`;
 }
 
-export default function TicketComments({ ticket, user, onAdd, onUpload }) {
+export default function TicketComments({ ticket, user, onAdd, onUpload, onEdit, onDelete }) {
   const [content, setContent] = useState('');
   const [internalOnly, setInternalOnly] = useState(false);
   const [pendingFiles, setPendingFiles] = useState([]);
   const [attachError, setAttachError] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   const fileInputRef = useRef(null);
   const canCreateInternalComment = Boolean(user) && !isExternalUser(user);
   const commentGroups = groupComments(ticket.comments);
+  const actionBusy = uploading || deleting;
 
   function addFiles(incoming) {
     const { errors, valid } = validateAttachmentBatch(pendingFiles, incoming);
@@ -234,6 +380,19 @@ export default function TicketComments({ ticket, user, onAdd, onUpload }) {
 
   const canSubmit = Boolean(content.trim() || pendingFiles.length);
 
+  async function confirmDelete() {
+    if (!deleteTarget || !onDelete) return;
+    setDeleting(true);
+    try {
+      await onDelete(deleteTarget.id);
+      setDeleteTarget(null);
+    } catch {
+      // Parent may surface errors; keep dialog open for retry.
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <section className="discussion-tab" aria-label="Discussion">
       {(ticket.comments?.length ?? 0) === 0 && (
@@ -248,6 +407,9 @@ export default function TicketComments({ ticket, user, onAdd, onUpload }) {
               group={group}
               user={user}
               ticketId={ticket.ticketId}
+              onEdit={onEdit}
+              onDeleteRequest={onDelete ? (target) => setDeleteTarget(target) : null}
+              actionBusy={actionBusy}
             />
           ))}
         </div>
@@ -350,6 +512,19 @@ export default function TicketComments({ ticket, user, onAdd, onUpload }) {
           />
         </div>
       </div>
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="Delete comment?"
+        message={deleteTarget
+          ? `Remove this comment${deleteTarget.preview ? `: “${deleteTarget.preview.slice(0, 120)}${deleteTarget.preview.length > 120 ? '…' : ''}”` : ''}? This cannot be undone.`
+          : ''}
+        confirmLabel="Delete"
+        danger
+        busy={deleting}
+        onConfirm={confirmDelete}
+        onCancel={() => !deleting && setDeleteTarget(null)}
+      />
     </section>
   );
 }
@@ -357,6 +532,8 @@ export default function TicketComments({ ticket, user, onAdd, onUpload }) {
 export {
   bubbleAlign,
   bubbleVariant,
+  canDeleteComment,
+  canEditComment,
   commentAuthorId,
   commentAuthorKey,
   groupComments,

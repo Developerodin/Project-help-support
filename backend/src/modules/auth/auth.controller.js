@@ -6,11 +6,11 @@ import * as authService from './auth.service.js';
 export const REFRESH_COOKIE = 'prowplus_refreshToken';
 export const IMPERSONATION_ADMIN_COOKIE = 'prowplus_impersonation_admin';
 
-function refreshCookieOptions(config, expiresAt) {
+export function refreshCookieOptions(config, expiresAt) {
   return {
     httpOnly: true,
     secure: config.cookie.secure,
-    sameSite: 'strict',
+    sameSite: config.cookie.sameSite,
     domain: config.cookie.domain,
     path: '/v1/auth',
     expires: expiresAt,

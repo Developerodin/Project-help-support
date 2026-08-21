@@ -37,6 +37,18 @@ export const clearBlocked = (id, body) =>
 export const addComment = (id, body) =>
   apiFetch(`/tickets/${encodeURIComponent(id)}/comments`, { method: 'POST', body });
 
+export const editComment = (id, commentId, body) =>
+  apiFetch(
+    `/tickets/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`,
+    { method: 'PATCH', body },
+  );
+
+export const deleteComment = (id, commentId) =>
+  apiFetch(
+    `/tickets/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`,
+    { method: 'DELETE' },
+  );
+
 export const uploadAttachments = (id, formData) =>
   apiFetch(`/tickets/${encodeURIComponent(id)}/attachments`, { method: 'POST', formData });
 
