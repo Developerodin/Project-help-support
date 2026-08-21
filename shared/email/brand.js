@@ -1,9 +1,9 @@
 /** Email-safe brand tokens aligned with design-system.css light palette. */
 export const EMAIL_BRAND = Object.freeze({
-  name: 'PROWPLUS',
+  name: 'Dharwin',
   tagline: 'PMS',
-  fullName: 'PROWPLUS PMS',
-  shortName: 'PROWPLUS PMS',
+  fullName: 'Dharwin PMS',
+  shortName: 'Dharwin PMS',
   /**
    * The mark travels with the message as an attachment under this content id.
    * Gmail and Outlook block remote images and data: URIs by default; a cid

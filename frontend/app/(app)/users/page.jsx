@@ -64,7 +64,7 @@ export default function UsersPage() {
   const canImpersonate = hasAnyRole(currentUser, ...IMPERSONATION_INITIATOR_ROLES);
   const assignableRoles = PEOPLE_ASSIGNABLE_ROLES;
   const [users, setUsers] = useState([]);
-  const [draft, setDraft] = useState({ email: '', roles: [ROLE_IDS.DEVELOPER] });
+  const [draft, setDraft] = useState({ email: '', roles: [ROLE_IDS.UNASSIGNED] });
   const [error, setError] = useState(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteBusy, setInviteBusy] = useState(false);
@@ -108,10 +108,11 @@ export default function UsersPage() {
     setError(null);
     setInviteBusy(true);
     try {
-      await inviteUser(draft);
-      setDraft({ email: '', roles: [ROLE_IDS.DEVELOPER] });
+      const to = draft.email.trim();
+      await inviteUser({ ...draft, email: to });
+      setDraft({ email: '', roles: [ROLE_IDS.UNASSIGNED] });
       setInviteOpen(false);
-      showToast('Invite sent');
+      showToast(`Invite sent to ${to}`);
       reload();
     } catch (err) {
       setError(err);
@@ -124,7 +125,7 @@ export default function UsersPage() {
     if (inviteBusy) return;
     setInviteOpen(false);
     setError(null);
-    setDraft({ email: '', roles: [ROLE_IDS.DEVELOPER] });
+    setDraft({ email: '', roles: [ROLE_IDS.UNASSIGNED] });
   }
 
   async function patchRow(id, body, actionKey, successMessage) {

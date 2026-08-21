@@ -90,9 +90,18 @@ export default function TicketMetadataRail({
   const releaseMin = estIso && estIso >= today ? estIso : today;
 
   const saveDates = () => {
+    if (!resolutionChanged && !releaseChanged) return;
+
     const changedFields = [];
-    if (resolutionChanged) changedFields.push('estimatedResolutionAt');
-    if (releaseChanged) changedFields.push('expectedReleaseDate');
+    const body = { revision: ticket.revision };
+    if (resolutionChanged) {
+      changedFields.push('estimatedResolutionAt');
+      body.estimatedResolutionAt = draft.estimatedResolutionAt || null;
+    }
+    if (releaseChanged) {
+      changedFields.push('expectedReleaseDate');
+      body.expectedReleaseDate = draft.expectedReleaseDate || null;
+    }
 
     const dateErrors = validateTicketEstimateDates(
       draft.estimatedResolutionAt || null,
@@ -105,11 +114,7 @@ export default function TicketMetadataRail({
     }
 
     setLocalDateErrors({});
-    onSave({
-      revision: ticket.revision,
-      estimatedResolutionAt: draft.estimatedResolutionAt || null,
-      expectedReleaseDate: draft.expectedReleaseDate || null,
-    });
+    onSave(body);
   };
 
   const estInvalid = Boolean(mergedFieldErrors.estimatedResolutionAt);

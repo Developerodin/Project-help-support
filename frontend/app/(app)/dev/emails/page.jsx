@@ -87,7 +87,7 @@ export default function EmailPreviewPage() {
       <header className="email-preview-page__head">
         <h1>Email previews</h1>
         <p className="sub">
-          Branded HTML layouts for every email sent from PROWPLUS PMS — warm paper palette, pipeline rail, and detail tables.
+          Branded HTML layouts for every email sent from Dharwin PMS — warm paper palette, pipeline rail, and detail tables.
         </p>
       </header>
 

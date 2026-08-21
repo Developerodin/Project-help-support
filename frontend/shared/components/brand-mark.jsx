@@ -1,6 +1,6 @@
 import Image from 'next/image';
 
-/** PROWPLUS mark — served from /prowplus-icon.png (shared with favicon and email). */
+/** Dharwin PMS mark — served from /prowplus-icon.png (shared with favicon and email). */
 export default function BrandMark({ className = 'mark' }) {
   return (
     <Image

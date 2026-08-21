@@ -36,7 +36,7 @@ export async function seedAdmin(config) {
   await Notification.create({
     user: admin._id,
     event: 'TICKET_CREATED',
-    title: 'Welcome to PROWPLUS PMS',
+    title: 'Welcome to Dharwin PMS',
     body: 'Your inbox will show ticket updates here. Assign a ticket to yourself to test notifications.',
     link: `${config.frontendBaseUrl}/tickets`,
   });

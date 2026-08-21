@@ -12,6 +12,7 @@ export const ROLE_IDS = Object.freeze({
   TESTER: 'tester',
   SUPPORT: 'support',
   READ_ONLY: 'read_only',
+  UNASSIGNED: 'unassigned',
   CLIENT: 'client',
   CLIENT_TESTER: 'client_tester',
 });
@@ -23,6 +24,7 @@ export const ROLE_IDS = Object.freeze({
 export const INTERNAL_ROLES = Object.freeze([
   ROLE_IDS.SUPER_ADMIN, ROLE_IDS.ADMIN, ROLE_IDS.PROJECT_ADMIN,
   ROLE_IDS.DEVELOPER, ROLE_IDS.TESTER, ROLE_IDS.SUPPORT, ROLE_IDS.READ_ONLY,
+  ROLE_IDS.UNASSIGNED,
 ]);
 
 /**
@@ -36,11 +38,17 @@ export const ROLES = Object.freeze([...INTERNAL_ROLES, ...EXTERNAL_ROLES]);
 /**
  * Roles assignable via the People page (invite dialog and per-row role select).
  * Excludes super_admin (never assignable) and read_only (hidden until
- * production-ready). Includes external client roles — AccessAssignment sets scope.
+ * production-ready). Includes external client roles — AccessAssignment sets scope,
+ * and `unassigned` (no permissions) as the invite default.
  */
 export const PEOPLE_ASSIGNABLE_ROLES = Object.freeze([
+  // Listed first because it is the invite default, not because it is senior —
+  // INTERNAL_ROLES still ranks it last for pickPrimaryRole.
+  ROLE_IDS.UNASSIGNED,
   ...INTERNAL_ROLES.filter(
-    (role) => role !== ROLE_IDS.SUPER_ADMIN && role !== ROLE_IDS.READ_ONLY,
+    (role) => role !== ROLE_IDS.SUPER_ADMIN
+      && role !== ROLE_IDS.READ_ONLY
+      && role !== ROLE_IDS.UNASSIGNED,
   ),
   ...EXTERNAL_ROLES,
 ]);
@@ -53,6 +61,7 @@ export const ROLE_LABELS = Object.freeze({
   [ROLE_IDS.TESTER]: 'Tester',
   [ROLE_IDS.SUPPORT]: 'Support',
   [ROLE_IDS.READ_ONLY]: 'Read Only',
+  [ROLE_IDS.UNASSIGNED]: 'Unassigned',
   [ROLE_IDS.CLIENT]: 'Client',
   [ROLE_IDS.CLIENT_TESTER]: 'Client Tester',
 });

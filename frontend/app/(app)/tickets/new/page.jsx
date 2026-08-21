@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -51,6 +51,9 @@ export default function NewTicketPage() {
   const [validationItems, setValidationItems] = useState([]);
   const [draft, setDraft] = useState(INITIAL_DRAFT);
   const [attachments, setAttachments] = useState([]);
+  // Set once the ticket is filed, so a retry after a failed attachment
+  // upload reuses it instead of filing the ticket a second time.
+  const filed = useRef(null);
   const [attachmentErrors, setAttachmentErrors] = useState([]);
 
   useEffect(() => {
@@ -140,7 +143,7 @@ export default function NewTicketPage() {
     setBusy(true);
     setError(null);
     try {
-      const ticket = await createTicket({
+      const ticket = filed.current ?? await createTicket({
         project: draft.project,
         title: draft.title.trim(),
         description: draft.description.trim(),
@@ -154,12 +157,18 @@ export default function NewTicketPage() {
         labels: draft.labels,
       });
 
+      filed.current = ticket;
+
       if (attachments.length > 0) {
         setUploadingAttachments(true);
         try {
           await uploadAttachments(ticket.ticketId, buildAttachmentFormData(attachments));
-        } catch {
-          // Ticket exists; attachments remain optional and can be added from the drawer.
+        } catch (err) {
+          // The ticket is filed either way, but a silently dropped attachment
+          // reads as "the ticket lost my file". Show why and stay put —
+          // submitting again retries the upload against the same ticket.
+          setError(err);
+          return;
         } finally {
           setUploadingAttachments(false);
         }

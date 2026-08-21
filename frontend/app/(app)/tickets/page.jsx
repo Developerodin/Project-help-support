@@ -69,7 +69,10 @@ function TicketListPage() {
       )}
 
       <div className="pager">
-        <span className="of">{page.totalResults} tickets</span>
+        <span className="of">
+          {page.totalResults} tickets
+          {(page.totalPages || 1) > 1 && ` · page ${page.page || 1} of ${page.totalPages}`}
+        </span>
         <span className="spacer" />
         <button
           type="button" className="pagebtn" disabled={(page.page || 1) <= 1}

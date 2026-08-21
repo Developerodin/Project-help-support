@@ -14,9 +14,12 @@ export const STAGE_ROLE_LABELS = Object.freeze({
   admin: 'Admin',
   lead: 'Project Admin',
   qa: 'Tester',
+  developer: 'Developer',
   assignee: 'the assignee',
   reporter: 'the reporter',
 });
+
+const CLIENT_STAGE_MOVE_HINT = 'Clients can only close Live tickets or reopen Closed tickets.';
 
 function formatPermitteeList(parts) {
   const unique = [...new Set(parts.filter(Boolean))];
@@ -79,7 +82,7 @@ export function canInteractWithBoard(actor) {
 /** Whether this specific ticket card may be dragged. */
 export function canDragTicket(actor, ticket) {
   if (!actor || !ticket) return false;
-  if (isExternalUser(actor)) return ticket.status === 'live';
+  if (isExternalUser(actor)) return ticket.status === 'live' || ticket.status === 'closed';
   return canInteractWithBoard(actor) && canEditTicket(actor, ticket);
 }
 
@@ -104,17 +107,17 @@ export function getBoardMoveBlockReason(actor, ticket, toStage) {
   );
 
   if (isExternalUser(actor)) {
-    if (ticket?.status === 'live' && toStage === 'closed') {
-      const verdict = canTransition(ticket.status, toStage, actor, ticket);
-      if (!verdict.ok) {
-        return buildBlock(verdict.code, verdict.reason || 'This move is not allowed.');
-      }
+    const verdict = canTransition(ticket.status, toStage, actor, ticket);
+    if (verdict.ok) {
       return null;
+    }
+    if (verdict.code !== 'STAGE_NOT_PERMITTED') {
+      return buildBlock(verdict.code, verdict.reason || 'This move is not allowed.');
     }
 
     return buildBlock(
       'CLIENT_BOARD_MOVE_FORBIDDEN',
-      `You don't have permission to move this ticket from ${fromLabel} to ${toLabel}. Clients can only close tickets that are Live.`,
+      `You don't have permission to move this ticket from ${fromLabel} to ${toLabel}. ${CLIENT_STAGE_MOVE_HINT}`,
       { permittees, fromLabel, toLabel },
     );
   }
@@ -167,10 +170,10 @@ export function getBoardDragBlockReason(actor, ticket) {
   if (!actor || !ticket) return null;
 
   if (isExternalUser(actor)) {
-    if (ticket.status === 'live') return null;
+    if (ticket.status === 'live' || ticket.status === 'closed') return null;
     return buildBlock(
       'CLIENT_BOARD_MOVE_FORBIDDEN',
-      `You don't have permission to move this ticket from ${stageLabel(ticket.status)}. Clients can only close tickets that are Live.`,
+      `You don't have permission to move this ticket from ${stageLabel(ticket.status)}. ${CLIENT_STAGE_MOVE_HINT}`,
     );
   }
 

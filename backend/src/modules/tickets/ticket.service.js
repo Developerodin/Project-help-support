@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import {
   resolveTicketEstimateDates,
   validateTicketEstimateDates,
+  ticketDateKey,
   ROLE_IDS,
   ADMIN_ROLES,
   ESTIMATE_DATE_EDITOR_ROLES,
@@ -411,8 +412,14 @@ export async function patchTicket(actor, idOrKey, body) {
   assertCanEditEstimateDates(actor, patch);
 
   const estimateChangedFields = [];
-  if ('estimatedResolutionAt' in patch) estimateChangedFields.push('estimatedResolutionAt');
-  if ('expectedReleaseDate' in patch) estimateChangedFields.push('expectedReleaseDate');
+  if ('estimatedResolutionAt' in patch
+    && ticketDateKey(patch.estimatedResolutionAt) !== ticketDateKey(ticket.estimatedResolutionAt)) {
+    estimateChangedFields.push('estimatedResolutionAt');
+  }
+  if ('expectedReleaseDate' in patch
+    && ticketDateKey(patch.expectedReleaseDate) !== ticketDateKey(ticket.expectedReleaseDate)) {
+    estimateChangedFields.push('expectedReleaseDate');
+  }
 
   const dateFields = validateTicketEstimateDates(
     ...Object.values(resolveTicketEstimateDates(ticket, patch)),

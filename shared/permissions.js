@@ -46,6 +46,13 @@ const SUPPORT = Object.freeze([...VIEW_ONLY, 'tickets.create', 'tickets.update']
 const READ_ONLY = VIEW_ONLY;
 
 /**
+ * A person who has been invited but not yet given a job. Empty by design —
+ * default deny until an admin picks a real role. Least senior, so it never
+ * wins pickPrimaryRole over a role that was actually granted.
+ */
+const UNASSIGNED = Object.freeze([]);
+
+/**
  * Empty, not a guessed subset of internal permissions — what a client can do
  * is computed by AccessAssignment + external auth rules, not this internal
  * bundle map. Default deny is intentional; see design spec §3.
@@ -60,6 +67,7 @@ export const ROLE_PERMISSIONS = Object.freeze({
   [ROLE_IDS.TESTER]: TESTER,
   [ROLE_IDS.SUPPORT]: SUPPORT,
   [ROLE_IDS.READ_ONLY]: READ_ONLY,
+  [ROLE_IDS.UNASSIGNED]: UNASSIGNED,
   [ROLE_IDS.CLIENT]: CLIENT_BUNDLE,
   [ROLE_IDS.CLIENT_TESTER]: CLIENT_BUNDLE,
 });

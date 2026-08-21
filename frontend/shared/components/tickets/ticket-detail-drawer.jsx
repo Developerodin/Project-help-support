@@ -1,7 +1,9 @@
 ﻿'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ROLE_IDS, ADMIN_ROLES, ESTIMATE_DATE_EDITOR_ROLES, hasAnyRole } from '@pms/shared';
+import {
+  ROLE_IDS, ADMIN_ROLES, ESTIMATE_DATE_EDITOR_ROLES, hasAnyRole, isExternalUser,
+} from '@pms/shared';
 import {
   getTicket, patchTicket, transitionTicket, addComment, uploadAttachments, deleteAttachment, assignTicket,
   watchTicket, unwatchTicket, setBlocked, clearBlocked,
@@ -27,6 +29,7 @@ import TicketMetadataRail from './ticket-metadata-rail.jsx';
 import TicketStageBar from './ticket-stage-bar.jsx';
 import TicketHistory from './ticket-history.jsx';
 import TicketComments from './ticket-comments.jsx';
+import TicketQaReport, { qaRejections } from './ticket-qa-report.jsx';
 import TicketDrawerFooter from './ticket-drawer-footer.jsx';
 import { useTicketAssignment } from './use-ticket-assignment.js';
 import AppLoader from '../app-loader.jsx';
@@ -53,12 +56,14 @@ function TicketDrawerContent({
   const detailsRef = useRef(null);
   const attachmentsRef = useRef(null);
   const historyRef = useRef(null);
+  const qaRef = useRef(null);
 
   const panelRefs = {
     discussion: discussionRef,
     details: detailsRef,
     attachments: attachmentsRef,
     history: historyRef,
+    qa: qaRef,
   };
 
   const selectTab = useCallback((next) => {
@@ -121,7 +126,7 @@ function TicketDrawerContent({
   );
   const canAssign = hasAnyRole(user, ...ADMIN_ROLES, ROLE_IDS.PROJECT_ADMIN);
   const canEditEstimates = hasAnyRole(user, ...ESTIMATE_DATE_EDITOR_ROLES);
-  const canSeeMetadataRail = hasAnyRole(user, ...ADMIN_ROLES, ROLE_IDS.DEVELOPER);
+  const canSeeMetadataRail = hasAnyRole(user, ...ESTIMATE_DATE_EDITOR_ROLES);
   const showMetadataRail = canSeeMetadataRail && tab === 'details';
   const onAssign = canAssign
     ? run((patch) => assignTicket(ticket.ticketId, {
@@ -137,7 +142,12 @@ function TicketDrawerContent({
     eagerLoad: canAssign,
   });
 
-  const TAB_ORDER = ['discussion', 'details', 'attachments', 'history'];
+  // A QA report is an internal judgement about the client's own ticket; the
+  // API strips it from external responses, and the tab goes with it.
+  const showQaTab = Boolean(user) && !isExternalUser(user);
+  const rejectionCount = showQaTab ? qaRejections(ticket).length : 0;
+
+  const TAB_ORDER = ['discussion', 'details', 'attachments', 'history', ...(showQaTab ? ['qa'] : [])];
 
   const onTabKeyDown = useCallback((event) => {
     const index = TAB_ORDER.indexOf(tab);
@@ -220,6 +230,18 @@ function TicketDrawerContent({
           >
             History
           </button>
+          {showQaTab && (
+            <button
+              type="button" className="tab" role="tab" id="tab-qa"
+              aria-selected={tab === 'qa'}
+              aria-controls="panel-qa"
+              tabIndex={tab === 'qa' ? 0 : -1}
+              onClick={() => selectTab('qa')}
+            >
+              QA Report
+              <span className="n">{rejectionCount}</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -316,6 +338,18 @@ function TicketDrawerContent({
               >
                 <TicketHistory ticket={ticket} onOpenDiscussion={() => selectTab('discussion')} />
               </div>
+              {showQaTab && (
+                <div
+                  id="panel-qa"
+                  role="tabpanel"
+                  aria-labelledby="tab-qa"
+                  tabIndex={-1}
+                  ref={qaRef}
+                  hidden={tab !== 'qa'}
+                >
+                  <TicketQaReport ticket={ticket} />
+                </div>
+              )}
             </div>
           </main>
         </div>
@@ -324,7 +358,18 @@ function TicketDrawerContent({
       <TicketDrawerFooter
         ticket={ticket}
         actor={user}
-        onTransition={run((body) => transitionTicket(ticket.ticketId, body))}
+        onTransition={run(async ({ image, ...body }) => {
+          // The report's screenshot goes up on /attachments first; the
+          // transition endpoint links ids, it does not take files.
+          if (image) {
+            const form = new FormData();
+            form.append('files', image);
+            form.append('clientRef', crypto.randomUUID());
+            const uploaded = await uploadAttachments(ticket.ticketId, form);
+            body.attachmentIds = (uploaded || []).map((a) => a.id || a._id).filter(Boolean);
+          }
+          return transitionTicket(ticket.ticketId, body);
+        })}
       />
 
       <ValidationDialog

@@ -1,7 +1,7 @@
 import {
   canTransition, stageIndex, stageLabel,
   GUARD_ESTIMATES_FROM_INDEX, GUARD_OWNERSHIP_FROM_INDEX,
-  validateTicketEstimateDates, isExternalUser,
+  validateTicketEstimateDates, isExternalUser, REOPEN_TARGET,
 } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { assertActiveUsers } from '../teams/team.service.js';
@@ -66,10 +66,14 @@ export function checkGuards(to, ticket) {
 
 /** Layer 2 for this endpoint: the same relationship rule as an ordinary edit. */
 async function assertMayTransition(actor, ticket, to) {
-  const clientClosingLive =
-    isExternalUser(actor) && ticket.status === 'live' && to === 'closed'
+  const clientStageMove =
+    isExternalUser(actor)
+    && (
+      (ticket.status === 'live' && to === 'closed')
+      || (ticket.status === 'closed' && to === REOPEN_TARGET)
+    )
     && (await canExternalViewTicket(actor, ticket));
-  if (!clientClosingLive) {
+  if (!clientStageMove) {
     assertCanEditTicket(actor, ticket);
   }
 }
@@ -92,7 +96,28 @@ function conflict(current) {
  * request safe without an idempotency key: the second attempt finds a stage
  * that no longer matches and is rejected cleanly.
  */
-export async function transitionTicket(actor, idOrKey, { to, revision, note, reason }) {
+/**
+ * Attachments are uploaded on /attachments FIRST, then linked here by id. The
+ * ids are re-read off the ticket rather than trusted from the body, so a caller
+ * cannot file another ticket's attachment — or a made-up id — as evidence.
+ */
+function resolveEvidence(ticket, attachmentIds) {
+  if (!attachmentIds?.length) return [];
+  return attachmentIds.map((id) => {
+    const found = ticket.attachments.id(id);
+    if (!found) {
+      throw new ApiError(
+        400, 'ATTACHMENT_NOT_FOUND',
+        'Upload the report attachment to this ticket before filing it with the move',
+      );
+    }
+    return found.toObject();
+  });
+}
+
+export async function transitionTicket(actor, idOrKey, {
+  to, revision, note, reason, attachmentIds,
+}) {
   const ticket = await resolveTicketDoc(idOrKey);
   await assertMayTransition(actor, ticket, to);
 
@@ -113,11 +138,18 @@ export async function transitionTicket(actor, idOrKey, { to, revision, note, rea
   // why Reopen and close-early are not separate endpoints with duplicated
   // guards, history writes and fan-outs.
   if (verdict.isReopen && !note) {
-    throw new ApiError(400, 'NOTE_REQUIRED', 'A note is required when reopening a ticket');
+    throw new ApiError(
+      400, 'NOTE_REQUIRED',
+      verdict.decision === 'rejected'
+        ? 'A QA report is required when rejecting a ticket'
+        : 'A note is required when reopening a ticket',
+    );
   }
   if (verdict.isClose && !reason) {
     throw new ApiError(400, 'REASON_REQUIRED', 'A reason is required when closing a ticket');
   }
+
+  const evidence = resolveEvidence(ticket, attachmentIds);
 
   const now = new Date();
   const set = { status: to, revision: revision + 1 };
@@ -161,6 +193,7 @@ export async function transitionTicket(actor, idOrKey, { to, revision, note, rea
         at: now,
         decision: verdict.decision,
         note: note ?? reason ?? undefined,
+        attachments: evidence,
       },
       activityLog: {
         action: verdict.isReopen ? 'reopened' : 'transitioned',

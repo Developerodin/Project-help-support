@@ -1,14 +1,14 @@
 'use client';
 
 import { useEffect, useId, useRef } from 'react';
-import { ROLE_IDS } from '@pms/shared';
+import { EXTERNAL_ROLES, ROLE_IDS } from '@pms/shared';
 import { capRole } from '@/shared/lib/profile-utils.js';
 import FormError from '@/shared/components/form-error.jsx';
 
 export default function InviteDialog({
   open,
   email = '',
-  role = [ROLE_IDS.READ_ONLY],
+  role = [ROLE_IDS.UNASSIGNED],
   roles,
   error = null,
   busy = false,
@@ -21,10 +21,23 @@ export default function InviteDialog({
   const dialogRef = useRef(null);
   const emailId = useId();
   const roleGroupId = useId();
+  const roleHintId = useId();
+  const formId = useId();
   const titleId = useId();
   const descId = useId();
   const trimmed = email.trim();
   const selectedRoles = Array.isArray(role) ? role : [role];
+  // ponytail: "unassigned" is the empty selection, not a checkbox. One state to
+  // reason about, and no checkbox that refuses to uncheck itself.
+  const options = roles.filter((item) => item !== ROLE_IDS.UNASSIGNED);
+  const picked = selectedRoles.filter((item) => item !== ROLE_IDS.UNASSIGNED);
+  // Staff and client roles are split because the difference is who the person
+  // is, not what they do: one gets the workspace, the other gets their own
+  // projects. A misclick across that line is the expensive one.
+  const groups = [
+    { key: 'team', caption: 'Team', items: options.filter((item) => !EXTERNAL_ROLES.includes(item)) },
+    { key: 'client', caption: 'Client side', items: options.filter((item) => EXTERNAL_ROLES.includes(item)) },
+  ].filter((group) => group.items.length);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -66,14 +79,10 @@ export default function InviteDialog({
   }, [open, busy]);
 
   function toggleRole(nextRole) {
-    const selected = new Set(selectedRoles);
-    if (selected.has(nextRole)) {
-      if (selected.size === 1) return;
-      selected.delete(nextRole);
-    } else {
-      selected.add(nextRole);
-    }
-    onRoleChange([...selected]);
+    const selected = new Set(picked);
+    if (selected.has(nextRole)) selected.delete(nextRole);
+    else selected.add(nextRole);
+    onRoleChange(selected.size ? [...selected] : [ROLE_IDS.UNASSIGNED]);
   }
 
   if (!open) return null;
@@ -96,9 +105,10 @@ export default function InviteDialog({
       >
         <div className="dlg-head">
           <h3 id={titleId}>Invite someone</h3>
-          <p id={descId}>They will set their name and password when accepting the invite.</p>
+          <p id={descId}>They set their name and password when they accept.</p>
         </div>
         <form
+          id={formId}
           className="dlg-body"
           onSubmit={(event) => {
             event.preventDefault();
@@ -120,24 +130,44 @@ export default function InviteDialog({
               disabled={busy}
             />
           </div>
-          <div className="form-row">
-            <span id={roleGroupId} className="form-label">Roles</span>
-            <div className="role-multi-select__panel role-multi-select__panel--static" role="group" aria-labelledby={roleGroupId}>
-              {roles.map((item) => {
-                const checked = selectedRoles.includes(item);
-                return (
-                  <label key={item} className="role-multi-select__option">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      disabled={busy || (checked && selectedRoles.length === 1)}
-                      onChange={() => toggleRole(item)}
-                    />
-                    <span>{capRole(item)}</span>
-                  </label>
-                );
-              })}
+          <div className="form-row invite-roles">
+            <div className="invite-roles__head">
+              <span id={roleGroupId} className="invite-roles__label">Roles</span>
+              <span className="invite-roles__count">
+                {picked.length ? `${picked.length} selected` : 'No access yet'}
+              </span>
             </div>
+            <div
+              className="invite-roles__box"
+              role="group"
+              aria-labelledby={roleGroupId}
+              aria-describedby={roleHintId}
+            >
+              {groups.map((group) => (
+                <div key={group.key} className="invite-roles__group">
+                  <p className="invite-roles__caption">{group.caption}</p>
+                  <div className="invite-roles__grid">
+                    {group.items.map((item) => {
+                      const checked = picked.includes(item);
+                      return (
+                        <label key={item} className={`invite-role${checked ? ' is-on' : ''}`}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={busy}
+                            onChange={() => toggleRole(item)}
+                          />
+                          <span>{capRole(item)}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p id={roleHintId} className="invite-roles__hint">
+              Roles set what they can open. You can change them any time.
+            </p>
           </div>
         </form>
         <div className="dlg-foot">
@@ -151,10 +181,10 @@ export default function InviteDialog({
           </button>
           <span className="spacer" />
           <button
-            type="button"
+            type="submit"
+            form={formId}
             className="btn btn-primary"
-            onClick={onConfirm}
-            disabled={busy || !trimmed || selectedRoles.length === 0}
+            disabled={busy}
             aria-busy={busy || undefined}
           >
             {busy ? (

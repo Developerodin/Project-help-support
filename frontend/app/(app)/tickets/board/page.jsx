@@ -43,11 +43,26 @@ function BoardPage() {
   const showReadOnlyOverlay = Boolean(readOnlyNotice) && !readOnlyNoticeDismissed;
 
   const reload = useCallback(() => {
-    listTickets({
-      limit: 100,
-      scope: mine ? 'assigned' : 'all',
-      project: activeProjectId || undefined,
-    }).then((p) => setTickets(p.results));
+    // A board has to lane EVERY ticket, so it pages through rather than stopping
+    // at the API's 100-row ceiling and silently hiding the rest.
+    // ponytail: capped at 10 pages. Past 1000 tickets a board is the wrong tool
+    // and this wants server-side lane counts instead of fetching the lot.
+    const loadAll = async () => {
+      const all = [];
+      for (let p = 1; p <= 10; p += 1) {
+        // eslint-disable-next-line no-await-in-loop -- page N+1 needs N's totalPages
+        const res = await listTickets({
+          limit: 100,
+          page: p,
+          scope: mine ? 'assigned' : 'all',
+          project: activeProjectId || undefined,
+        });
+        all.push(...res.results);
+        if (p >= (res.totalPages || 1)) break;
+      }
+      return all;
+    };
+    loadAll().then(setTickets);
   }, [mine, activeProjectId]);
 
   useEffect(() => { reload(); }, [reload]);
@@ -104,6 +119,9 @@ function BoardPage() {
       if (verdict.isClose || verdict.isReopen) {
         setPendingAction({
           ticketId, to, revision: current.revision, kind: verdict.isReopen ? 'note' : 'reason',
+          // Same wording as the drawer. A screenshot needs the drawer's
+          // upload step, so a drag off the board takes the note alone.
+          back: verdict.decision === 'rejected' ? 'Reject' : 'Reopen',
         });
         setRemarkText('');
         return;
@@ -228,8 +246,11 @@ function BoardPage() {
 
       <RemarkDialog
         open={Boolean(pendingAction)}
-        title={`${pendingAction?.kind === 'note' ? 'Reopen' : 'Close'} ${pendingAction?.ticketId || ''}`}
-        label={pendingAction?.kind === 'note' ? 'Note (required to reopen)' : 'Reason (required to close)'}
+        title={`${pendingAction?.kind === 'note' ? pendingAction.back : 'Close'} ${pendingAction?.ticketId || ''}`}
+        label={pendingAction?.kind === 'note'
+          ? `${pendingAction.back === 'Reject' ? 'QA report' : 'Note'} (required to ${pendingAction.back.toLowerCase()})`
+          : 'Reason (required to close)'}
+        confirmLabel={pendingAction?.kind === 'note' ? pendingAction.back : 'Close'}
         value={remarkText}
         onChange={(event) => setRemarkText(event.target.value)}
         busy={remarkBusy}

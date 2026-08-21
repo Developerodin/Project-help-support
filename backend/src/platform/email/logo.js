@@ -15,7 +15,7 @@ const MARK_PATH = resolve(
  * disk hit per recipient on a fan-out.
  *
  * A missing file degrades to no attachment rather than a failed send. The
- * header still reads "PROWPLUS PMS" as live text, so a message without the mark
+ * header still reads "Dharwin PMS" as live text, so a message without the mark
  * is plainer, not broken. Regenerate with: node scripts/build-brand-assets.mjs
  */
 let cached;

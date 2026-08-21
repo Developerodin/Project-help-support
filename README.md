@@ -1,4 +1,4 @@
-# PROWPLUS
+# Dharwin PMS
 
 A project/team/ticket management system (PMS). Originated as a Dharwin-specific tool and is
 mid-transition to a general-purpose, multi-client PMS — see

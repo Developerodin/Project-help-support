@@ -152,22 +152,14 @@ async function projectScopeFromAssignments(assignments) {
   return clauses.length === 1 ? clauses[0] : { $or: clauses };
 }
 
-async function clientTesterIdsInClientBoundary(clientIds) {
-  if (!clientIds.length) return [];
-  const userIds = await AccessAssignment.find({
-    client: { $in: clientIds },
-    status: 'active',
-    role: ROLE_IDS.CLIENT_TESTER,
-  }).distinct('user');
-  const active = await User.find({
-    _id: { $in: userIds },
-    role: ROLE_IDS.CLIENT_TESTER,
-    status: 'active',
-  }).distinct('_id');
-  return active;
-}
-
-/** Mongo filter restricting list/search to externally visible tickets. */
+/**
+ * Mongo filter restricting list/search to externally visible tickets.
+ *
+ * Scope is the ONLY axis: a company-wide grant sees every ticket in the
+ * company's projects, a project grant sees that project's. Who raised the
+ * ticket is irrelevant — a client must see the ticket they filed themselves,
+ * which a `createdBy` restriction made impossible.
+ */
 export async function buildExternalTicketFilter(actor) {
   const assignments = await AccessAssignment.find({
     user: actor._id,
@@ -176,46 +168,16 @@ export async function buildExternalTicketFilter(actor) {
 
   if (!assignments.length) return { _id: null };
 
-  const projectScope = await projectScopeFromAssignments(assignments);
-
-  if (hasRole(actor, ROLE_IDS.CLIENT_TESTER)) {
-    return { $and: [projectScope, { createdBy: actor._id }] };
-  }
-
-  const clientIds = [...new Set(
-    assignments.filter((row) => row.client).map((row) => String(row.client)),
-  )];
-  const eligibleCreators = await clientTesterIdsInClientBoundary(clientIds);
-  if (!eligibleCreators.length) return { _id: null };
-
-  return {
-    $and: [
-      projectScope,
-      { createdBy: { $in: eligibleCreators } },
-    ],
-  };
-}
-
-async function creatorCoversClientBoundary(creatorId, clientId, projectId) {
-  const rows = await AccessAssignment.find({
-    user: creatorId,
-    client: clientId,
-    status: 'active',
-    role: ROLE_IDS.CLIENT_TESTER,
-    $or: [{ project: null }, { project: projectId }],
-  }).limit(1).lean();
-  return rows.length > 0;
+  return projectScopeFromAssignments(assignments);
 }
 
 /**
- * External ticket visibility: project in scope, ticket externally raised, user
- * assignment covers the project. Internal tickets remain invisible.
+ * External ticket visibility: the user's assignment covers the ticket's
+ * project. Field-level stripping (internal comments, staff churn) is
+ * sanitizeExternalTicket's job, not this one's.
  */
 export async function canExternalViewTicket(actor, ticket) {
   if (!isExternalUser(actor)) return false;
-
-  const creator = await User.findById(ticket.createdBy).select('role roles').lean();
-  if (!hasRole(creator, ROLE_IDS.CLIENT_TESTER)) return false;
 
   const projectId = ticket.project?._id ?? ticket.project;
   if (!projectId) return false;
@@ -227,15 +189,7 @@ export async function canExternalViewTicket(actor, ticket) {
   }
   if (!clientId) return false;
 
-  if (!await externalUserCoversProject(actor._id, clientId, projectId)) return false;
-
-  const creatorId = ticket.createdBy?._id ?? ticket.createdBy;
-
-  if (hasRole(actor, ROLE_IDS.CLIENT_TESTER)) {
-    return String(creatorId) === String(actor._id);
-  }
-
-  return creatorCoversClientBoundary(creatorId, clientId, projectId);
+  return externalUserCoversProject(actor._id, clientId, projectId);
 }
 
 /** Stage moves come from stageHistory; every other action describes internal handling. */
@@ -273,8 +227,8 @@ function publicComment(comment) {
 }
 
 function publicStageEntry(entry) {
-  // `note` and `decision` carry close reasons and QA rejection remarks — internal
-  // judgements about the client's own ticket.
+  // `note`, `decision` and `attachments` carry close reasons and QA rejection
+  // reports — internal judgements about the client's own ticket.
   return {
     id: entry.id ?? entry._id,
     from: entry.from ?? null,
@@ -287,17 +241,25 @@ function publicStageEntry(entry) {
 const attachmentId = (a) => String(a._id ?? a.id);
 
 /**
- * Ids of attachments that live inside an `internal: true` comment — collected
- * from the RAW comments array, before it is filtered down to the public set.
- * A ticket-level attachment sharing one of these ids was uploaded onto an
- * internal comment and must not appear in the external attachments list
- * either, even though the ticket-level array itself carries no `internal` flag.
+ * Ids of attachments that only internal viewers may see — collected from the
+ * RAW arrays, before they are filtered down to the public set. A ticket-level
+ * attachment sharing one of these ids must not appear in the external
+ * attachments list either, even though the ticket-level array itself carries
+ * no `internal` flag.
+ *
+ * Two sources: `internal: true` comments, and stage-history evidence (the QA
+ * report screenshot), which is internal for the same reason `note` is.
  */
-function internalCommentAttachmentIds(comments) {
+function internalAttachmentIds(comments, stageHistory) {
   const ids = new Set();
   for (const comment of comments || []) {
     if (comment.internal !== true) continue;
     for (const attachment of comment.attachments || []) {
+      ids.add(attachmentId(attachment));
+    }
+  }
+  for (const entry of stageHistory || []) {
+    for (const attachment of entry.attachments || []) {
       ids.add(attachmentId(attachment));
     }
   }
@@ -336,10 +298,17 @@ export function sanitizeExternalTicket(ticketJson, { viewerId } = {}) {
     watchers,
     testedBy,
     attachments,
+    // `blocked`/`blockedAt` stay — "this is blocked, since Tuesday" is status the
+    // client is entitled to. The REASON is an internal triage note and `blockedBy`
+    // is an internal staff id; neither is populated anywhere, so it would ship raw.
+    blockerReason,
+    blockedBy,
     ...rest
   } = ticketJson;
+  void blockerReason;
+  void blockedBy;
 
-  const hiddenAttachmentIds = internalCommentAttachmentIds(comments);
+  const hiddenAttachmentIds = internalAttachmentIds(comments, stageHistory);
   const visibleAttachments = (attachments || [])
     .filter((a) => !hiddenAttachmentIds.has(attachmentId(a)))
     .map(publicAttachment);

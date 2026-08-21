@@ -226,12 +226,18 @@ export async function removeAttachment(actor, idOrKey, attachmentId, config, opt
   return { id: String(attachment._id) };
 }
 
-/** Whether attachmentId is attached to a comment marked internal on this ticket. */
-function attachmentBelongsToInternalComment(ticket, attachmentId) {
-  return (ticket.comments || []).some(
-    (comment) => comment.internal === true
-      && (comment.attachments || []).some((a) => sameId(a, attachmentId)),
-  );
+/**
+ * Whether attachmentId is internal-only on this ticket: filed on a comment
+ * marked internal, or as stage-history evidence (the QA report screenshot,
+ * internal for the same reason the stage note is).
+ *
+ * Hiding it from the ticket payload is not enough on its own — the download
+ * route takes an id, so the id has to be refused here too.
+ */
+function attachmentIsInternal(ticket, attachmentId) {
+  const carriesIt = (entry) => (entry.attachments || []).some((a) => sameId(a, attachmentId));
+  return (ticket.comments || []).some((c) => c.internal === true && carriesIt(c))
+    || (ticket.stageHistory || []).some(carriesIt);
 }
 
 /**
@@ -245,9 +251,9 @@ export async function downloadUrl(actor, idOrKey, attachmentId, config, opts = {
   const ticket = await resolveTicketDoc(idOrKey);
   await assertCanViewTicket(actor, ticket);
 
-  // A ticket in scope may still carry an internal comment; its attachment is
+  // A ticket in scope may still carry internal-only attachments; those are
   // not — same message as the scope gate, no oracle differential.
-  if (isExternalUser(actor) && attachmentBelongsToInternalComment(ticket, attachmentId)) {
+  if (isExternalUser(actor) && attachmentIsInternal(ticket, attachmentId)) {
     throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this ticket');
   }
 

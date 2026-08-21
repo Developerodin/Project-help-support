@@ -225,6 +225,9 @@ export default function TicketComments({ ticket, user, onAdd, onUpload }) {
   function handleCommentKeyDown(event) {
     if (event.nativeEvent?.isComposing) return;
     if (event.key !== 'Enter' || event.shiftKey) return;
+    // On a touch keyboard Enter is the only way to get a new line, so leave it
+    // alone there and let the send button post.
+    if (window.matchMedia?.('(hover: none)').matches) return;
     event.preventDefault();
     submit();
   }
@@ -324,7 +327,7 @@ export default function TicketComments({ ticket, user, onAdd, onUpload }) {
             type="button"
             className="composer-icon-btn composer-send"
             aria-label={uploading ? 'Posting comment' : internalOnly ? 'Comment internally' : 'Send comment'}
-            title={uploading ? 'Posting comment' : internalOnly ? 'Comment internally' : 'Send comment'}
+            title={uploading ? 'Posting comment' : internalOnly ? 'Comment internally (Enter)' : 'Send comment (Enter)'}
             disabled={!canSubmit || uploading}
             onClick={submit}
             aria-busy={uploading || undefined}

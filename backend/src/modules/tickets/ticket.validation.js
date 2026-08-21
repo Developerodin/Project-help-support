@@ -122,6 +122,9 @@ export const transitionSchema = {
     // Joi cannot see the ticket's current stage, so it only bounds them here.
     note: Joi.string().trim().max(2000),
     reason: Joi.string().trim().max(2000),
+    // Ids of attachments ALREADY uploaded onto this ticket, to file with the
+    // move as its QA report. Uploading happens on /attachments; this only links.
+    attachmentIds: Joi.array().items(objectId).max(10),
   }),
 };
 

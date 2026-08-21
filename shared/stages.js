@@ -46,7 +46,7 @@ export const STAGES = Object.freeze([
   { key: 'qa_approved', index: 6, label: 'Staging QA Approved', roles: ['qa', 'admin'], relationships: [] },
   { key: 'ready_production', index: 7, label: 'Ready for Production', roles: ['lead', 'admin'], relationships: [] },
   { key: 'live', index: 8, label: 'Live', roles: ['admin'], relationships: [] },
-  { key: 'closed', index: 9, label: 'Closed', roles: ['lead', 'admin'], relationships: ['reporter'] },
+  { key: 'closed', index: 9, label: 'Closed', roles: ['lead', 'admin', 'developer'], relationships: ['reporter'] },
 ].map(Object.freeze));
 
 export const STAGE_KEYS = Object.freeze(STAGES.map((s) => s.key));
@@ -81,7 +81,7 @@ export const REOPEN_MIN_INDEX = stageIndex('ready_qa');
  * and the design requires that rejecting a build IS a Reopen. Forward
  * transitions remain destination-gated, unchanged.
  */
-export const REOPEN_ROLES = Object.freeze(['admin', 'lead', 'qa']);
+export const REOPEN_ROLES = Object.freeze(['admin', 'lead', 'qa', 'developer']);
 export const REOPEN_RELATIONSHIPS = Object.freeze(['assignee']);
 
 /** Both estimates required to enter ANY stage at or past in_progress. */
@@ -95,7 +95,14 @@ export function wouldFailOwnershipGuard(to, ticket) {
   return !ticket?.team && !ticket?.assignedTo;
 }
 
-const QA_LANE_STAGES = Object.freeze(LANES.find((l) => l.key === 'qa').stages);
+export const QA_LANE_STAGES = Object.freeze(LANES.find((l) => l.key === 'qa').stages);
+
+/**
+ * A backward move out of the QA lane is a REJECTION, not a reopen — the ticket
+ * was never closed. Callers use this to label the action and to require a QA
+ * report. Everywhere else the same move is a reopen (regression or revival).
+ */
+export const isQaRejection = (from) => QA_LANE_STAGES.includes(from);
 
 const idOf = (value) => {
   if (!value) return null;
@@ -148,9 +155,12 @@ export function canTransition(from, to, actor, ticket) {
     if (from === 'live' && to === 'closed') {
       return { ok: true, isReopen: false, isClose: true, decision: null };
     }
+    if (from === 'closed' && to === REOPEN_TARGET) {
+      return { ok: true, isReopen: true, isClose: false, decision: null };
+    }
     return refuse(
       'STAGE_NOT_PERMITTED',
-      'Clients may only move Live tickets to Closed',
+      `Clients may only move Live tickets to Closed, or reopen Closed tickets to ${stageLabel(REOPEN_TARGET)}`,
     );
   }
 

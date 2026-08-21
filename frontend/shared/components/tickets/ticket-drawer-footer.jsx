@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import {
-  STAGES, stageIndex, stageLabel, canTransition, REOPEN_MIN_INDEX,
+  STAGES, stageIndex, stageLabel, canTransition, REOPEN_MIN_INDEX, isQaRejection,
 } from '@pms/shared';
 import Icon from '../icons.jsx';
 import RemarkDialog from '../remark-dialog.jsx';
@@ -30,7 +30,14 @@ function noMoveReason(ticket, actor) {
 export default function TicketDrawerFooter({ ticket, actor, onTransition }) {
   const [pending, setPending] = useState(null);
   const [text, setText] = useState('');
+  const [image, setImage] = useState(null);
   const [busy, setBusy] = useState(false);
+
+  // Backward out of the QA lane is a rejection, not a reopen — nothing was
+  // closed. Same transition, same permission gate, different words and a
+  // required QA report.
+  const rejecting = isQaRejection(ticket.status);
+  const backLabel = rejecting ? 'Reject' : 'Reopen';
 
   const forward = nextForwardStage(ticket, actor);
   const currentIdx = stageIndex(ticket.status);
@@ -43,9 +50,16 @@ export default function TicketDrawerFooter({ ticket, actor, onTransition }) {
     if (verdict?.isReopen || verdict?.isClose) {
       setPending({ to, kind: verdict.isReopen ? 'note' : 'reason' });
       setText('');
+      setImage(null);
       return;
     }
     onTransition({ to, revision: ticket.revision });
+  }
+
+  function closePending() {
+    setPending(null);
+    setText('');
+    setImage(null);
   }
 
   async function confirmPending() {
@@ -55,9 +69,11 @@ export default function TicketDrawerFooter({ ticket, actor, onTransition }) {
         to: pending.to,
         revision: ticket.revision,
         [pending.kind]: text.trim(),
+        // The drawer uploads it first and links the resulting id — the
+        // transition endpoint takes ids, not files.
+        image: pending.kind === 'note' ? image : null,
       });
-      setPending(null);
-      setText('');
+      closePending();
     } finally {
       setBusy(false);
     }
@@ -92,7 +108,7 @@ export default function TicketDrawerFooter({ ticket, actor, onTransition }) {
           >
             <Icon name="back" size={12} />
             {' '}
-            Reopen
+            {backLabel}
           </button>
         )}
         {canClose && (
@@ -111,16 +127,24 @@ export default function TicketDrawerFooter({ ticket, actor, onTransition }) {
 
       <RemarkDialog
         open={Boolean(pending)}
-        title={`${pending?.kind === 'note' ? 'Reopen' : 'Close'} ${ticket.ticketId}`}
-        label={pending?.kind === 'note' ? 'Note (required to reopen)' : 'Reason (required to close)'}
+        title={`${pending?.kind === 'note' ? backLabel : 'Close'} ${ticket.ticketId}`}
+        label={pending?.kind === 'note'
+          ? `${rejecting ? 'QA report' : 'Note'} (required to ${backLabel.toLowerCase()})`
+          : 'Reason (required to close)'}
+        hint={pending?.kind === 'note' && rejecting
+          ? 'What failed, and how to reproduce it. Internal team only — the client never sees this.'
+          : undefined}
+        confirmLabel={pending?.kind === 'note' ? backLabel : 'Close'}
         value={text}
         onChange={(event) => setText(event.target.value)}
+        image={image}
+        onImageChange={pending?.kind === 'note' ? setImage : undefined}
+        imageLabel={rejecting ? 'Attach a screenshot (optional)' : 'Attach an image (optional)'}
         busy={busy}
         onConfirm={confirmPending}
         onCancel={() => {
           if (busy) return;
-          setPending(null);
-          setText('');
+          closePending();
         }}
       />
     </>

@@ -13,6 +13,22 @@ const objectId = mongoose.Schema.Types.ObjectId;
  * when that ever bites: move `comments` to its own collection keyed by ticket.
  */
 
+const attachmentSchema = new mongoose.Schema(
+  {
+    // KEY ONLY. A stored url expires and becomes a dead link in the database.
+    // Legacy `dev-tickets/...` keys import verbatim — keys are never parsed.
+    key: { type: String, required: true },
+    name: { type: String, required: true, trim: true },
+    size: { type: Number },
+    mimeType: { type: String },
+    uploadedBy: { type: objectId, ref: 'User', required: true },
+    uploadedAt: { type: Date, default: Date.now },
+    /** Client-generated UUID; makes a retried upload a no-op. See attachment.service.js. */
+    clientRef: { type: String },
+  },
+  { _id: true },
+);
+
 const stageHistorySchema = new mongoose.Schema(
   {
     from: { type: String, enum: STAGE_KEYS },
@@ -22,6 +38,14 @@ const stageHistorySchema = new mongoose.Schema(
     // 'approved' | 'rejected' | null — set only on the QA hops.
     decision: { type: String, enum: [...STAGE_DECISIONS, null], default: null },
     note: { type: String, trim: true },
+    /**
+     * Evidence attached to the move — in practice the QA report's screenshot.
+     * Copies of entries already in `ticket.attachments`, same as comments do,
+     * so one download route serves every attachment on the ticket.
+     * INTERNAL: stripped from external responses alongside `note`, see
+     * access/external-auth.service.js.
+     */
+    attachments: { type: [attachmentSchema], default: [] },
   },
   { _id: true },
 );
@@ -41,22 +65,6 @@ const activityLogSchema = new mongoose.Schema(
     performedBy: { type: objectId, ref: 'User', required: true },
     at: { type: Date, default: Date.now },
     changes: { type: [activityChangeSchema], default: [] },
-  },
-  { _id: true },
-);
-
-const attachmentSchema = new mongoose.Schema(
-  {
-    // KEY ONLY. A stored url expires and becomes a dead link in the database.
-    // Legacy `dev-tickets/...` keys import verbatim — keys are never parsed.
-    key: { type: String, required: true },
-    name: { type: String, required: true, trim: true },
-    size: { type: Number },
-    mimeType: { type: String },
-    uploadedBy: { type: objectId, ref: 'User', required: true },
-    uploadedAt: { type: Date, default: Date.now },
-    /** Client-generated UUID; makes a retried upload a no-op. See attachment.service.js. */
-    clientRef: { type: String },
   },
   { _id: true },
 );
