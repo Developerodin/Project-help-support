@@ -1110,6 +1110,7 @@ input[type="checkbox"]{ accent-color:var(--sig); width:14px; height:14px; cursor
   border-radius:0 0 var(--r-lg) var(--r-lg); }
 .dlg-foot .spacer{ flex:1; }
 .dlg .form-row > label{ font-size:0.8125rem; font-weight:600; color:var(--ink); text-transform:none; letter-spacing:normal; }
+.dlg .form-row input:not([type]),
 .dlg .form-row input[type="text"],
 .dlg .form-row input[type="email"],
 .dlg .form-row select{
@@ -1317,13 +1318,18 @@ input[type="checkbox"]{ accent-color:var(--sig); width:14px; height:14px; cursor
 .form-row > label{ font-size:0.8125rem; font-weight:600; }
 .form-row .help{ font-size:0.75rem; color:var(--ink-3); line-height:1.5; max-width:64ch; }
 /* Editable field surfaces: --panel grey fill on --paper page bg so empty fields read as inputs.
-   Inside .panel surfaces (formside rail, team form card) step up to --panel-2. */
+   Inside .panel surfaces (formside rail, team form card) step up to --panel-2.
+   :not([type]) is load-bearing — a bare <input> IS a text field but does not match
+   [type="text"], so without it those fields fall back to browser white and vanish
+   against --paper. checkbox/radio/file always declare a type, so they stay excluded. */
+.form-row input:not([type]),
 .form-row input[type="text"], .form-row input[type="email"], .form-row input[type="password"],
 .form-row input[type="date"], .form-row select, .form-row textarea{
   height:34px; padding:0 10px; border:1px solid var(--rule); border-radius:var(--r);
   background:var(--panel); color:var(--ink); outline:none; font-size:0.875rem; width:100%;
   transition:border-color 120ms ease-out, box-shadow 120ms ease-out, background-color 120ms ease-out;
 }
+.panel .form-row input:not([type]),
 .panel .form-row input[type="text"], .panel .form-row input[type="email"], .panel .form-row input[type="password"],
 .panel .form-row input[type="date"], .panel .form-row select, .panel .form-row textarea{
   background:var(--panel-2);
