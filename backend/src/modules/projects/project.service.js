@@ -1,4 +1,4 @@
-import { ROLE_IDS, resolveProjectModules, hasRole, isExternalUser } from '@pms/shared';
+import { ROLE_IDS, resolveProjectModules, hasRole, isExternalUser, hasActiveScopedConstraints, isAssignmentEffectivelyActive, assignmentRoleHasPermission, normaliseAssignmentScope } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
 import AccessAssignment from '../access/accessAssignment.model.js';
@@ -12,7 +12,15 @@ import {
   assignCompanyWideClientTestersToProject,
   listEffectiveClientTesters,
   permittedProjectIdsForExternalUser,
+  revokeProjectExternalAssignmentsOnClientChange,
 } from '../access/external-auth.service.js';
+import {
+  assertCanViewProjects,
+  assertScopedPermissionWhenConstrained,
+  projectScopeTarget,
+  clientScopeTarget,
+  resolvePermissionContext,
+} from '../access/scope-enforcement.js';
 import {
   assignProjectTeam,
   ensureProjectMigrated,
@@ -140,11 +148,18 @@ async function attachTeamContext(projectJson) {
   return { ...projectJson, team, teamMembers };
 }
 
-export async function createProject(actor, body) {
+export async function createProject(actor, body, permissionContext = null) {
   const clientId = body.clientId || body.client;
   if (!clientId) {
     throw new ApiError(400, 'CLIENT_REQUIRED', 'Company is required');
   }
+
+  await assertScopedPermissionWhenConstrained(
+    actor,
+    'projects.manage',
+    clientScopeTarget(clientId),
+    permissionContext,
+  );
 
   const client = await Client.findById(clientId);
   if (!client) throw new ApiError(404, 'CLIENT_NOT_FOUND', 'Company not found');
@@ -190,9 +205,18 @@ export async function createProject(actor, body) {
   return attachTeamContext(populated.toJSON());
 }
 
-export async function listProjects(query = {}, actor = null) {
+export async function listProjects(query = {}, actor = null, permissionContext = null) {
+  if (actor) await assertCanViewProjects(actor, permissionContext);
+
   const filter = { status: query.status || 'active' };
-  if (query.clientId) filter.client = query.clientId;
+  if (query.clientId) {
+    filter.client = query.clientId;
+  } else if (filter.status === 'active') {
+    // Archiving a company keeps its projects, but they must drop out of every
+    // active listing (switcher, ticket form) like archived projects already do.
+    const archivedClients = await Client.distinct('_id', { status: 'archived' });
+    if (archivedClients.length) filter.client = { $nin: archivedClients };
+  }
 
   if (actor && isExternalUser(actor)) {
     const permittedIds = await permittedProjectIdsForExternalUser(actor._id);
@@ -206,6 +230,32 @@ export async function listProjects(query = {}, actor = null) {
       };
     }
     filter._id = { $in: permittedIds };
+  } else if (actor) {
+    const ctx = await resolvePermissionContext(actor, permissionContext);
+    if (hasActiveScopedConstraints(ctx.scopedAssignments)) {
+      const clientIds = new Set();
+      const projectIds = new Set();
+      for (const row of ctx.scopedAssignments) {
+        if (!isAssignmentEffectivelyActive(row)) continue;
+        if (!assignmentRoleHasPermission(row, 'projects.view', ctx.roleMatrix)) continue;
+        const { client, project } = normaliseAssignmentScope(row);
+        if (project) projectIds.add(String(project));
+        else if (client) clientIds.add(String(client));
+      }
+      if (!projectIds.size && !clientIds.size) {
+        return {
+          results: [],
+          page: Number(query.page) || 1,
+          limit: Number(query.limit) || 20,
+          totalPages: 0,
+          totalResults: 0,
+        };
+      }
+      const scopeClauses = [];
+      if (projectIds.size) scopeClauses.push({ _id: { $in: [...projectIds] } });
+      if (clientIds.size) scopeClauses.push({ client: { $in: [...clientIds] } });
+      filter.$or = scopeClauses;
+    }
   }
 
   const page = await paginate(Project, filter, {
@@ -218,16 +268,35 @@ export async function listProjects(query = {}, actor = null) {
   return { ...page, results };
 }
 
-export async function getProject(id, actor = null) {
+export async function getProject(id, actor = null, permissionContext = null) {
   const project = await Project.findById(id).populate(['team', 'client']);
   if (!project) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
-  if (actor) await assertExternalProjectAccess(actor, project._id);
+  if (actor) {
+    await assertCanViewProjects(actor, permissionContext);
+    await assertExternalProjectAccess(actor, project._id);
+    if (!isExternalUser(actor)) {
+      await assertScopedPermissionWhenConstrained(
+        actor,
+        'projects.view',
+        projectScopeTarget(project),
+        permissionContext,
+      );
+    }
+  }
   return attachTeamContext(project.toJSON());
 }
 
-export async function updateProject(id, body) {
-  if (!(await Project.exists({ _id: id }))) {
-    throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
+export async function updateProject(id, body, actor = null, permissionContext = null) {
+  const existing = await Project.findById(id).select('client');
+  if (!existing) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
+
+  if (actor) {
+    await assertScopedPermissionWhenConstrained(
+      actor,
+      'projects.manage',
+      projectScopeTarget(existing),
+      permissionContext,
+    );
   }
 
   if (body.team !== undefined) {
@@ -249,6 +318,10 @@ export async function updateProject(id, body) {
     id, { $set: patch }, { new: true, runValidators: true },
   ).populate(['team', 'client']);
 
+  if (patch.client && String(patch.client) !== String(existing.client)) {
+    await revokeProjectExternalAssignmentsOnClientChange(id, existing.client);
+  }
+
   if (body.defaultAssignee || body.defaultTester || body.defaultTeam) {
     await migrateProjectTeamFromLegacy(project);
   }
@@ -256,7 +329,17 @@ export async function updateProject(id, body) {
   return attachTeamContext(project.toJSON());
 }
 
-export async function setProjectTeamMembers(id, members) {
+export async function setProjectTeamMembers(id, members, actor = null, permissionContext = null) {
+  if (actor) {
+    const project = await Project.findById(id).select('client');
+    if (!project) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
+    await assertScopedPermissionWhenConstrained(
+      actor,
+      'projects.manage',
+      projectScopeTarget(project),
+      permissionContext,
+    );
+  }
   const rows = await replaceProjectTeamMemberRoles(id, members);
   return { teamMembers: rows };
 }
@@ -266,7 +349,18 @@ export async function getProjectTeamMembers(id) {
   return { teamMembers: await listProjectTeamMembers(id) };
 }
 
-export async function replaceModules(id, modules) {
+export async function replaceModules(id, modules, actor = null, permissionContext = null) {
+  const existing = await Project.findById(id).select('client');
+  if (!existing) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
+  if (actor) {
+    await assertScopedPermissionWhenConstrained(
+      actor,
+      'projects.manage',
+      projectScopeTarget(existing),
+      permissionContext,
+    );
+  }
+
   const project = await Project.findByIdAndUpdate(
     id, { $set: { modules } }, { new: true, runValidators: true },
   );
@@ -288,9 +382,15 @@ export async function getProjectClientTesters(id) {
   };
 }
 
-export async function setProjectClientTesters(actor, projectId, userIds) {
+export async function setProjectClientTesters(actor, projectId, userIds, permissionContext = null) {
   const project = await Project.findById(projectId).select('client');
   if (!project) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
+  await assertScopedPermissionWhenConstrained(
+    actor,
+    'projects.manage',
+    projectScopeTarget(project),
+    permissionContext,
+  );
   if (!project.client) {
     throw new ApiError(400, 'CLIENT_REQUIRED', 'Project has no company');
   }

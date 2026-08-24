@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ROLE_IDS, ADMIN_ROLES, ESTIMATE_DATE_EDITOR_ROLES, hasAnyRole, isExternalUser,
+  ESTIMATE_DATE_EDITOR_ROLES, hasAnyRole, isExternalUser, can,
 } from '@pms/shared';
 import {
   getTicket, patchTicket, transitionTicket, addComment, editComment, deleteComment, uploadAttachments, deleteAttachment, assignTicket,
@@ -31,7 +31,8 @@ import TicketHistory from './ticket-history.jsx';
 import TicketComments from './ticket-comments.jsx';
 import TicketQaReport, { qaRejections } from './ticket-qa-report.jsx';
 import TicketDrawerFooter from './ticket-drawer-footer.jsx';
-import { useTicketAssignment } from './use-ticket-assignment.js';
+import { useBoardPolicy } from '@/shared/hooks/use-board-policy.js';
+import { usePermissionContext } from '@/shared/hooks/use-permission-context.js';
 import AppLoader from '../app-loader.jsx';
 
 function nestedDialogOpen(drawerNode) {
@@ -46,6 +47,8 @@ function TicketDrawerContent({
   onClose,
   onChanged,
   load,
+  boardPolicy,
+  permissionContext,
 }) {
   const [error, setError] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -124,7 +127,7 @@ function TicketDrawerContent({
   const watching = Boolean(
     ticket.watchers?.some((w) => String(w.id || w._id) === String(user?.id || user?._id)),
   );
-  const canAssign = hasAnyRole(user, ...ADMIN_ROLES, ROLE_IDS.PROJECT_ADMIN);
+  const canAssign = can(user, 'tickets.manage_assignment', permissionContext);
   const canEditEstimates = hasAnyRole(user, ...ESTIMATE_DATE_EDITOR_ROLES);
   const canSeeMetadataRail = hasAnyRole(user, ...ESTIMATE_DATE_EDITOR_ROLES);
   const showMetadataRail = canSeeMetadataRail && tab === 'details';
@@ -188,6 +191,8 @@ function TicketDrawerContent({
           <TicketStageBar
             ticket={ticket}
             actor={user}
+            boardPolicy={boardPolicy}
+            permissionContext={permissionContext}
             onTransition={run((body) => transitionTicket(ticket.ticketId, body))}
           />
         </div>
@@ -360,6 +365,8 @@ function TicketDrawerContent({
       <TicketDrawerFooter
         ticket={ticket}
         actor={user}
+        boardPolicy={boardPolicy}
+        permissionContext={permissionContext}
         onTransition={run(async ({ image, ...body }) => {
           // The report's screenshot goes up on /attachments first; the
           // transition endpoint links ids, it does not take files.
@@ -387,6 +394,8 @@ function TicketDrawerContent({
 
 export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
   const { user } = useAuth();
+  const { policy: boardPolicy } = useBoardPolicy();
+  const { permissionContext } = usePermissionContext();
   const { activeProjectId, setActiveProjectId } = useProject();
   const activeProjectIdRef = useRef(activeProjectId);
   const drawerRef = useRef(null);
@@ -481,6 +490,8 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
             onClose={onClose}
             onChanged={onChanged}
             load={load}
+            boardPolicy={boardPolicy}
+            permissionContext={permissionContext}
           />
         )}
       </aside>

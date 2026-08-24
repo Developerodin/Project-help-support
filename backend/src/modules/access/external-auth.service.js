@@ -1,10 +1,25 @@
-import { ROLE_IDS, EXTERNAL_ROLES, hasRole, isSuperAdmin, isExternalUser, getUserRoles, pickPrimaryRole } from '@pms/shared';
+import {
+  ROLE_IDS,
+  EXTERNAL_ROLES,
+  INTERNAL_ROLES,
+  hasRole,
+  isSuperAdmin,
+  isExternalUser,
+  getUserRoles,
+  pickPrimaryRole,
+} from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import AccessAssignment from './accessAssignment.model.js';
+import {
+  activeNotExpiredFilter,
+  revokeExpiredActiveDuplicates,
+} from './accessAssignment.queries.js';
 import User from '../users/user.model.js';
 import Project from '../projects/project.model.js';
 
 export const COMPANY_WIDE_AUTO_ASSIGN_REASON = 'company_wide_auto_assign';
+
+export { activeNotExpiredFilter } from './accessAssignment.queries.js';
 
 export function isExternalRole(role) {
   return EXTERNAL_ROLES.includes(role);
@@ -15,22 +30,21 @@ export function isExternalRole(role) {
  * to a client and/or project.
  */
 export async function activeAssignmentsForUser(userId, { clientId = null, projectId = null } = {}) {
-  const filter = { user: userId, status: 'active' };
-  if (clientId) filter.client = clientId;
-  if (projectId) filter.project = projectId;
-  return AccessAssignment.find(filter).lean();
+  const criteria = { user: userId };
+  if (clientId) criteria.client = clientId;
+  if (projectId) criteria.project = projectId;
+  return AccessAssignment.find(activeNotExpiredFilter(criteria)).lean();
 }
 
 /**
  * Whether an external user has assignment coverage for a project within a client.
  */
 export async function externalUserCoversProject(userId, clientId, projectId) {
-  const rows = await AccessAssignment.find({
+  const rows = await AccessAssignment.find(activeNotExpiredFilter({
     user: userId,
     client: clientId,
-    status: 'active',
     $or: [{ project: null }, { project: projectId }],
-  }).lean();
+  })).lean();
   return rows.length > 0;
 }
 
@@ -39,12 +53,11 @@ export async function externalUserCoversProject(userId, clientId, projectId) {
  * of truth. Super Admin users are never included.
  */
 export async function listEffectiveClientTesters(projectId, clientId) {
-  const assignments = await AccessAssignment.find({
+  const assignments = await AccessAssignment.find(activeNotExpiredFilter({
     client: clientId,
-    status: 'active',
     role: ROLE_IDS.CLIENT_TESTER,
     $or: [{ project: null }, { project: projectId }],
-  }).populate('user', 'name email role roles status').lean();
+  })).populate('user', 'name email role roles status').lean();
 
   const byUser = new Map();
   for (const row of assignments) {
@@ -82,18 +95,17 @@ export async function listEffectiveClientTesters(projectId, clientId) {
 
 /** Company ids an external user may access from active AccessAssignment rows. */
 export async function permittedClientIdsForExternalUser(userId) {
-  const assignments = await AccessAssignment.find({
+  const assignments = await AccessAssignment.find(activeNotExpiredFilter({
     user: userId,
-    status: 'active',
     client: { $ne: null },
-  }).select('client').lean();
+  })).select('client').lean();
 
   return [...new Set(assignments.map((row) => String(row.client)))];
 }
 
 /** Whether an external user has any active company/project assignment. */
 export async function hasExternalWorkspaceAccess(userId) {
-  const count = await AccessAssignment.countDocuments({ user: userId, status: 'active' });
+  const count = await AccessAssignment.countDocuments(activeNotExpiredFilter({ user: userId }));
   return count > 0;
 }
 
@@ -123,7 +135,7 @@ export async function assertExternalCanCreateTicket(actor, projectId) {
 
 /** Project ids an external user may access from AccessAssignment union. */
 export async function permittedProjectIdsForExternalUser(userId) {
-  const assignments = await AccessAssignment.find({ user: userId, status: 'active' })
+  const assignments = await AccessAssignment.find(activeNotExpiredFilter({ user: userId }))
     .select('client project').lean();
 
   const projectIdSet = new Set();
@@ -152,29 +164,88 @@ async function projectScopeFromAssignments(assignments) {
   return clauses.length === 1 ? clauses[0] : { $or: clauses };
 }
 
-/**
- * Mongo filter restricting list/search to externally visible tickets.
- *
- * Scope is the ONLY axis: a company-wide grant sees every ticket in the
- * company's projects, a project grant sees that project's. Who raised the
- * ticket is irrelevant — a client must see the ticket they filed themselves,
- * which a `createdBy` restriction made impossible.
- */
-export async function buildExternalTicketFilter(actor) {
-  const assignments = await AccessAssignment.find({
-    user: actor._id,
-    status: 'active',
-  }).select('client project').lean();
+function isInternalActor(user) {
+  return getUserRoles(user).some((role) => INTERNAL_ROLES.includes(role));
+}
 
-  if (!assignments.length) return { _id: null };
+/** Client testers authorized in the same company/project boundary. */
+async function listAuthorizedClientTesterIds(clientId, projectId = null) {
+  const criteria = {
+    client: clientId,
+    role: ROLE_IDS.CLIENT_TESTER,
+  };
+  if (projectId) {
+    criteria.$or = [{ project: null }, { project: projectId }];
+  }
+  const rows = await AccessAssignment.find(activeNotExpiredFilter(criteria)).distinct('user');
+  return rows.map(String);
+}
 
-  return projectScopeFromAssignments(assignments);
+async function clientVisibilityCreatedByIds(assignments) {
+  const testerIdSet = new Set();
+  const seen = new Set();
+
+  for (const row of assignments) {
+    const clientId = row.client ? String(row.client) : null;
+    if (!clientId) continue;
+    const scopeKey = `${clientId}:${row.project ? String(row.project) : '*'}`;
+    if (seen.has(scopeKey)) continue;
+    seen.add(scopeKey);
+
+    const ids = await listAuthorizedClientTesterIds(
+      clientId,
+      row.project ? String(row.project) : null,
+    );
+    for (const id of ids) testerIdSet.add(id);
+  }
+
+  return [...testerIdSet];
+}
+
+async function visibilityCreatedByFilter(actor, assignments) {
+  const clauses = [];
+
+  if (hasRole(actor, ROLE_IDS.CLIENT_TESTER)) {
+    clauses.push({ createdBy: actor._id });
+  }
+
+  if (hasRole(actor, ROLE_IDS.CLIENT)) {
+    clauses.push({ createdBy: actor._id });
+    const testerIds = await clientVisibilityCreatedByIds(assignments);
+    if (testerIds.length) clauses.push({ createdBy: { $in: testerIds } });
+  }
+
+  if (!clauses.length) return { _id: null };
+  return clauses.length === 1 ? clauses[0] : { $or: clauses };
 }
 
 /**
- * External ticket visibility: the user's assignment covers the ticket's
- * project. Field-level stripping (internal comments, staff churn) is
- * sanitizeExternalTicket's job, not this one's.
+ * Mongo filter restricting list/search to externally visible tickets.
+ *
+ * Visibility matrix (Phase F):
+ * - `client_tester`: own tickets within assignment scope only.
+ * - `client`: own tickets plus externally raised tickets (`createdBy` is an
+ *   authorized `client_tester` in the same company boundary).
+ * - Internal staff tickets are never visible to external viewers.
+ */
+export async function buildExternalTicketFilter(actor) {
+  const assignments = await AccessAssignment.find(activeNotExpiredFilter({ user: actor._id }))
+    .select('client project').lean();
+
+  if (!assignments.length) return { _id: null };
+
+  const projectScope = await projectScopeFromAssignments(assignments);
+  if (projectScope._id === null) return { _id: null };
+
+  const createdByScope = await visibilityCreatedByFilter(actor, assignments);
+  if (createdByScope._id === null) return { _id: null };
+
+  return { $and: [projectScope, createdByScope] };
+}
+
+/**
+ * External ticket visibility: assignment scope plus role-specific creator rules.
+ * Field-level stripping is sanitizeExternalTicket's job, not this one's.
  */
 export async function canExternalViewTicket(actor, ticket) {
   if (!isExternalUser(actor)) return false;
@@ -189,7 +260,79 @@ export async function canExternalViewTicket(actor, ticket) {
   }
   if (!clientId) return false;
 
-  return externalUserCoversProject(actor._id, clientId, projectId);
+  if (!await externalUserCoversProject(actor._id, clientId, projectId)) return false;
+
+  const creatorId = ticket.createdBy?._id ?? ticket.createdBy;
+  if (!creatorId) return false;
+
+  const actorId = String(actor._id ?? actor.id);
+  const creatorIdStr = String(creatorId);
+
+  if (creatorIdStr === actorId) {
+    return hasRole(actor, ROLE_IDS.CLIENT) || hasRole(actor, ROLE_IDS.CLIENT_TESTER);
+  }
+
+  let creator = ticket.createdBy;
+  if (!creator?.role && !creator?.roles) {
+    creator = await User.findById(creatorId).select('role roles').lean();
+  }
+  if (!creator || isInternalActor(creator)) return false;
+
+  if (hasRole(actor, ROLE_IDS.CLIENT_TESTER)) return false;
+
+  if (hasRole(actor, ROLE_IDS.CLIENT) && hasRole(creator, ROLE_IDS.CLIENT_TESTER)) {
+    const testerIds = await listAuthorizedClientTesterIds(clientId, projectId);
+    return testerIds.includes(creatorIdStr);
+  }
+
+  return false;
+}
+
+/** Validate scoped grants to external roles target users with matching global roles. */
+export async function assertExternalRoleTarget(user, expectedRole) {
+  if (!isExternalRole(expectedRole)) return;
+  if (!user || user.status !== 'active') {
+    throw new ApiError(400, 'USER_NOT_ACTIVE', 'Only active users can receive scoped external access');
+  }
+  if (!hasRole(user, expectedRole)) {
+    throw new ApiError(
+      400,
+      'INVALID_EXTERNAL_USER',
+      `Only users with the ${expectedRole} role can be assigned here`,
+    );
+  }
+}
+
+/** Company-wide client_tester grants inherit to every active project in the company. */
+export async function propagateCompanyWideClientTesterGrant(actor, clientId, userId) {
+  await autoAssignCompanyWideTestersToProjects(actor, clientId, [String(userId)]);
+}
+
+/** Revoke auto-inherited project rows when company-wide client_tester access is removed. */
+export async function propagateCompanyWideClientTesterRevoke(clientId, userId) {
+  await revokeAutoAssignedProjectTesters(clientId, [String(userId)]);
+}
+
+/**
+ * Revoke project-specific external assignments when a project moves companies.
+ * Company-wide rows for the old client are left untouched — they stop applying
+ * naturally once Project.client changes.
+ */
+export async function revokeProjectExternalAssignmentsOnClientChange(projectId, oldClientId) {
+  await AccessAssignment.updateMany(
+    {
+      client: oldClientId,
+      project: projectId,
+      role: { $in: [ROLE_IDS.CLIENT, ROLE_IDS.CLIENT_TESTER] },
+      status: 'active',
+    },
+    {
+      $set: {
+        status: 'revoked',
+        reason: 'project_client_changed',
+      },
+    },
+  );
 }
 
 /** Stage moves come from stageHistory; every other action describes internal handling. */
@@ -336,12 +479,11 @@ export function sanitizeExternalTicket(ticketJson, { viewerId } = {}) {
 }
 
 export async function getCompanyExternalAccess(clientId) {
-  const rows = await AccessAssignment.find({
+  const rows = await AccessAssignment.find(activeNotExpiredFilter({
     client: clientId,
     project: null,
-    status: 'active',
     role: { $in: [ROLE_IDS.CLIENT, ROLE_IDS.CLIENT_TESTER] },
-  }).select('user role').lean();
+  })).select('user role').lean();
 
   return {
     clientUserIds: rows
@@ -386,13 +528,12 @@ async function autoAssignCompanyWideTestersToProjects(actor, clientId, userIds, 
   const targets = projectIds ?? await activeProjectIdsForClient(clientId);
   if (!targets.length) return;
 
-  const existing = await AccessAssignment.find({
+  const existing = await AccessAssignment.find(activeNotExpiredFilter({
     user: { $in: testerIds },
     client: clientId,
     project: { $in: targets },
     role: ROLE_IDS.CLIENT_TESTER,
-    status: 'active',
-  }).select('user project').lean();
+  })).select('user project').lean();
 
   const existingKeys = new Set(
     existing.map((row) => `${row.user}:${row.project}`),
@@ -415,6 +556,14 @@ async function autoAssignCompanyWideTestersToProjects(actor, clientId, userIds, 
   }
 
   if (toCreate.length) {
+    for (const row of toCreate) {
+      await revokeExpiredActiveDuplicates({
+        userId: row.user,
+        role: row.role,
+        clientId: row.client,
+        projectId: row.project,
+      });
+    }
     await AccessAssignment.insertMany(toCreate);
   }
 }
@@ -443,12 +592,11 @@ async function revokeAutoAssignedProjectTesters(clientId, userIds) {
 
 /** Auto-assign all company-wide client testers to a single new project. */
 export async function assignCompanyWideClientTestersToProject(actor, clientId, projectId) {
-  const companyWideTesters = await AccessAssignment.find({
+  const companyWideTesters = await AccessAssignment.find(activeNotExpiredFilter({
     client: clientId,
     project: null,
     role: ROLE_IDS.CLIENT_TESTER,
-    status: 'active',
-  }).distinct('user');
+  })).distinct('user');
 
   if (!companyWideTesters.length) return;
 
@@ -464,12 +612,11 @@ async function syncCompanyRoleAssignments(actor, clientId, role, userIds) {
   const desired = [...new Set((userIds || []).map(String))];
   await assertExternalUsers(desired, role);
 
-  const existing = await AccessAssignment.find({
+  const existing = await AccessAssignment.find(activeNotExpiredFilter({
     client: clientId,
     project: null,
     role,
-    status: 'active',
-  });
+  }));
 
   const desiredSet = new Set(desired);
   const removedUserIds = [];
@@ -487,6 +634,12 @@ async function syncCompanyRoleAssignments(actor, clientId, role, userIds) {
   const addedUserIds = [];
   for (const userId of desired) {
     if (existingUsers.has(userId)) continue;
+    await revokeExpiredActiveDuplicates({
+      userId,
+      role,
+      clientId,
+      projectId: null,
+    });
     await AccessAssignment.create({
       user: userId,
       role,

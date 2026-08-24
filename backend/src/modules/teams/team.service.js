@@ -2,6 +2,11 @@ import { ROLE_IDS } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
 import Project from '../projects/project.model.js';
+import {
+  assertScopedPermissionWhenConstrained,
+  assertCanViewTeams,
+  projectScopeTarget,
+} from '../access/scope-enforcement.js';
 import Ticket from '../tickets/ticket.model.js';
 import User from '../users/user.model.js';
 import Team from './team.model.js';
@@ -55,8 +60,25 @@ export async function assertActiveUsers(ids, { allowSuperAdmin = false } = {}) {
   }
 }
 
-export async function createTeam(actor, { name, project = null, lead = null, members = [] }) {
+export async function createTeam(actor, { name, project = null, lead = null, members = [] }, permissionContext = null) {
   await assertActiveUsers([lead, ...members]);
+  if (project) {
+    const projectDoc = await Project.findById(project).select('client');
+    if (!projectDoc) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
+    await assertScopedPermissionWhenConstrained(
+      actor,
+      'teams.create',
+      projectScopeTarget(projectDoc),
+      permissionContext,
+    );
+  } else {
+    await assertScopedPermissionWhenConstrained(
+      actor,
+      'teams.create',
+      {},
+      permissionContext,
+    );
+  }
   const team = await Team.create({ name, project, lead, members, createdBy: actor._id });
   return team.toJSON();
 }
@@ -104,7 +126,8 @@ async function ticketStatsByTeam(teamIds) {
   ]));
 }
 
-export async function listTeams(query = {}) {
+export async function listTeams(query = {}, actor = null, permissionContext = null) {
+  if (actor) await assertCanViewTeams(actor, permissionContext);
   const filter = {};
   if (query.status) filter.status = query.status;
   if (query.project) {
@@ -139,13 +162,38 @@ export async function listTeams(query = {}) {
   };
 }
 
-export async function getTeam(id) {
+export async function getTeam(id, actor = null, permissionContext = null) {
+  if (actor) await assertCanViewTeams(actor, permissionContext);
   const team = await Team.findById(id).populate(['lead', 'members', 'project']);
   if (!team) throw new ApiError(404, 'TEAM_NOT_FOUND', 'Team not found');
   return team.toJSON();
 }
 
-export async function updateTeam(id, body) {
+async function assertTeamScopedPermission(actor, teamId, permission, permissionContext = null) {
+  const team = await Team.findById(teamId).select('project');
+  if (!team) throw new ApiError(404, 'TEAM_NOT_FOUND', 'Team not found');
+  if (team.project) {
+    const project = await Project.findById(team.project).select('client');
+    if (!project) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
+    await assertScopedPermissionWhenConstrained(
+      actor,
+      permission,
+      projectScopeTarget(project),
+      permissionContext,
+    );
+  } else {
+    await assertScopedPermissionWhenConstrained(
+      actor,
+      permission,
+      {},
+      permissionContext,
+    );
+  }
+}
+
+export async function updateTeam(id, body, actor = null, permissionContext = null) {
+  const permission = body.status === 'archived' ? 'teams.delete' : 'teams.edit';
+  if (actor) await assertTeamScopedPermission(actor, id, permission, permissionContext);
   await assertActiveUsers([body.lead]);
 
   const team = await Team.findByIdAndUpdate(id, { $set: body }, { new: true, runValidators: true });
@@ -153,7 +201,8 @@ export async function updateTeam(id, body) {
   return team.toJSON();
 }
 
-export async function updateMembers(id, { add = [], remove = [] }) {
+export async function updateMembers(id, { add = [], remove = [] }, actor = null, permissionContext = null) {
+  if (actor) await assertTeamScopedPermission(actor, id, 'teams.edit', permissionContext);
   await assertActiveUsers(add);
 
   // $addToSet then $pull: two single-document updates, both idempotent, so a

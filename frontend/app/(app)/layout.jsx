@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { AuthProvider, useAuth } from '@/shared/contexts/auth-context.jsx';
 import { ProjectProvider, useProject } from '@/shared/contexts/project-context.jsx';
 import { AuthBootGate, AuthGuard } from '@/shared/components/auth/auth-guard.jsx';
+import RouteGuard from '@/shared/components/route-guard.jsx';
 import Icon from '@/shared/components/icons.jsx';
 import ProfileMenu from '@/shared/components/profile-menu.jsx';
 import ProjectSwitcher from '@/shared/components/project-switcher.jsx';
@@ -129,9 +130,11 @@ export default function AppLayout({ children }) {
     <AuthProvider>
       <AuthBootGate>
         <AuthGuard>
-          <ProjectProvider>
-            <AppShell>{children}</AppShell>
-          </ProjectProvider>
+          <RouteGuard>
+            <ProjectProvider>
+              <AppShell>{children}</AppShell>
+            </ProjectProvider>
+          </RouteGuard>
         </AuthGuard>
       </AuthBootGate>
     </AuthProvider>

@@ -44,6 +44,18 @@ export const notificationPrefs = catchAsync(async (req, res) => {
   res.json(await userService.updateNotificationPrefs(req.user, req.body));
 });
 
+export const ticketPreferencesGet = catchAsync(async (req, res) => {
+  res.json(await userService.getTicketPreferences(req.user));
+});
+
+export const ticketPreferencesUpdate = catchAsync(async (req, res) => {
+  res.json(await userService.updateTicketPreferences(req.user, req.body));
+});
+
+export const ticketPreferencesReset = catchAsync(async (req, res) => {
+  res.json(await userService.resetTicketPreferences(req.user));
+});
+
 export const remove = catchAsync(async (req, res) => {
   res.json(await userService.deleteUser(req.user, req.params.id));
 });

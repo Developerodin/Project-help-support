@@ -24,7 +24,7 @@ export default function authRoutes(config, deliverReset) {
   router.post('/login', loginLimiter, validate(loginSchema), controller.login(config));
   router.post('/refresh', refreshLimiter, origin, controller.refresh(config));
   router.post('/logout', origin, controller.logout(config));
-  router.get('/me', auth(config), controller.me);
+  router.get('/me', auth(config), controller.me(config));
 
   router.post('/invite/preview', inviteAcceptLimiter, validate(previewInviteSchema), controller.previewInvite);
   router.post('/invite/accept', inviteAcceptLimiter, validate(acceptInviteSchema), controller.acceptInvite);

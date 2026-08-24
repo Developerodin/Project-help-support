@@ -29,7 +29,15 @@ const accessAssignmentSchema = new mongoose.Schema(
       type: Date,
       default: null,
       validate: {
-        validator(v) { return v == null || v > new Date(); },
+        validator(v) {
+          if (v == null) return true;
+          // Lifecycle updates on already-expired rows must not be blocked.
+          // findOneAndUpdate validators receive a plain update object without isModified.
+          if (typeof this.isModified === 'function' && !this.isNew && !this.isModified('expiresAt')) {
+            return true;
+          }
+          return v > new Date();
+        },
         message: 'expiresAt must be in the future',
       },
     },
@@ -52,6 +60,14 @@ const accessAssignmentSchema = new mongoose.Schema(
 accessAssignmentSchema.index({ user: 1, status: 1 });
 accessAssignmentSchema.index({ client: 1, project: 1, status: 1 });
 accessAssignmentSchema.index({ expiresAt: 1 }, { sparse: true });
+accessAssignmentSchema.index(
+  { user: 1, role: 1, client: 1, project: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { status: 'active' },
+    name: 'access_assignment_active_scope_unique',
+  },
+);
 
 accessAssignmentSchema.pre('validate', function validateReason(next) {
   const sensitive = this.status !== 'active' || (this.environments || []).includes('Production');

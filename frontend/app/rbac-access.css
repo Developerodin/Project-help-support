@@ -1,0 +1,185 @@
+/* Production RBAC access surfaces — scoped assignments, grant flow, audit log */
+
+.rbac-scope {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+}
+
+.rbac-scope--global {
+  font-weight: 600;
+  color: var(--sig);
+}
+
+.rbac-scope__sep {
+  opacity: 0.45;
+}
+
+.rbac-access-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.rbac-access-drawer {
+  overflow-y: auto;
+}
+
+.rbac-access-drawer__header {
+  padding: 1rem 1rem 0.75rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.rbac-access-drawer__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 1rem;
+}
+
+.rbac-access-drawer__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 1rem;
+  margin-top: auto;
+  border-top: 1px solid var(--rule);
+}
+
+.rbac-assignment-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.rbac-assignment-card {
+  padding: 0.85rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-md);
+  background: var(--panel-2);
+}
+
+.rbac-assignment-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+}
+
+.rbac-assignment-meta {
+  margin: 0.65rem 0 0;
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.8125rem;
+}
+
+.rbac-assignment-meta dt {
+  font-weight: 600;
+  color: var(--ink-3);
+  display: inline;
+}
+
+.rbac-assignment-meta dt::after {
+  content: ': ';
+}
+
+.rbac-assignment-meta dd {
+  display: inline;
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.rbac-scoped-assignments {
+  padding: 0.85rem 0 1rem;
+  border-top: 1px solid var(--rule);
+}
+
+.rbac-scoped-assignments--only {
+  border-top: 0;
+  padding-top: 0.85rem;
+}
+
+.rbac-scoped-assignments__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.rbac-scoped-assignments__head h3 {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.rbac-scoped-empty {
+  padding: 1.25rem 1rem;
+  margin: 0;
+}
+
+.rbac-preview-disabled-note {
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+  color: var(--ink-3);
+  line-height: 1.4;
+}
+
+.grant-access-dialog .grant-access-role-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.grant-access-role-caption {
+  margin: 0 0 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--ink-3);
+}
+
+.grant-access-role-grid,
+.grant-access-envs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.grant-access-role,
+.grant-access-env,
+.grant-access-scope__option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  font-size: 0.8125rem;
+}
+
+.grant-access-role.is-on,
+.grant-access-env.is-on,
+.grant-access-scope__option.is-on {
+  border-color: color-mix(in oklch, var(--sig) 40%, var(--rule));
+  background: color-mix(in oklch, var(--sig) 10%, var(--panel));
+}
+
+.grant-access-scope {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.rbac-audit-table .rbac-audit-summary {
+  max-width: 18rem;
+  font-size: 0.8125rem;
+  color: var(--ink-2);
+}

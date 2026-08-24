@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { stageLabel } from '@pms/shared';
 import { priorityChipClass, priorityLabel, initials } from '../icons.jsx';
@@ -236,9 +236,6 @@ export default function TicketDetailsTab({
           <DetailField label="In current stage">
             <span className="mono">{stageAgeDays(ticket)} days</span>
           </DetailField>
-          {!ticket.estimatedResolutionAt && !ticket.expectedReleaseDate && (
-            <p className="meta detail-estimates-note wide">Required before In Progress.</p>
-          )}
         </div>
       )}
     </>

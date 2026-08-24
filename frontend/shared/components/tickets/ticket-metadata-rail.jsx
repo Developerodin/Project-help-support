@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState } from 'react';
 import { todayDateKey, validateTicketEstimateDates } from '@pms/shared';
@@ -117,10 +117,12 @@ export default function TicketMetadataRail({
     onSave(body);
   };
 
-  const estInvalid = Boolean(mergedFieldErrors.estimatedResolutionAt);
-  const releaseInvalid = Boolean(mergedFieldErrors.expectedReleaseDate);
+  const estInvalid = 'estimatedResolutionAt' in mergedFieldErrors;
+  const releaseInvalid = 'expectedReleaseDate' in mergedFieldErrors;
   const late = isOverdue(ticket);
-  const hasEst = Boolean(ticket.estimatedResolutionAt || draft.estimatedResolutionAt);
+  // Persisted value only: keying this on the draft too swapped the branch mid-edit,
+  // unmounting the focused input so its onBlur (the save trigger) never fired.
+  const hasEst = Boolean(ticket.estimatedResolutionAt);
   const elapsed = ticket.createdAt ? daysBetween(ticket.createdAt) : 0;
   const span = estIso ? daysBetween(ticket.createdAt, `${estIso}T00:00:00Z`) : 0;
   const pct = span > 0 ? Math.min(100, Math.round((elapsed / span) * 100)) : 0;
@@ -211,7 +213,7 @@ export default function TicketMetadataRail({
                     onChange={set('estimatedResolutionAt')}
                     onBlur={saveDates}
                     aria-invalid={estInvalid}
-                    aria-describedby={estInvalid ? 'estimatedResolutionAt-hint' : undefined}
+                    aria-describedby={mergedFieldErrors.estimatedResolutionAt ? 'estimatedResolutionAt-hint' : undefined}
                   />
                   <div className="track">
                     <span className="fill" style={{ width: `${late ? 100 : pct}%` }} />
@@ -245,12 +247,9 @@ export default function TicketMetadataRail({
                     onChange={set('estimatedResolutionAt')}
                     onBlur={saveDates}
                     aria-invalid={estInvalid}
-                    aria-describedby={estInvalid ? 'estimatedResolutionAt-hint' : undefined}
+                    aria-describedby={mergedFieldErrors.estimatedResolutionAt ? 'estimatedResolutionAt-hint' : undefined}
                   />
                   <span className="v empty">Not set</span>
-                  <p className="meta" style={{ marginTop: 4, color: 'var(--alarm)' }}>
-                    Required before In Progress.
-                  </p>
                 </>
               )}
             </>
@@ -281,7 +280,7 @@ export default function TicketMetadataRail({
           ) : (
             <span className="v empty">Not set</span>
           )}
-          {estInvalid ? (
+          {mergedFieldErrors.estimatedResolutionAt ? (
             <p id="estimatedResolutionAt-hint" className="field-hint invalid">
               {mergedFieldErrors.estimatedResolutionAt}
             </p>
@@ -293,7 +292,7 @@ export default function TicketMetadataRail({
           {canEditEstimates ? (
             <>
               <label className="sr" htmlFor="expectedReleaseDate">Expected release</label>
-              {ticket.expectedReleaseDate || draft.expectedReleaseDate ? (
+              {ticket.expectedReleaseDate ? (
                 <input
                   id="expectedReleaseDate"
                   type="date"
@@ -302,7 +301,7 @@ export default function TicketMetadataRail({
                   onChange={set('expectedReleaseDate')}
                   onBlur={saveDates}
                   aria-invalid={releaseInvalid}
-                  aria-describedby={releaseInvalid ? 'expectedReleaseDate-hint' : undefined}
+                  aria-describedby={mergedFieldErrors.expectedReleaseDate ? 'expectedReleaseDate-hint' : undefined}
                 />
               ) : (
                 <>
@@ -314,7 +313,7 @@ export default function TicketMetadataRail({
                     onChange={set('expectedReleaseDate')}
                     onBlur={saveDates}
                     aria-invalid={releaseInvalid}
-                    aria-describedby={releaseInvalid ? 'expectedReleaseDate-hint' : undefined}
+                    aria-describedby={mergedFieldErrors.expectedReleaseDate ? 'expectedReleaseDate-hint' : undefined}
                   />
                   <span className="v empty">Not set</span>
                 </>
@@ -325,7 +324,7 @@ export default function TicketMetadataRail({
               ? <span className="v">{formatDateOnly(ticket.expectedReleaseDate || `${releaseIso}T00:00:00Z`)}</span>
               : <span className="v empty">Not set</span>
           )}
-          {releaseInvalid ? (
+          {mergedFieldErrors.expectedReleaseDate ? (
             <p id="expectedReleaseDate-hint" className="field-hint invalid">
               {mergedFieldErrors.expectedReleaseDate}
             </p>

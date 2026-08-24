@@ -5,7 +5,8 @@ import { resendInviteLimiter } from '../../platform/rateLimit.js';
 import { ADMIN_ROLES } from '@pms/shared';
 import * as controller from './user.controller.js';
 import {
-  listUsersSchema, createUserSchema, userIdSchema, updateUserSchema, updateMeSchema, notificationPrefsSchema,
+  listUsersSchema, createUserSchema, userIdSchema, updateUserSchema, updateMeSchema,
+  notificationPrefsSchema, ticketPreferencesSchema,
 } from './user.validation.js';
 
 export default function userRoutes(config, deliverInvite) {
@@ -16,6 +17,10 @@ export default function userRoutes(config, deliverInvite) {
   router.patch('/me', validate(updateMeSchema), controller.updateMe);
   router.patch('/me/notification-prefs',
     validate(notificationPrefsSchema), controller.notificationPrefs);
+  router.get('/me/ticket-preferences', controller.ticketPreferencesGet);
+  router.patch('/me/ticket-preferences',
+    validate(ticketPreferencesSchema), controller.ticketPreferencesUpdate);
+  router.post('/me/ticket-preferences/reset', controller.ticketPreferencesReset);
 
   router.get('/', requireRole(...ADMIN_ROLES), validate(listUsersSchema), controller.list);
   router.post('/', requireRole(...ADMIN_ROLES), validate(createUserSchema),

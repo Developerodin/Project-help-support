@@ -16,6 +16,7 @@ export default function BoardLane({
   tickets,
   onOpen,
   onDropTicket,
+  getMoveTargets,
   canDrop = true,
   canDragTicket,
   onBlockedDrag,
@@ -57,6 +58,8 @@ export default function BoardLane({
               draggable={canDrop}
               canDrag={canDragTicket ? canDragTicket(ticket) : true}
               onBlockedDrag={onBlockedDrag}
+              moveTargets={getMoveTargets ? getMoveTargets(ticket) : []}
+              onMoveTo={canDrop ? onDropTicket : undefined}
             />
           ))}
       </div>

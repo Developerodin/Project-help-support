@@ -3,6 +3,8 @@ import User from './modules/users/user.model.js';
 import Client from './modules/clients/client.model.js';
 import Project, { RESERVED_PROJECT_KEYS } from './modules/projects/project.model.js';
 import Notification from './modules/notifications/notification.model.js';
+import { migrateLegacyUserRoles } from './modules/users/user.service.js';
+import { migrateAllLegacyProjectTeams } from './modules/projects/project-team-member.service.js';
 import logger from './platform/logger.js';
 
 /**
@@ -172,4 +174,18 @@ export async function seedProjects(actor) {
   if (backfilled.length) logger.info(`Backfilled project modules: ${backfilled.join(', ')}`);
   if (clientsCreated.length) logger.info(`Seeded companies: ${clientsCreated.join(', ')}`);
   return { created, backfilled, clientsCreated, linked: migration.linked };
+}
+
+/**
+ * Idempotent legacy transitions run on every boot after seed actor is known.
+ * Organizational rollout sign-off is out of scope — this only persists data fixes.
+ */
+export async function runLegacyMigrations(_actor) {
+  const roles = await migrateLegacyUserRoles();
+  const teams = await migrateAllLegacyProjectTeams();
+
+  if (roles.migrated) logger.info(`Migrated legacy user roles: ${roles.migrated}`);
+  if (teams.migrated) logger.info(`Migrated legacy project teams: ${teams.migrated}`);
+
+  return { roles, teams };
 }

@@ -2,6 +2,9 @@ import {
   canTransition, stageIndex, stageLabel,
   GUARD_ESTIMATES_FROM_INDEX, GUARD_OWNERSHIP_FROM_INDEX,
   validateTicketEstimateDates, isExternalUser, REOPEN_TARGET,
+  hasActiveScopedConstraints, canInScope,
+  EXTERNAL_ACCEPTANCE_PERMISSION,
+  userHasEffectivePermission,
 } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { assertActiveUsers } from '../teams/team.service.js';
@@ -12,8 +15,12 @@ import {
   resolveDefaultTester,
   resolveTicketDoc,
   getTicket,
-  assertCanEditTicket,
 } from './ticket.service.js';
+import { getEffectiveBoardRolePolicy } from '../rbac/rbac.service.js';
+import {
+  ticketScopeTarget,
+  resolvePermissionContext,
+} from '../access/scope-enforcement.js';
 
 /**
  * Layer 3, the half that needs the ticket's own fields â€” which is why it lives
@@ -64,17 +71,36 @@ export function checkGuards(to, ticket) {
   return { ok: true };
 }
 
-/** Layer 2 for this endpoint: the same relationship rule as an ordinary edit. */
-async function assertMayTransition(actor, ticket, to) {
-  const clientStageMove =
-    isExternalUser(actor)
-    && (
+/** Layer 2: external visibility gate, then scoped/internal transition rules. */
+async function assertMayTransition(actor, ticket, to, permissionContext = null) {
+  if (isExternalUser(actor)) {
+    if (!(await canExternalViewTicket(actor, ticket))) {
+      throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this ticket');
+    }
+
+    const clientStageMove =
       (ticket.status === 'live' && to === 'closed')
-      || (ticket.status === 'closed' && to === REOPEN_TARGET)
-    )
-    && (await canExternalViewTicket(actor, ticket));
-  if (!clientStageMove) {
-    assertCanEditTicket(actor, ticket);
+      || (ticket.status === 'closed' && to === REOPEN_TARGET);
+    if (!clientStageMove) {
+      throw new ApiError(
+        403,
+        'FORBIDDEN',
+        `Clients may only move Live tickets to Closed, or reopen Closed tickets to ${stageLabel(REOPEN_TARGET)}`,
+      );
+    }
+    const ctx = await resolvePermissionContext(actor, permissionContext);
+    if (!userHasEffectivePermission(actor, EXTERNAL_ACCEPTANCE_PERMISSION, ctx)) {
+      throw new ApiError(403, 'FORBIDDEN', 'Your role cannot close or reopen tickets');
+    }
+    return;
+  }
+
+  const ctx = await resolvePermissionContext(actor, permissionContext);
+  const scope = ticketScopeTarget(ticket);
+  if (hasActiveScopedConstraints(ctx.scopedAssignments)) {
+    if (!canInScope(actor, 'tickets.manage_stage', scope, ctx)) {
+      throw new ApiError(403, 'FORBIDDEN', 'Requires permission: tickets.manage_stage in scope');
+    }
   }
 }
 
@@ -117,9 +143,10 @@ function resolveEvidence(ticket, attachmentIds) {
 
 export async function transitionTicket(actor, idOrKey, {
   to, revision, note, reason, attachmentIds,
-}) {
+}, permissionContext = null) {
   const ticket = await resolveTicketDoc(idOrKey);
-  await assertMayTransition(actor, ticket, to);
+  const boardPolicy = await getEffectiveBoardRolePolicy();
+  await assertMayTransition(actor, ticket, to, permissionContext);
 
   // Replay / stale client: compare revision before canTransition so a
   // already-applied (from->to) does not surface as SAME_STAGE 400.
@@ -128,7 +155,8 @@ export async function transitionTicket(actor, idOrKey, {
   }
 
   const from = ticket.status;
-  const verdict = canTransition(from, to, actor, ticket);
+  const ctx = await resolvePermissionContext(actor, permissionContext);
+  const verdict = canTransition(from, to, actor, ticket, boardPolicy, ctx);
   if (!verdict.ok) throw new ApiError(400, verdict.code, verdict.reason);
 
   const guard = checkGuards(to, ticket);

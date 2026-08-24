@@ -115,6 +115,34 @@ export async function ensureProjectMigrated(projectId) {
   return migrateProjectTeamFromLegacy(project);
 }
 
+/**
+ * Batch migration for projects still carrying defaultTeam/defaultAssignee/defaultTester.
+ * Idempotent — safe on every boot.
+ */
+export async function migrateAllLegacyProjectTeams() {
+  const projects = await Project.find({
+    $or: [
+      { defaultTeam: { $ne: null } },
+      { defaultAssignee: { $ne: null } },
+      { defaultTester: { $ne: null } },
+    ],
+  }).select('_id');
+
+  let migrated = 0;
+  let failed = 0;
+
+  for (const row of projects) {
+    try {
+      await migrateProjectTeamFromLegacy(await Project.findById(row._id));
+      migrated += 1;
+    } catch {
+      failed += 1;
+    }
+  }
+
+  return { migrated, failed };
+}
+
 export async function assignProjectTeam(projectId, teamId) {
   const project = await ensureProjectMigrated(projectId);
   if (!teamId) {

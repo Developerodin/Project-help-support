@@ -2,23 +2,33 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { listTeams, updateMembers } from '@/shared/api/teams.js';
+import { can } from '@pms/shared';
+import { listTeams, patchTeam, updateMembers } from '@/shared/api/teams.js';
 import { listUsers } from '@/shared/api/users.js';
 import FormError from '@/shared/components/form-error.jsx';
 import ConfirmDialog from '@/shared/components/confirm-dialog.jsx';
 import Icon from '@/shared/components/icons.jsx';
+import AppLoader from '@/shared/components/app-loader.jsx';
 import TeamCard from '@/shared/components/teams/team-card.jsx';
+import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import { normalizeApiError } from '@/shared/lib/api-error.js';
 import { showToast } from '@/shared/lib/toast.js';
 
 export default function TeamsPage() {
+  const { user } = useAuth();
+  const canCreate = can(user, 'teams.create');
+  const canEdit = can(user, 'teams.edit');
+  const canDelete = can(user, 'teams.delete');
+
   const [teams, setTeams] = useState([]);
   const [users, setUsers] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [addBusyTeamId, setAddBusyTeamId] = useState(null);
   const [confirmRemove, setConfirmRemove] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
   const [removeBusy, setRemoveBusy] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [removingMemberId, setRemovingMemberId] = useState(null);
   const [search, setSearch] = useState('');
   const [scope, setScope] = useState('all');
@@ -32,9 +42,10 @@ export default function TeamsPage() {
   }, []);
 
   useEffect(() => {
+    if (!user) return;
     reload();
     listUsers({ status: 'active' }).then((p) => setUsers(p.results)).catch(() => {});
-  }, [reload]);
+  }, [user, reload]);
 
   const metrics = useMemo(() => {
     const onATeam = new Set(teams.flatMap((t) => t.members.map((m) => m.id)));
@@ -59,6 +70,7 @@ export default function TeamsPage() {
         || t.members.some((m) => m.name.toLowerCase().includes(q));
     });
   }, [teams, search, scope]);
+  const showOverview = loading || teams.length > 0;
 
   async function handleAddMembers(teamId, userIds) {
     setError(null);
@@ -103,6 +115,24 @@ export default function TeamsPage() {
     }
   }
 
+  async function confirmDeleteTeam() {
+    if (!confirmDelete) return;
+    setDeleteBusy(true);
+    setError(null);
+    try {
+      await patchTeam(confirmDelete.id, { status: 'archived' });
+      showToast(`${confirmDelete.name} deleted`);
+      setConfirmDelete(null);
+      await reload();
+    } catch (err) {
+      const message = normalizeApiError(err)?.message || 'Could not delete team';
+      setError(err);
+      showToast(message);
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
   return (
     <>
       <div className="page-head">
@@ -111,23 +141,25 @@ export default function TeamsPage() {
           <p className="sub">Route work to a group. A ticket may have a team, a person, or both.</p>
         </div>
         <span className="spacer" />
-        <Link href="/teams/new" className="btn btn-primary">
-          <Icon name="plus" size={12} /> New team
-        </Link>
+        {canCreate ? (
+          <Link href="/teams/new" className="btn btn-primary">
+            <Icon name="plus" size={12} /> New team
+          </Link>
+        ) : null}
       </div>
       <FormError error={error} />
 
-      {!loading && teams.length > 0 && (
+      {showOverview && (
         <>
           <dl className="teams-metrics">
-            <div><dt>Teams</dt><dd>{metrics.teams}</dd></div>
-            <div><dt>People on a team</dt><dd>{metrics.people}</dd></div>
-            <div><dt>Open tickets</dt><dd>{metrics.openTickets}</dd></div>
+            <div><dt>Teams</dt><dd>{loading ? '—' : metrics.teams}</dd></div>
+            <div><dt>People on a team</dt><dd>{loading ? '—' : metrics.people}</dd></div>
+            <div><dt>Open tickets</dt><dd>{loading ? '—' : metrics.openTickets}</dd></div>
             <div>
               <dt>Overdue</dt>
-              <dd className={metrics.overdue ? 'team-panel__overdue' : undefined}>{metrics.overdue}</dd>
+              <dd className={!loading && metrics.overdue ? 'team-panel__overdue' : undefined}>{loading ? '—' : metrics.overdue}</dd>
             </div>
-            <div><dt>Not on a team</dt><dd>{metrics.unassigned}</dd></div>
+            <div><dt>Not on a team</dt><dd>{loading ? '—' : metrics.unassigned}</dd></div>
           </dl>
 
           <div className="teams-filters">
@@ -137,8 +169,9 @@ export default function TeamsPage() {
               aria-label="Search teams"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              disabled={loading}
             />
-            <select aria-label="Scope" value={scope} onChange={(e) => setScope(e.target.value)}>
+            <select aria-label="Scope" value={scope} onChange={(e) => setScope(e.target.value)} disabled={loading}>
               <option value="all">All teams</option>
               <option value="global">Global teams</option>
               <option value="project">Project teams</option>
@@ -149,12 +182,16 @@ export default function TeamsPage() {
       )}
 
       {loading ? (
-        <p className="meta" role="status">Loading teams…</p>
+        <div className="loading-skeleton" aria-busy="true">
+          <AppLoader inline label="Loading teams…" ariaLabel="Loading teams" />
+        </div>
       ) : teams.length === 0 ? (
         <div className="empty-state">
           <h3>No teams yet</h3>
           <p>Create a team to route tickets to a group. Teams can be global or scoped to one project.</p>
-          <Link href="/teams/new" className="btn btn-primary">New team</Link>
+          {canCreate ? (
+            <Link href="/teams/new" className="btn btn-primary">New team</Link>
+          ) : null}
         </div>
       ) : visibleTeams.length === 0 ? (
         <div className="empty-state">
@@ -171,8 +208,11 @@ export default function TeamsPage() {
               key={team.id}
               team={team}
               users={users}
-              onAddMembers={handleAddMembers}
-              onRequestRemove={requestRemove}
+              canEdit={canEdit}
+              canDelete={canDelete}
+              onAddMembers={canEdit ? handleAddMembers : undefined}
+              onRequestRemove={canEdit ? requestRemove : undefined}
+              onDelete={canDelete ? () => setConfirmDelete(team) : undefined}
               addBusy={addBusyTeamId === team.id}
               removingMemberId={confirmRemove?.team.id === team.id ? removingMemberId : null}
             />
@@ -192,6 +232,20 @@ export default function TeamsPage() {
         busy={removeBusy}
         onConfirm={confirmRemoveMember}
         onCancel={() => { if (!removeBusy) setConfirmRemove(null); }}
+      />
+
+      <ConfirmDialog
+        open={Boolean(confirmDelete)}
+        title={confirmDelete ? `Delete ${confirmDelete.name}?` : ''}
+        message={confirmDelete
+          ? 'This archives the team. Tickets already assigned keep their history.'
+          : ''}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        danger
+        busy={deleteBusy}
+        onConfirm={confirmDeleteTeam}
+        onCancel={() => { if (!deleteBusy) setConfirmDelete(null); }}
       />
     </>
   );

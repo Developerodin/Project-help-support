@@ -10,7 +10,7 @@ export const list = catchAsync(async (req, res) => {
 });
 
 export const create = (config) => catchAsync(async (req, res) => {
-  const ticket = await ticketService.createTicket(req.user, req.body);
+  const ticket = await ticketService.createTicket(req.user, req.body, req.permissionContext);
   res.status(201).json(ticket);
 
   // After the response. A notification failure must never turn a successful
@@ -23,11 +23,11 @@ export const create = (config) => catchAsync(async (req, res) => {
 });
 
 export const get = catchAsync(async (req, res) => {
-  res.json(await ticketService.getTicket(req.user, req.params.id));
+  res.json(await ticketService.getTicket(req.user, req.params.id, req.permissionContext));
 });
 
 export const patch = (config) => catchAsync(async (req, res) => {
-  const ticket = await ticketService.patchTicket(req.user, req.params.id, req.body);
+  const ticket = await ticketService.patchTicket(req.user, req.params.id, req.body, req.permissionContext);
   res.json(ticket);
 
   const estimatePatched = 'estimatedResolutionAt' in req.body || 'expectedReleaseDate' in req.body;
@@ -41,7 +41,7 @@ export const patch = (config) => catchAsync(async (req, res) => {
 });
 
 export const assign = (config) => catchAsync(async (req, res) => {
-  const ticket = await ticketService.assignTicket(req.user, req.params.id, req.body);
+  const ticket = await ticketService.assignTicket(req.user, req.params.id, req.body, req.permissionContext);
   res.json(ticket);
 
   const doc = await ticketService.resolveTicketDoc(ticket.id);
@@ -60,24 +60,24 @@ export const unwatch = catchAsync(async (req, res) => {
 });
 
 export const setBlocked = catchAsync(async (req, res) => {
-  res.json(await ticketService.setBlocked(req.user, req.params.id, req.body));
+  res.json(await ticketService.setBlocked(req.user, req.params.id, req.body, req.permissionContext));
 });
 
 export const clearBlocked = catchAsync(async (req, res) => {
-  res.json(await ticketService.clearBlocked(req.user, req.params.id, req.body));
+  res.json(await ticketService.clearBlocked(req.user, req.params.id, req.body, req.permissionContext));
 });
 
 export const remove = catchAsync(async (req, res) => {
-  res.json(await ticketService.deleteTicket(req.params.id));
+  res.json(await ticketService.deleteTicket(req.params.id, req.user, req.permissionContext));
 });
 
 export const bulk = catchAsync(async (req, res) => {
-  res.json(await ticketService.bulkTickets(req.user, req.body));
+  res.json(await ticketService.bulkTickets(req.user, req.body, req.permissionContext));
 });
 
 export const transition = (config) => catchAsync(async (req, res) => {
   const { ticket, event } = await transitionService.transitionTicket(
-    req.user, req.params.id, req.body,
+    req.user, req.params.id, req.body, req.permissionContext,
   );
   res.json(ticket);
 

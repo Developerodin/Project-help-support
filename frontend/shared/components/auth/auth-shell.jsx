@@ -1,20 +1,21 @@
-import { BRAND_NAME, BRAND_TAGLINE, BRAND_DESCRIPTION } from '@/shared/lib/brand.js';
+'use client';
+
+import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import AuthBackground from './auth-background.jsx';
 import BrandMark from '@/shared/components/brand-mark.jsx';
+import { brandDescription, formatBrandDisplayName } from '@/shared/lib/branding.js';
 
 export function AuthBrand() {
+  const { effectiveBranding } = useAuth();
+  const name = formatBrandDisplayName(effectiveBranding?.name);
+
   return (
     <header className="auth-header">
       <div className="brand">
-        <BrandMark />
-        {/* Two spans, one wordmark: the phone stacks them, the desktop wraps
-            them as the single line of prose it has always been. */}
-        <b>
-          <span className="brand-lead">{BRAND_NAME}</span>{' '}
-          <span className="brand-tail">{BRAND_TAGLINE}</span>
-        </b>
+        <BrandMark logoUrl={effectiveBranding?.logoUrl} />
+        <b>{name}</b>
       </div>
-      <p className="auth-header__sub">{BRAND_DESCRIPTION}</p>
+      <p className="auth-header__sub">{brandDescription(effectiveBranding)}</p>
     </header>
   );
 }

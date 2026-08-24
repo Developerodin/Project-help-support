@@ -1,4 +1,10 @@
-import { isExternalUser } from '@pms/shared';
+import {
+  isExternalUser,
+  hasActiveScopedConstraints,
+  isAssignmentEffectivelyActive,
+  assignmentRoleHasPermission,
+  normaliseAssignmentScope,
+} from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
 import { safeKey, sniffImageType } from '../../platform/upload.js';
@@ -9,6 +15,11 @@ import {
   syncCompanyExternalAccess,
   permittedClientIdsForExternalUser,
 } from '../access/external-auth.service.js';
+import {
+  assertScopedPermissionWhenConstrained,
+  clientScopeTarget,
+  resolvePermissionContext,
+} from '../access/scope-enforcement.js';
 import Client from './client.model.js';
 
 async function attachLogoUrl(config, clientJson) {
@@ -38,9 +49,16 @@ async function enrichClient(config, clientDoc, projectCount = null) {
   return attachLogoUrl(config, { ...json, projectCount: count });
 }
 
-export async function createClient(actor, body, config) {
+export async function createClient(actor, body, config, permissionContext = null) {
   const name = String(body.name || '').trim();
   if (!name) throw new ApiError(400, 'CLIENT_NAME_REQUIRED', 'Company name is required');
+
+  await assertScopedPermissionWhenConstrained(
+    actor,
+    'clients.manage',
+    clientScopeTarget(null),
+    permissionContext,
+  );
 
   if (await Client.exists({ name, status: 'active' })) {
     throw new ApiError(409, 'CLIENT_NAME_TAKEN', 'An active company with this name already exists');
@@ -64,7 +82,7 @@ export async function createClient(actor, body, config) {
   return enriched;
 }
 
-export async function listClients(query = {}, config, actor = null) {
+export async function listClients(query = {}, config, actor = null, permissionContext = null) {
   const filter = {};
   if (query.status) filter.status = query.status;
 
@@ -80,6 +98,27 @@ export async function listClients(query = {}, config, actor = null) {
       };
     }
     filter._id = { $in: clientIds };
+  } else if (actor) {
+    const ctx = await resolvePermissionContext(actor, permissionContext);
+    if (hasActiveScopedConstraints(ctx.scopedAssignments)) {
+      const permittedIds = new Set();
+      for (const row of ctx.scopedAssignments) {
+        if (!isAssignmentEffectivelyActive(row)) continue;
+        if (!assignmentRoleHasPermission(row, 'clients.view', ctx.roleMatrix)) continue;
+        const { client } = normaliseAssignmentScope(row);
+        if (client) permittedIds.add(String(client));
+      }
+      if (!permittedIds.size) {
+        return {
+          results: [],
+          page: Number(query.page) || 1,
+          limit: Number(query.limit) || 20,
+          totalPages: 0,
+          totalResults: 0,
+        };
+      }
+      filter._id = { $in: [...permittedIds] };
+    }
   }
 
   const page = await paginate(Client, filter, {
@@ -96,7 +135,7 @@ export async function listClients(query = {}, config, actor = null) {
   return { ...page, results };
 }
 
-export async function getClient(id, config, actor = null) {
+export async function getClient(id, config, actor = null, permissionContext = null) {
   const client = await Client.findById(id);
   if (!client) throw new ApiError(404, 'CLIENT_NOT_FOUND', 'Company not found');
 
@@ -105,15 +144,29 @@ export async function getClient(id, config, actor = null) {
     if (!permitted.includes(String(id))) {
       throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this company');
     }
+  } else if (actor) {
+    await assertScopedPermissionWhenConstrained(
+      actor,
+      'clients.view',
+      clientScopeTarget(id),
+      permissionContext,
+    );
   }
   const enriched = await enrichClient(config, client);
   enriched.externalAccess = await getCompanyExternalAccess(client._id);
   return enriched;
 }
 
-export async function updateClient(actor, id, body, config) {
+export async function updateClient(actor, id, body, config, permissionContext = null) {
   const client = await Client.findById(id);
   if (!client) throw new ApiError(404, 'CLIENT_NOT_FOUND', 'Company not found');
+
+  await assertScopedPermissionWhenConstrained(
+    actor,
+    'clients.manage',
+    clientScopeTarget(id),
+    permissionContext,
+  );
 
   if (body.name !== undefined) {
     const name = String(body.name).trim();

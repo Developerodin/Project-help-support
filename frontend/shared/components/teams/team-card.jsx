@@ -8,8 +8,11 @@ import MemberPicker from '@/shared/components/teams/member-picker.jsx';
 export default function TeamCard({
   team,
   users,
+  canEdit = false,
+  canDelete = false,
   onAddMembers,
   onRequestRemove,
+  onDelete,
   addBusy = false,
   removingMemberId = null,
 }) {
@@ -24,7 +27,14 @@ export default function TeamCard({
       <header>
         <h3>{team.name}</h3>
         <span className="spacer" />
-        <Link href={`/teams/${team.id}/edit`} className="btn btn-ghost btn-sm">Edit</Link>
+        {canEdit ? (
+          <Link href={`/teams/${team.id}/edit`} className="btn btn-ghost btn-sm">Edit</Link>
+        ) : null}
+        {canDelete ? (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => onDelete?.()}>
+            Delete
+          </button>
+        ) : null}
         <span className="chip">{team.project ? team.project.key : 'global'}</span>
       </header>
 
@@ -85,23 +95,25 @@ export default function TeamCard({
                 <li key={member.id} className="member-chip">
                   <span className="avatar sm" title={member.name}>{initials(member.name)}</span>
                   <span className="member-chip__name">{member.name}</span>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm member-chip__remove"
-                    aria-label={`Remove ${member.name}`}
-                    disabled={removing || addBusy}
-                    aria-busy={removing || undefined}
-                    onClick={() => onRequestRemove(team, member)}
-                  >
-                    {removing ? (
-                      <>
-                        <span className="btn-spin" aria-hidden="true" />
-                        Removing…
-                      </>
-                    ) : (
-                      'Remove'
-                    )}
-                  </button>
+                  {canEdit ? (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm member-chip__remove"
+                      aria-label={`Remove ${member.name}`}
+                      disabled={removing || addBusy}
+                      aria-busy={removing || undefined}
+                      onClick={() => onRequestRemove?.(team, member)}
+                    >
+                      {removing ? (
+                        <>
+                          <span className="btn-spin" aria-hidden="true" />
+                          Removing…
+                        </>
+                      ) : (
+                        'Remove'
+                      )}
+                    </button>
+                  ) : null}
                 </li>
               );
             })}
@@ -109,16 +121,18 @@ export default function TeamCard({
         )}
       </div>
 
-      <div className="team-panel__add">
-        <MemberPicker
-          available={available}
-          busy={addBusy}
-          onConfirm={(ids) => onAddMembers(team.id, ids)}
-        />
-        {available.length === 0 && team.members.length > 0 && (
-          <p className="field-hint">Everyone active is already on this team.</p>
-        )}
-      </div>
+      {canEdit ? (
+        <div className="team-panel__add">
+          <MemberPicker
+            available={available}
+            busy={addBusy}
+            onConfirm={(ids) => onAddMembers?.(team.id, ids)}
+          />
+          {available.length === 0 && team.members.length > 0 && (
+            <p className="field-hint">Everyone active is already on this team.</p>
+          )}
+        </div>
+      ) : null}
     </section>
   );
 }

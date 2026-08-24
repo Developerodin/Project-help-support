@@ -71,17 +71,18 @@ export function getTransitionFieldErrors(error, ticket) {
   if (!error) return null;
 
   if (error.fields && typeof error.fields === 'object') {
+    if (error.code === 'ESTIMATES_REQUIRED') {
+      const fields = {};
+      for (const key of Object.keys(error.fields)) fields[key] = '';
+      return Object.keys(fields).length ? fields : null;
+    }
     return error.fields;
   }
 
   if (error.code === 'ESTIMATES_REQUIRED' && ticket) {
     const fields = {};
-    if (!ticket.estimatedResolutionAt) {
-      fields.estimatedResolutionAt = 'Required before moving to In Progress';
-    }
-    if (!ticket.expectedReleaseDate) {
-      fields.expectedReleaseDate = 'Required before moving to In Progress';
-    }
+    if (!ticket.estimatedResolutionAt) fields.estimatedResolutionAt = '';
+    if (!ticket.expectedReleaseDate) fields.expectedReleaseDate = '';
     return Object.keys(fields).length ? fields : null;
   }
 

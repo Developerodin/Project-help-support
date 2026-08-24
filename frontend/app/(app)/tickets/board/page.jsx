@@ -11,11 +11,16 @@ import {
   canTransition,
   getBoardDragBlockReason,
   getBoardMoveBlockReason,
+  getBoardMoveTargets,
   getBoardReadOnlyNotice,
 } from '@pms/shared';
 import { listTickets, transitionTicket, getTicket } from '@/shared/api/tickets.js';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import { useProject } from '@/shared/contexts/project-context.jsx';
+import { useTicketPreferences } from '@/shared/contexts/ticket-preferences-context.jsx';
+import { buildTicketListQuery } from '@/shared/lib/ticket-list-query.js';
+import { useBoardPolicy } from '@/shared/hooks/use-board-policy.js';
+import { usePermissionContext } from '@/shared/hooks/use-permission-context.js';
 import { ticketFromSearch, withTicketParam, withoutTicketParam } from '@/shared/lib/deep-link.js';
 import { friendlyTransitionError, OWNERSHIP_REQUIRED_MESSAGE } from '@/shared/lib/api-error.js';
 import BoardLane from '@/shared/components/tickets/board-lane.jsx';
@@ -26,9 +31,16 @@ import Icon from '@/shared/components/icons.jsx';
 
 function BoardPage() {
   const { user } = useAuth();
+  const { policy: boardPolicy } = useBoardPolicy();
+  const { permissionContext } = usePermissionContext();
   const { activeProjectId } = useProject();
+  const {
+    ready,
+    preferences,
+    boardMine,
+    setBoardMine,
+  } = useTicketPreferences();
   const [tickets, setTickets] = useState([]);
-  const [mine, setMine] = useState(false);
   const [openTicketId, setOpenTicketId] = useState(null);
   const [error, setError] = useState(null);
   const [readOnlyNoticeDismissed, setReadOnlyNoticeDismissed] = useState(false);
@@ -38,34 +50,36 @@ function BoardPage() {
   const [remarkText, setRemarkText] = useState('');
   const [remarkBusy, setRemarkBusy] = useState(false);
 
-  const boardInteractive = canInteractWithBoard(user);
-  const readOnlyNotice = useMemo(() => getBoardReadOnlyNotice(user), [user]);
+  const boardInteractive = canInteractWithBoard(user, boardPolicy, permissionContext);
+  const readOnlyNotice = useMemo(
+    () => getBoardReadOnlyNotice(user, boardPolicy),
+    [user, boardPolicy],
+  );
   const showReadOnlyOverlay = Boolean(readOnlyNotice) && !readOnlyNoticeDismissed;
 
   const reload = useCallback(() => {
-    // A board has to lane EVERY ticket, so it pages through rather than stopping
-    // at the API's 100-row ceiling and silently hiding the rest.
-    // ponytail: capped at 10 pages. Past 1000 tickets a board is the wrong tool
-    // and this wants server-side lane counts instead of fetching the lot.
+    if (!ready) return undefined;
     const loadAll = async () => {
       const all = [];
+      const baseQuery = buildTicketListQuery({
+        preferences,
+        projectId: activeProjectId,
+        scopeOverride: boardMine ? 'assigned' : preferences.filters.scope,
+      });
       for (let p = 1; p <= 10; p += 1) {
         // eslint-disable-next-line no-await-in-loop -- page N+1 needs N's totalPages
-        const res = await listTickets({
-          limit: 100,
-          page: p,
-          scope: mine ? 'assigned' : 'all',
-          project: activeProjectId || undefined,
-        });
+        const res = await listTickets({ ...baseQuery, page: p, limit: 100 });
         all.push(...res.results);
         if (p >= (res.totalPages || 1)) break;
       }
       return all;
     };
-    loadAll().then(setTickets);
-  }, [mine, activeProjectId]);
+    return loadAll().then(setTickets);
+  }, [ready, preferences, boardMine, activeProjectId]);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    if (ready) reload();
+  }, [reload, ready]);
   useEffect(() => { setOpenTicketId(ticketFromSearch(window.location.search)); }, []);
 
   const byLane = useMemo(() => {
@@ -100,7 +114,9 @@ function BoardPage() {
       const cached = ticketById[ticketId];
       const current = cached || await getTicket(ticketId);
 
-      const blockReason = getBoardMoveBlockReason(user, current, to);
+      const blockReason = getBoardMoveBlockReason(
+        user, current, to, boardPolicy, permissionContext,
+      );
       if (blockReason) {
         showMoveError(blockReason);
         return;
@@ -115,7 +131,9 @@ function BoardPage() {
         return;
       }
 
-      const verdict = canTransition(current.status, to, user, current);
+      const verdict = canTransition(
+        current.status, to, user, current, boardPolicy, permissionContext,
+      );
       if (verdict.isClose || verdict.isReopen) {
         setPendingAction({
           ticketId, to, revision: current.revision, kind: verdict.isReopen ? 'note' : 'reason',
@@ -155,7 +173,9 @@ function BoardPage() {
   }
 
   function onBlockedDrag(ticket) {
-    const blockReason = getBoardDragBlockReason(user, ticket);
+    const blockReason = getBoardDragBlockReason(
+      user, ticket, boardPolicy, permissionContext,
+    );
     if (blockReason) showMoveError(blockReason);
   }
 
@@ -182,8 +202,8 @@ function BoardPage() {
 
       <div className="toolbar">
         <div className="seg" role="group" aria-label="Whose tickets">
-          <button type="button" aria-pressed={!mine} onClick={() => setMine(false)}>Everyone</button>
-          <button type="button" aria-pressed={mine} onClick={() => setMine(true)}>Mine</button>
+          <button type="button" aria-pressed={!boardMine} onClick={() => setBoardMine(false)}>Everyone</button>
+          <button type="button" aria-pressed={boardMine} onClick={() => setBoardMine(true)}>Mine</button>
         </div>
         <span className="resultline num">{tickets.length} tickets</span>
         <span className="spacer" />
@@ -232,8 +252,13 @@ function BoardPage() {
               tickets={byLane[lane.key] || []}
               onOpen={open}
               onDropTicket={onDropTicket}
+              getMoveTargets={(ticket) => getBoardMoveTargets(
+                user, ticket, boardPolicy, permissionContext,
+              )}
               canDrop={boardInteractive}
-              canDragTicket={(ticket) => canDragTicket(user, ticket)}
+              canDragTicket={(ticket) => canDragTicket(
+                user, ticket, boardPolicy, permissionContext,
+              )}
               onBlockedDrag={onBlockedDrag}
             />
           ))}

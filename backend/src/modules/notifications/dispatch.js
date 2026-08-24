@@ -144,7 +144,7 @@ async function sendPlain(config, deps, message) {
   try {
     await transport.sendMail({
       from: config.email.from,
-      attachments: brandAttachments(),
+      attachments: brandAttachments(config),
       ...message,
     });
   } catch (err) {

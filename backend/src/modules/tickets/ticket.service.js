@@ -9,6 +9,8 @@ import {
   can,
   hasAnyRole,
   isExternalUser,
+  hasActiveScopedConstraints,
+  canInScope,
 } from '@pms/shared';
 import { canExternalViewTicket, buildExternalTicketFilter, sanitizeExternalTicket, assertExternalCanCreateTicket } from '../access/external-auth.service.js';
 import { ApiError } from '../../platform/errors.js';
@@ -22,9 +24,14 @@ import {
 } from '../projects/project-team-member.service.js';
 import Team from '../teams/team.model.js';
 import { assertTeamUsable, assertActiveUsers } from '../teams/team.service.js';
+import {
+  assertScopedPermissionWhenConstrained,
+  ticketScopeTarget,
+  resolvePermissionContext,
+} from '../access/scope-enforcement.js';
 import Ticket from './ticket.model.js';
 
-export async function createTicket(actor, body) {
+export async function createTicket(actor, body, permissionContext = null) {
   const project = await Project.findById(body.project);
   if (!project) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
   if (project.status !== 'active') {
@@ -32,6 +39,14 @@ export async function createTicket(actor, body) {
   }
 
   await assertExternalCanCreateTicket(actor, project._id);
+  if (!isExternalUser(actor)) {
+    await assertScopedPermissionWhenConstrained(
+      actor,
+      'tickets.create',
+      { clientId: project.client, projectId: project._id, environment: body.environment ?? null },
+      permissionContext,
+    );
+  }
 
   assertModuleAndPage(project, body.module, body.page);
 
@@ -147,9 +162,9 @@ export async function resolveTicketDoc(idOrKey, { populate = [], lean = false } 
   return ticket;
 }
 
-export async function getTicket(actor, idOrKey) {
+export async function getTicket(actor, idOrKey, permissionContext = null) {
   const ticket = await resolveTicketDoc(idOrKey, { populate: DETAIL_POPULATE });
-  await assertCanViewTicket(actor, ticket);
+  await assertCanViewTicket(actor, ticket, permissionContext);
   const json = ticket.toJSON();
   return isExternalUser(actor) ? sanitizeExternalTicket(json, { viewerId: actor._id }) : json;
 }
@@ -254,8 +269,128 @@ export async function buildTicketFilter(actor, query = {}) {
   return applyTicketVisibility(filter, actor);
 }
 
+const TICKET_OBJECT_ID_FIELDS = new Set([
+  '_id', 'project', 'team', 'assignedTo', 'testedBy', 'createdBy', 'blockedBy', 'watchers',
+]);
+
+function castObjectIdLike(value) {
+  if (value == null) return value;
+  if (value instanceof mongoose.Types.ObjectId) return value;
+  if (typeof value === 'string' && mongoose.Types.ObjectId.isValid(value)) {
+    return new mongoose.Types.ObjectId(value);
+  }
+  return value;
+}
+
+function castObjectIdOperands(value) {
+  return Array.isArray(value) ? value.map(castObjectIdLike) : castObjectIdLike(value);
+}
+
+/** countDocuments casts string refs; aggregate $match does not — align semantics. */
+function normalizeFilterForAggregate(filter) {
+  if (filter == null || typeof filter !== 'object') return filter;
+  if (Array.isArray(filter)) return filter.map((entry) => normalizeFilterForAggregate(entry));
+
+  const normalized = {};
+  for (const [key, value] of Object.entries(filter)) {
+    if (key.startsWith('$')) {
+      if (key === '$and' || key === '$or' || key === '$nor') {
+        normalized[key] = value.map((entry) => normalizeFilterForAggregate(entry));
+      } else {
+        normalized[key] = normalizeFilterForAggregate(value);
+      }
+      continue;
+    }
+
+    if (TICKET_OBJECT_ID_FIELDS.has(key)) {
+      if (
+        value != null
+        && typeof value === 'object'
+        && !Array.isArray(value)
+        && !(value instanceof Date)
+        && !(value instanceof mongoose.Types.ObjectId)
+      ) {
+        const operand = {};
+        for (const [op, opValue] of Object.entries(value)) {
+          operand[op] = (op === '$in' || op === '$nin' || op === '$eq' || op === '$ne')
+            ? castObjectIdOperands(opValue)
+            : normalizeFilterForAggregate(opValue);
+        }
+        normalized[key] = operand;
+      } else {
+        normalized[key] = castObjectIdLike(value);
+      }
+    } else {
+      normalized[key] = normalizeFilterForAggregate(value);
+    }
+  }
+  return normalized;
+}
+
+async function paginateTickets(model, filter, options = {}) {
+  const sortBy = options.sortBy;
+  const ticketIdSort = sortBy?.startsWith('ticketId:');
+  if (!ticketIdSort) {
+    return paginate(model, filter, options);
+  }
+
+  const direction = sortBy.endsWith(':asc') ? 1 : -1;
+  const page = Math.max(1, Number(options.page) || 1);
+  const limit = Math.min(100, Math.max(1, Number(options.limit) || 20));
+  const skip = (page - 1) * limit;
+  const matchFilter = normalizeFilterForAggregate(filter);
+
+  const [totalResults, idRows] = await Promise.all([
+    model.countDocuments(filter).exec(),
+    model.aggregate([
+      { $match: matchFilter },
+      {
+        $addFields: {
+          ticketSeq: {
+            $convert: {
+              input: { $arrayElemAt: [{ $split: ['$ticketId', '-'] }, -1] },
+              to: 'int',
+              onError: 0,
+            },
+          },
+        },
+      },
+      { $sort: { ticketSeq: direction, createdAt: -1 } },
+      { $skip: skip },
+      { $limit: limit },
+      { $project: { _id: 1 } },
+    ]),
+  ]);
+
+  const ids = idRows.map((row) => row._id);
+  if (ids.length === 0) {
+    return {
+      results: [],
+      page,
+      limit,
+      totalPages: Math.ceil(totalResults / limit) || 1,
+      totalResults,
+    };
+  }
+
+  let query = model.find({ _id: { $in: ids } });
+  if (options.select) query = query.select(options.select);
+  for (const path of options.populate || []) query = query.populate(path);
+  const fetched = await query.exec();
+  const order = new Map(ids.map((id, index) => [String(id), index]));
+  fetched.sort((a, b) => order.get(String(a._id)) - order.get(String(b._id)));
+
+  return {
+    results: fetched,
+    page,
+    limit,
+    totalPages: Math.ceil(totalResults / limit) || 1,
+    totalResults,
+  };
+}
+
 export async function listTickets(actor, query = {}) {
-  const page = await paginate(Ticket, await buildTicketFilter(actor, query), {
+  const page = await paginateTickets(Ticket, await buildTicketFilter(actor, query), {
     page: query.page,
     limit: query.limit,
     sortBy: query.sortBy || 'createdAt:desc',
@@ -311,9 +446,18 @@ async function isActorOnTicketTeam(actorId, ticket) {
     || (team.members || []).some((member) => sameId(member, actorId));
 }
 
-export async function assertCanViewTicket(actor, ticket) {
+export async function assertCanViewTicket(actor, ticket, permissionContext = null) {
   if (isExternalUser(actor)) {
     if (!(await canExternalViewTicket(actor, ticket))) {
+      throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this ticket');
+    }
+    return;
+  }
+
+  const ctx = await resolvePermissionContext(actor, permissionContext);
+  const scope = ticketScopeTarget(ticket);
+  if (hasActiveScopedConstraints(ctx.scopedAssignments)) {
+    if (!canInScope(actor, 'tickets.view', scope, ctx)) {
       throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this ticket');
     }
     return;
@@ -335,7 +479,21 @@ export async function assertCanViewTicket(actor, ticket) {
   );
 }
 
-export function assertCanEditTicket(actor, ticket) {
+export async function assertCanEditTicket(actor, ticket, permissionContext = null) {
+  if (isExternalUser(actor)) return;
+
+  const ctx = await resolvePermissionContext(actor, permissionContext);
+  const scope = ticketScopeTarget(ticket);
+  if (hasActiveScopedConstraints(ctx.scopedAssignments)) {
+    if (!canInScope(actor, 'tickets.edit', scope, ctx)) {
+      throw new ApiError(
+        403, 'FORBIDDEN',
+        'You do not have permission to edit this ticket in this scope',
+      );
+    }
+    return;
+  }
+
   const privileged = hasAnyRole(actor, ...ADMIN_ROLES, ROLE_IDS.PROJECT_ADMIN);
   const related = sameId(ticket.createdBy, actor._id) || sameId(ticket.assignedTo, actor._id);
 
@@ -386,10 +544,10 @@ async function applyConditionalUpdate(ticket, revision, update) {
   return written;
 }
 
-export async function patchTicket(actor, idOrKey, body) {
+export async function patchTicket(actor, idOrKey, body, permissionContext = null) {
   const { revision, ...rest } = body;
   const ticket = await resolveTicketDoc(idOrKey);
-  assertCanEditTicket(actor, ticket);
+  await assertCanEditTicket(actor, ticket, permissionContext);
 
   const patch = {};
   const changes = [];
@@ -443,10 +601,16 @@ export async function patchTicket(actor, idOrKey, body) {
   return written.toJSON();
 }
 
-export async function assignTicket(actor, idOrKey, { assignedTo, team, revision }) {
+export async function assignTicket(actor, idOrKey, { assignedTo, team, revision }, permissionContext = null) {
   const ticket = await resolveTicketDoc(idOrKey);
 
-  if (!hasAnyRole(actor, ...ADMIN_ROLES, ROLE_IDS.PROJECT_ADMIN)) {
+  const ctx = await resolvePermissionContext(actor, permissionContext);
+  const scope = ticketScopeTarget(ticket);
+  if (hasActiveScopedConstraints(ctx.scopedAssignments)) {
+    if (!canInScope(actor, 'tickets.manage_assignment', scope, ctx)) {
+      throw new ApiError(403, 'FORBIDDEN', 'Requires permission: tickets.manage_assignment in scope');
+    }
+  } else if (!hasAnyRole(actor, ...ADMIN_ROLES, ROLE_IDS.PROJECT_ADMIN)) {
     throw new ApiError(403, 'FORBIDDEN', 'Only a project admin or an admin may assign tickets');
   }
 
@@ -499,9 +663,9 @@ export async function unwatchTicket(actor, idOrKey) {
  * Blocked is orthogonal to stage. Set/clear are revisioned so two people
  * cannot silently overwrite each other's triage note.
  */
-export async function setBlocked(actor, idOrKey, { revision, reason }) {
+export async function setBlocked(actor, idOrKey, { revision, reason }, permissionContext = null) {
   const ticket = await resolveTicketDoc(idOrKey);
-  assertCanEditTicket(actor, ticket);
+  await assertCanEditTicket(actor, ticket, permissionContext);
 
   const note = String(reason || '').trim();
   if (!note) {
@@ -533,9 +697,9 @@ export async function setBlocked(actor, idOrKey, { revision, reason }) {
   return written.toJSON();
 }
 
-export async function clearBlocked(actor, idOrKey, { revision }) {
+export async function clearBlocked(actor, idOrKey, { revision }, permissionContext = null) {
   const ticket = await resolveTicketDoc(idOrKey);
-  assertCanEditTicket(actor, ticket);
+  await assertCanEditTicket(actor, ticket, permissionContext);
 
   if (!ticket.blocked) {
     throw new ApiError(400, 'NOT_BLOCKED', 'This ticket is not blocked');
@@ -561,8 +725,16 @@ export async function clearBlocked(actor, idOrKey, { revision }) {
   return written.toJSON();
 }
 
-export async function deleteTicket(idOrKey) {
+export async function deleteTicket(idOrKey, actor = null, permissionContext = null) {
   const ticket = await resolveTicketDoc(idOrKey);
+  if (actor) {
+    await assertScopedPermissionWhenConstrained(
+      actor,
+      'tickets.delete',
+      ticketScopeTarget(ticket),
+      permissionContext,
+    );
+  }
   await Ticket.deleteOne({ _id: ticket._id });
   return { id: String(ticket._id), ticketId: ticket.ticketId };
 }
@@ -572,7 +744,7 @@ export async function deleteTicket(idOrKey) {
  * results — rather than failing the batch — is what makes a mixed-permission
  * selection legible instead of mysterious.
  */
-export async function bulkTickets(actor, { action, ids, assignedTo, team }) {
+export async function bulkTickets(actor, { action, ids, assignedTo, team }, permissionContext = null) {
   const results = [];
 
   for (const id of ids) {
@@ -581,13 +753,13 @@ export async function bulkTickets(actor, { action, ids, assignedTo, team }) {
         if (!hasAnyRole(actor, ...ADMIN_ROLES)) {
           throw new ApiError(403, 'FORBIDDEN', 'Only an admin may delete tickets');
         }
-        const removed = await deleteTicket(id);
+        const removed = await deleteTicket(id, actor, permissionContext);
         results.push({ id, ok: true, ticketId: removed.ticketId });
       } else {
         const current = await resolveTicketDoc(id);
         const updated = await assignTicket(actor, id, {
           assignedTo, team, revision: current.revision,
-        });
+        }, permissionContext);
         results.push({ id, ok: true, ticketId: updated.ticketId });
       }
     } catch (err) {

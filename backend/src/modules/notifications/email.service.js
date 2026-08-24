@@ -48,7 +48,7 @@ async function attempt(row, transport) {
       html: row.html,
       // The brand mark rides along as an inline attachment; the layout renders
       // it as cid:prowplus-icon so it survives remote-image blocking.
-      attachments: brandAttachments(),
+      attachments: brandAttachments(config),
     });
 
     await EmailLog.updateOne({ _id: row._id }, {

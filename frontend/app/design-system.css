@@ -560,6 +560,13 @@ main{ min-width:0; display:flex; flex-direction:column; }
   min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .card-count{ display:inline-flex; align-items:center; gap:3px; font-family:var(--mono);
   font-size:0.6875rem; color:var(--ink-3); }
+.card-shell{ display:flex; flex-direction:column; gap:4px; }
+.card-move select{
+  width:100%; font-size:0.6875rem; padding:4px 6px;
+  border:1px solid var(--line); border-radius:var(--r-sm); background:var(--panel);
+  color:var(--ink-2);
+}
+.card-move select:focus-visible{ outline:2px solid var(--sig); outline-offset:1px; }
 
 .chip{
   display:inline-flex; align-items:center; gap:4px; height:18px; padding:0 6px;

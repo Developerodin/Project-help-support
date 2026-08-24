@@ -1,6 +1,7 @@
 import Joi from 'joi';
 import {
   ROLES, NOTIFICATION_EVENTS, ROLE_IDS, PEOPLE_ASSIGNABLE_ROLES, INTERNAL_ROLES, EXTERNAL_ROLES,
+  TICKET_SORT_COLUMNS, TICKET_SCOPES, PRIORITIES, STAGE_KEYS,
 } from '@pms/shared';
 
 const objectId = Joi.string().hex().length(24);
@@ -12,11 +13,12 @@ const eventFlags = Joi.object()
 export const listUsersSchema = {
   query: Joi.object({
     role: Joi.string().valid(...ROLES),
-    status: Joi.string().valid('invited', 'active', 'inactive'),
+    status: Joi.string().valid('invited', 'active', 'inactive', 'deleted'),
     q: Joi.string().trim().max(120),
     page: Joi.number().integer().min(1),
     limit: Joi.number().integer().min(1).max(100),
     sortBy: Joi.string().max(80),
+    includeSuperAdmins: Joi.boolean().truthy('true').falsy('false'),
   }),
 };
 
@@ -68,4 +70,29 @@ export const updateMeSchema = {
 
 export const notificationPrefsSchema = {
   body: Joi.object({ email: eventFlags, inApp: eventFlags }).min(1),
+};
+
+const ticketFilterPrefs = Joi.object({
+  q: Joi.string().trim().max(200).allow(''),
+  status: Joi.string().valid('', ...STAGE_KEYS),
+  priority: Joi.string().valid('', ...PRIORITIES),
+  scope: Joi.string().valid(...TICKET_SCOPES),
+  assignedTo: objectId.allow('', null),
+  blocked: Joi.boolean(),
+  overdue: Joi.boolean(),
+  reopened: Joi.boolean(),
+});
+
+const ticketSortPrefs = Joi.object({
+  column: Joi.string().valid(...TICKET_SORT_COLUMNS, null),
+  direction: Joi.string().valid('asc', 'desc', null),
+});
+
+export const ticketPreferencesSchema = {
+  body: Joi.object({
+    filters: ticketFilterPrefs,
+    sort: ticketSortPrefs,
+    boardMine: Joi.boolean(),
+    limit: Joi.number().integer().min(1).max(100),
+  }).min(1),
 };

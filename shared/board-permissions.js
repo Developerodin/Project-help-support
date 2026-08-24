@@ -1,66 +1,254 @@
 import { ADMIN_ROLES, ROLE_IDS, ROLE_LABELS } from './enums.js';
 import { can, isExternalUser, hasAnyRole } from './permissions.js';
 import {
+  canExternalCloseReopen,
+  isPureExternalActor,
+} from './board-role-policy.js';
+import {
   canTransition,
   stageIndex,
   stageLabel,
-  STAGE_BY_KEY,
-  REOPEN_ROLES,
-  REOPEN_RELATIONSHIPS,
+  laneOf,
+  laneEntryStage,
+  LANES,
+  REOPEN_TARGET,
 } from './stages.js';
-
-/** Human labels for stage gate roles (distinct from global ROLE_IDS). */
-export const STAGE_ROLE_LABELS = Object.freeze({
-  admin: 'Admin',
-  lead: 'Project Admin',
-  qa: 'Tester',
-  developer: 'Developer',
-  assignee: 'the assignee',
-  reporter: 'the reporter',
-});
+import {
+  buildBoardRolePolicy,
+  actorHasAnyBoardCapability,
+  roleHasBoardCapability,
+  resolveTransitionCapabilities,
+  describeBoardPermittees,
+  BOARD_LABELS,
+  BOARD_CAPABILITY_LABELS,
+} from './board-role-policy.js';
 
 const CLIENT_STAGE_MOVE_HINT = 'Clients can only close Live tickets or reopen Closed tickets.';
 
 function formatPermitteeList(parts) {
   const unique = [...new Set(parts.filter(Boolean))];
-  if (unique.length === 0) return 'someone who can edit this ticket';
+  if (unique.length === 0) return 'authorized roles';
   if (unique.length === 1) return unique[0];
   if (unique.length === 2) return `${unique[0]} or ${unique[1]}`;
   return `${unique.slice(0, -1).join(', ')}, or ${unique.at(-1)}`;
 }
 
 /**
- * Describe who may move a ticket TO `stageKey` based on shared stage gate metadata.
- * Used for permission-aware board and drawer messaging.
+ * Describe who may move a ticket TO `stageKey` based on board-role policy.
  */
-export function describeStagePermittees(stageKey, { forReopen = false } = {}) {
+export function describeStagePermittees(stageKey, { forReopen = false, boardPolicy } = {}) {
+  const policy = boardPolicy || buildBoardRolePolicy();
+  const board = laneOf(stageKey);
+  if (!board) return 'authorized roles';
+
   if (forReopen) {
-    const parts = [
-      ...REOPEN_ROLES.map((role) => STAGE_ROLE_LABELS[role] || role),
-      ...REOPEN_RELATIONSHIPS.map((rel) => STAGE_ROLE_LABELS[rel] || rel),
-    ];
-    return formatPermitteeList(parts);
+    return formatPermitteeList([
+      describeBoardPermittees('qa', 'qa_reject', policy),
+      describeBoardPermittees('done', 'operate', policy),
+    ]);
   }
 
-  const stage = STAGE_BY_KEY.get(stageKey);
-  if (!stage) return 'authorized users';
+  if (stageKey === 'qa_approved') {
+    return describeBoardPermittees('qa', 'qa_approve', policy);
+  }
+  if (stageKey === 'closed') {
+    return describeBoardPermittees('done', 'operate', policy);
+  }
 
-  const parts = [
-    ...stage.roles.map((role) => STAGE_ROLE_LABELS[role] || role),
-    ...stage.relationships.map((rel) => STAGE_ROLE_LABELS[rel] || rel),
-  ];
+  return describeBoardPermittees(board, 'operate', policy);
+}
+
+/** Whether the user may drag cards or drop on lanes at all. */
+export function canInteractWithBoard(
+  actor,
+  boardPolicy = buildBoardRolePolicy(),
+  permissionContext = null,
+) {
+  if (!actor) return false;
+  if (isPureExternalActor(actor)) return canExternalCloseReopen(actor, permissionContext);
+  return actorHasAnyBoardCapability(actor, boardPolicy);
+}
+
+/** Whether this specific ticket card may be dragged. */
+export function canDragTicket(
+  actor,
+  ticket,
+  boardPolicy = buildBoardRolePolicy(),
+  permissionContext = null,
+) {
+  if (!actor || !ticket) return false;
+  if (isPureExternalActor(actor)) {
+    if (!canExternalCloseReopen(actor, permissionContext)) return false;
+    return ticket.status === 'live' || ticket.status === 'closed';
+  }
+  if (!canInteractWithBoard(actor, boardPolicy)) return false;
+  // Draggable when the actor can operate on the ticket's current board.
+  const board = laneOf(ticket.status);
+  if (!board) return false;
+  return roleHasBoardCapability(actor, board, 'operate', boardPolicy)
+    || roleHasBoardCapability(actor, board, 'transition', boardPolicy);
+}
+
+function buildBlock(code, message, extra = {}) {
+  return { code, message, ...extra };
+}
+
+function permitteeMessage(toStage, fromStatus, boardPolicy, forReopen = false) {
+  const required = forReopen
+    ? resolveTransitionCapabilities(fromStatus, REOPEN_TARGET)
+    : resolveTransitionCapabilities(fromStatus, toStage);
+  const parts = required.map(({ board, capability }) => (
+    `${describeBoardPermittees(board, capability, boardPolicy)} (${BOARD_CAPABILITY_LABELS[capability] || capability} on ${BOARD_LABELS[board] || board})`
+  ));
   return formatPermitteeList(parts);
 }
 
 /**
- * Normalize a populated reference OR a raw id into a comparable string.
- * Mirrors backend sameId — createdBy/assignedTo may arrive un-populated (a
- * raw ObjectId/string) depending on the query, and `.id`/`._id` on a raw
- * string is always undefined, so a naive lookup silently drops ownership.
+ * Preflight a board lane drop. Returns null when allowed, otherwise a display-ready error.
  */
+export function getBoardMoveBlockReason(
+  actor,
+  ticket,
+  toStage,
+  boardPolicy = buildBoardRolePolicy(),
+  permissionContext = null,
+) {
+  if (!actor) {
+    return buildBlock('NOT_AUTHENTICATED', 'Sign in to move tickets on the board.');
+  }
+
+  const fromLabel = stageLabel(ticket?.status);
+  const toLabel = stageLabel(toStage);
+  const forReopen = stageIndex(toStage) < stageIndex(ticket?.status);
+  const permittees = permitteeMessage(toStage, ticket?.status, boardPolicy, forReopen);
+
+  if (isPureExternalActor(actor)) {
+    const verdict = canTransition(
+      ticket.status, toStage, actor, ticket, boardPolicy, permissionContext,
+    );
+    if (verdict.ok) return null;
+    if (verdict.code !== 'STAGE_NOT_PERMITTED') {
+      return buildBlock(verdict.code, verdict.reason || 'This move is not allowed.');
+    }
+    return buildBlock(
+      'CLIENT_BOARD_MOVE_FORBIDDEN',
+      `You don't have permission to move this ticket from ${fromLabel} to ${toLabel}. ${CLIENT_STAGE_MOVE_HINT}`,
+      { permittees, fromLabel, toLabel },
+    );
+  }
+
+  if (!canInteractWithBoard(actor, boardPolicy)) {
+    const roleLabel = ROLE_LABELS[actor.role] || actor.role || 'your role';
+    return buildBlock(
+      'NO_BOARD_PERMISSION',
+      `You don't have permission to move tickets. Your account (${roleLabel}) has no board capabilities configured.`,
+      { permittees, fromLabel, toLabel },
+    );
+  }
+
+  const verdict = canTransition(
+    ticket.status, toStage, actor, ticket, boardPolicy, permissionContext,
+  );
+  if (!verdict.ok) {
+    if (
+      verdict.code === 'STAGE_NOT_PERMITTED'
+      || verdict.code === 'ILLEGAL_BACKWARD'
+      || verdict.code === 'REOPEN_TOO_EARLY'
+    ) {
+      return buildBlock(
+        verdict.code,
+        `You don't have permission to move this ticket from ${fromLabel} to ${toLabel}. Only ${permittees} can perform this step.`,
+        { permittees, fromLabel, toLabel },
+      );
+    }
+    return buildBlock(verdict.code, verdict.reason || 'This move is not allowed.');
+  }
+
+  return null;
+}
+
+/** Keyboard-move targets for a ticket card (lane label + destination stage). */
+export function getBoardMoveTargets(
+  actor,
+  ticket,
+  boardPolicy = buildBoardRolePolicy(),
+  permissionContext = null,
+) {
+  if (!actor || !ticket) return [];
+
+  const currentLane = laneOf(ticket.status);
+  return LANES.map((lane) => {
+    const to = laneEntryStage(lane.key);
+    const sameLane = currentLane === lane.key;
+    const block = sameLane ? null : getBoardMoveBlockReason(
+      actor, ticket, to, boardPolicy, permissionContext,
+    );
+    return {
+      laneKey: lane.key,
+      label: lane.label,
+      to,
+      blocked: sameLane || Boolean(block),
+    };
+  });
+}
+
+export function getBoardDragBlockReason(
+  actor,
+  ticket,
+  boardPolicy = buildBoardRolePolicy(),
+  permissionContext = null,
+) {
+  if (!actor || !ticket) return null;
+
+  if (isPureExternalActor(actor)) {
+    if (!canExternalCloseReopen(actor, permissionContext)) {
+      return buildBlock(
+        'CLIENT_BOARD_MOVE_FORBIDDEN',
+        'Your role cannot close or reopen tickets.',
+      );
+    }
+    if (ticket.status === 'live' || ticket.status === 'closed') return null;
+    return buildBlock(
+      'CLIENT_BOARD_MOVE_FORBIDDEN',
+      `You don't have permission to move this ticket from ${stageLabel(ticket.status)}. ${CLIENT_STAGE_MOVE_HINT}`,
+    );
+  }
+
+  const readOnly = getBoardReadOnlyNotice(actor, boardPolicy);
+  if (readOnly) return readOnly;
+
+  if (!canDragTicket(actor, ticket, boardPolicy)) {
+    const board = laneOf(ticket.status);
+    const boardLabel = BOARD_LABELS[board] || board;
+    return buildBlock(
+      'BOARD_OPERATE_FORBIDDEN',
+      `You don't have permission to move tickets in ${boardLabel}. Your role lacks operate or transition capability on this board.`,
+    );
+  }
+
+  return null;
+}
+
+/** Persistent notice for users who cannot interact with the board. */
+export function getBoardReadOnlyNotice(actor, boardPolicy = buildBoardRolePolicy()) {
+  if (!actor) return null;
+  if (isExternalUser(actor)) return null;
+
+  if (!canInteractWithBoard(actor, boardPolicy)) {
+    const roleLabel = ROLE_LABELS[actor.role] || actor.role || 'your role';
+    return {
+      code: 'NO_BOARD_PERMISSION',
+      title: 'Read-only board access',
+      message: `Your account (${roleLabel}) has no board capabilities. Open a ticket to view details, or ask an admin to configure board permissions.`,
+    };
+  }
+
+  return null;
+}
+
 const idOf = (value) => (value == null ? '' : String(value._id ?? value.id ?? value));
 
-/** Client-side mirror of backend assertCanEditTicket. */
+/** Client-side mirror of backend assertCanEditTicket (non-board ticket edits). */
 export function canEditTicket(actor, ticket) {
   if (!actor || !ticket) return false;
 
@@ -70,140 +258,4 @@ export function canEditTicket(actor, ticket) {
   const assignedToId = idOf(ticket.assignedTo);
 
   return privileged || (actorId && (actorId === createdById || actorId === assignedToId));
-}
-
-/** Whether the user may drag cards or drop on lanes at all. */
-export function canInteractWithBoard(actor) {
-  if (!actor) return false;
-  if (isExternalUser(actor)) return true;
-  return can(actor, 'tickets.update');
-}
-
-/** Whether this specific ticket card may be dragged. */
-export function canDragTicket(actor, ticket) {
-  if (!actor || !ticket) return false;
-  if (isExternalUser(actor)) return ticket.status === 'live' || ticket.status === 'closed';
-  return canInteractWithBoard(actor) && canEditTicket(actor, ticket);
-}
-
-function buildBlock(code, message, extra = {}) {
-  return { code, message, ...extra };
-}
-
-/**
- * Preflight a board lane drop. Returns null when allowed, otherwise a display-ready error.
- * Validation guards (dates, ownership) are intentionally excluded — those still come from the API.
- */
-export function getBoardMoveBlockReason(actor, ticket, toStage) {
-  if (!actor) {
-    return buildBlock('NOT_AUTHENTICATED', 'Sign in to move tickets on the board.');
-  }
-
-  const fromLabel = stageLabel(ticket?.status);
-  const toLabel = stageLabel(toStage);
-  const permittees = describeStagePermittees(
-    toStage,
-    { forReopen: stageIndex(toStage) < stageIndex(ticket?.status) },
-  );
-
-  if (isExternalUser(actor)) {
-    const verdict = canTransition(ticket.status, toStage, actor, ticket);
-    if (verdict.ok) {
-      return null;
-    }
-    if (verdict.code !== 'STAGE_NOT_PERMITTED') {
-      return buildBlock(verdict.code, verdict.reason || 'This move is not allowed.');
-    }
-
-    return buildBlock(
-      'CLIENT_BOARD_MOVE_FORBIDDEN',
-      `You don't have permission to move this ticket from ${fromLabel} to ${toLabel}. ${CLIENT_STAGE_MOVE_HINT}`,
-      { permittees, fromLabel, toLabel },
-    );
-  }
-
-  if (!can(actor, 'tickets.update')) {
-    const roleLabel = ROLE_LABELS[actor.role] || actor.role || 'your role';
-    return buildBlock(
-      'NO_UPDATE_PERMISSION',
-      `You don't have permission to move tickets. Your account (${roleLabel}) is read-only on the board. Only ${permittees} can move tickets from ${fromLabel} to ${toLabel}.`,
-      { permittees, fromLabel, toLabel },
-    );
-  }
-
-  if (!canEditTicket(actor, ticket)) {
-    return buildBlock(
-      'TICKET_EDIT_FORBIDDEN',
-      `You don't have permission to move this ticket. Only the reporter, assignee, Project Admin, or Admin can change its stage. To move from ${fromLabel} to ${toLabel}, ${permittees} can perform this step.`,
-      { permittees, fromLabel, toLabel },
-    );
-  }
-
-  const verdict = canTransition(ticket.status, toStage, actor, ticket);
-  if (!verdict.ok) {
-    if (
-      verdict.code === 'STAGE_NOT_PERMITTED'
-      || verdict.code === 'ILLEGAL_BACKWARD'
-      || verdict.code === 'REOPEN_TOO_EARLY'
-    ) {
-      return buildBlock(
-        verdict.code,
-        `You don't have permission to move this ticket from ${fromLabel} to ${toLabel}. Only ${permittees} can move tickets to ${toLabel}.`,
-        { permittees, fromLabel, toLabel },
-      );
-    }
-
-    return buildBlock(verdict.code, verdict.reason || 'This move is not allowed.');
-  }
-
-  return null;
-}
-
-/**
- * Explain why a card cannot even be picked up for dragging — called from
- * onDragStart, before any drop target/lane is known. Distinct from
- * getBoardMoveBlockReason, which explains a specific attempted move once a
- * `toStage` is known; this is the single shared source for the "why can't I
- * drag this at all" strings, so callers never hand-roll a near-duplicate.
- */
-export function getBoardDragBlockReason(actor, ticket) {
-  if (!actor || !ticket) return null;
-
-  if (isExternalUser(actor)) {
-    if (ticket.status === 'live' || ticket.status === 'closed') return null;
-    return buildBlock(
-      'CLIENT_BOARD_MOVE_FORBIDDEN',
-      `You don't have permission to move this ticket from ${stageLabel(ticket.status)}. ${CLIENT_STAGE_MOVE_HINT}`,
-    );
-  }
-
-  const readOnly = getBoardReadOnlyNotice(actor);
-  if (readOnly) return readOnly;
-
-  if (!canEditTicket(actor, ticket)) {
-    return buildBlock(
-      'TICKET_EDIT_FORBIDDEN',
-      'You don\'t have permission to move this ticket. Only the reporter, assignee, Project Admin, or Admin can change its stage.',
-    );
-  }
-
-  return null;
-}
-
-/** Persistent notice for users who cannot interact with the board. */
-export function getBoardReadOnlyNotice(actor) {
-  if (!actor) return null;
-
-  if (isExternalUser(actor)) return null;
-
-  if (!can(actor, 'tickets.update')) {
-    const roleLabel = ROLE_LABELS[actor.role] || actor.role || 'your role';
-    return {
-      code: 'NO_UPDATE_PERMISSION',
-      title: 'Read-only board access',
-      message: `Your account (${roleLabel}) cannot move tickets on the board. Open a ticket to view details, or ask a Project Admin if a stage change is needed.`,
-    };
-  }
-
-  return null;
 }

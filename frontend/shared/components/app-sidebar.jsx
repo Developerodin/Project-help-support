@@ -2,11 +2,11 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { getUserRoles, ROLE_IDS } from '@pms/shared';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
+import { NAV_GROUPS, canAccessNavItem } from '@/shared/lib/route-permissions.js';
+import { formatBrandDisplayName } from '@/shared/lib/branding.js';
 import Icon from '@/shared/components/icons.jsx';
 import BrandMark from '@/shared/components/brand-mark.jsx';
-import { BRAND_SHORT } from '@/shared/lib/brand.js';
 import {
   Sidebar,
   SidebarContent,
@@ -21,45 +21,13 @@ import {
   SidebarRail,
 } from '@/shared/components/ui/sidebar';
 
-const NAV_GROUPS = [
-  {
-    cap: 'Work',
-    items: [
-      { href: '/tickets/board', id: 'board', label: 'Board', icon: 'board', roles: '*' },
-      { href: '/tickets', id: 'tickets', label: 'Tickets', icon: 'ticket', roles: '*' },
-      {
-        href: '/tickets/analytics', id: 'analytics', label: 'Analytics', icon: 'chart',
-        roles: [ROLE_IDS.SUPER_ADMIN, ROLE_IDS.ADMIN, ROLE_IDS.PROJECT_ADMIN, ROLE_IDS.TESTER],
-      },
-      { href: '/notifications', id: 'inbox', label: 'Notifications', icon: 'bell', roles: '*' },
-    ],
-  },
-  {
-    cap: 'Admin',
-    items: [
-      { href: '/projects', id: 'projects', label: 'Projects', icon: 'layers',
-        roles: [ROLE_IDS.SUPER_ADMIN, ROLE_IDS.ADMIN] },
-      { href: '/teams', id: 'teams', label: 'Teams', icon: 'teams',
-        roles: [ROLE_IDS.SUPER_ADMIN, ROLE_IDS.ADMIN, ROLE_IDS.PROJECT_ADMIN] },
-      { href: '/users', id: 'people', label: 'People', icon: 'user',
-        roles: [ROLE_IDS.SUPER_ADMIN, ROLE_IDS.ADMIN] },
-      { href: '/settings/notifications', id: 'settings', label: 'Notification settings', icon: 'sliders', roles: '*' },
-    ],
-  },
-];
-
-function visible(item, user) {
-  if (item.roles === '*') return true;
-  return getUserRoles(user).some((role) => item.roles.includes(role));
-}
-
 function isCurrent(pathname, href) {
   if (href === '/tickets') return pathname === '/tickets' || pathname.startsWith('/tickets?');
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 export default function AppSidebar() {
-  const { user, logout } = useAuth();
+  const { user, logout, effectiveBranding } = useAuth();
   const pathname = usePathname();
   if (!user) return null;
 
@@ -67,16 +35,16 @@ export default function AppSidebar() {
     <Sidebar collapsible="icon" aria-label="Primary">
       <SidebarHeader className="h-(--bar-h) justify-center border-b border-sidebar-border p-0">
         <div className="flex h-(--bar-h) items-center gap-2.5 px-3.5 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-          <BrandMark className="size-5 shrink-0" />
+          <BrandMark className="size-5 shrink-0" logoUrl={effectiveBranding?.logoUrl} />
           <b className="truncate text-[0.8125rem] font-semibold tracking-tight text-foreground group-data-[collapsible=icon]:hidden">
-            {BRAND_SHORT}
+            {formatBrandDisplayName(effectiveBranding?.name)}
           </b>
         </div>
       </SidebarHeader>
 
       <SidebarContent>
         {NAV_GROUPS.map((group) => {
-          const items = group.items.filter((item) => visible(item, user));
+          const items = group.items.filter((item) => canAccessNavItem(item.href, user));
           if (items.length === 0) return null;
           return (
             <SidebarGroup key={group.cap}>

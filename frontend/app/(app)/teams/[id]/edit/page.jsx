@@ -47,11 +47,6 @@ export default function EditTeamPage() {
       .finally(() => setUsersLoading(false));
   }, []);
 
-  /**
-   * Membership edits are their own PATCH, applied optimistically and rolled
-   * back on failure — the roster never silently diverges from the server, and
-   * nothing here reloads the page.
-   */
   async function runMemberChange({ optimistic, request, busyKey, failure, success }) {
     const previous = team;
     setMemberNotice(null);

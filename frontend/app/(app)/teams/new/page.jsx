@@ -32,8 +32,6 @@ export default function NewTeamPage() {
       .finally(() => setUsersLoading(false));
   }, []);
 
-  // The create endpoint takes `members`, so the team and its roster are one
-  // request — there is no half-created team to recover from.
   async function handleSubmit(payload) {
     setBusy(true);
     setError(null);

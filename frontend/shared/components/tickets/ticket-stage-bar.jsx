@@ -40,17 +40,27 @@ function listRelationships(rels) {
   return `the ${rels.slice(0, -1).join(', ')} and the ${rels.at(-1)}`;
 }
 
-export default function TicketStageBar({ ticket, actor, onTransition }) {
+export default function TicketStageBar({
+  ticket,
+  actor,
+  onTransition,
+  boardPolicy,
+  permissionContext = null,
+}) {
   const [pending, setPending] = useState(null);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
 
   const currentIndex = stageIndex(ticket.status);
   const rels = ticketRelationships(actor, ticket);
-  const destinations = onTransition ? legalDestinations(ticket.status, actor, ticket) : [];
+  const destinations = onTransition
+    ? legalDestinations(ticket.status, actor, ticket, boardPolicy, permissionContext)
+    : [];
 
   function choose(to) {
-    const verdict = canTransition(ticket.status, to, actor, ticket);
+    const verdict = canTransition(
+      ticket.status, to, actor, ticket, boardPolicy, permissionContext,
+    );
     if (verdict.isReopen || verdict.isClose) {
       setPending({ to, kind: verdict.isReopen ? 'note' : 'reason' });
       setText('');

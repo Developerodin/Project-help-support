@@ -1,7 +1,9 @@
 import { ApiError } from './errors.js';
+import logger from './logger.js';
 import User from '../modules/users/user.model.js';
 import { verifyAccessToken } from '../modules/auth/token.service.js';
-import { hasAnyRole, can } from '@pms/shared';
+import { hasAnyRole, can, canInScope } from '@pms/shared';
+import { loadPermissionContextForUser, createDenyByDefaultPermissionContext } from '../modules/rbac/rbac.service.js';
 
 const unauthenticated = () => new ApiError(401, 'UNAUTHENTICATED', 'Authentication required');
 
@@ -19,7 +21,13 @@ export function auth(config) {
       const header = req.headers?.authorization;
       if (!header || !header.startsWith('Bearer ')) return next(unauthenticated());
 
-      const payload = verifyAccessToken(header.slice('Bearer '.length), config);
+      let payload;
+      try {
+        payload = verifyAccessToken(header.slice('Bearer '.length), config);
+      } catch {
+        return next(unauthenticated());
+      }
+
       const user = await User.findById(payload.sub);
 
       if (!user || user.status !== 'active') return next(unauthenticated());
@@ -28,9 +36,22 @@ export function auth(config) {
       if (payload.impersonatedBy) {
         req.impersonation = { by: payload.impersonatedBy };
       }
+
+      try {
+        req.permissionContext = await loadPermissionContextForUser(user._id);
+      } catch (err) {
+        logger.error('rbac.permission_context_load_failed', {
+          userId: String(user._id),
+          error: err.message,
+          stack: err.stack,
+        });
+        req.permissionContext = createDenyByDefaultPermissionContext();
+        req.permissionContextLoadFailed = true;
+      }
+
       return next();
-    } catch {
-      return next(unauthenticated());
+    } catch (err) {
+      return next(err);
     }
   };
 }
@@ -63,8 +84,23 @@ export function requireRole(...roles) {
 export function requirePermission(permission) {
   return function checkPermission(req, _res, next) {
     if (!req.user) return next(new ApiError(401, 'UNAUTHENTICATED', 'Authentication required'));
-    if (!can(req.user, permission)) {
+    if (!can(req.user, permission, req.permissionContext)) {
       return next(new ApiError(403, 'FORBIDDEN', `Requires permission: ${permission}`));
+    }
+    return next();
+  };
+}
+
+/**
+ * Layer 2.5 — global effective permission plus scoped assignment constraints.
+ * `resolveScope` receives the request and returns { clientId, projectId, environment }.
+ */
+export function requirePermissionInScope(permission, resolveScope) {
+  return function checkScopedPermission(req, _res, next) {
+    if (!req.user) return next(new ApiError(401, 'UNAUTHENTICATED', 'Authentication required'));
+    const scopeTarget = resolveScope(req);
+    if (!canInScope(req.user, permission, scopeTarget, req.permissionContext)) {
+      return next(new ApiError(403, 'FORBIDDEN', `Requires permission: ${permission} in scope`));
     }
     return next();
   };

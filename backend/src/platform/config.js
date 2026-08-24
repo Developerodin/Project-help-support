@@ -161,6 +161,18 @@ export function loadConfig(env = process.env) {
       adminEmail: seed.SEED_ADMIN_EMAIL,
       adminPassword: seed.SEED_ADMIN_PASSWORD,
     },
+    branding: {
+      neutralName: 'ProwPlus',
+      neutralLogoUrl: present(env.NEUTRAL_BRAND_LOGO_URL)
+        ? env.NEUTRAL_BRAND_LOGO_URL.trim()
+        : null,
+      neutralFaviconUrl: present(env.NEUTRAL_BRAND_FAVICON_URL)
+        ? env.NEUTRAL_BRAND_FAVICON_URL.trim()
+        : null,
+      emailLogoPath: present(env.EMAIL_BRAND_MARK_PATH)
+        ? env.EMAIL_BRAND_MARK_PATH.trim()
+        : null,
+    },
   };
 }
 

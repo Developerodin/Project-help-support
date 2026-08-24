@@ -14,3 +14,11 @@ export const resendInvite = (id) => apiFetch(`/users/${id}/resend-invite`, { met
 export const updateMe = (body) => apiFetch('/users/me', { method: 'PATCH', body });
 export const updateNotificationPrefs = (body) =>
   apiFetch('/users/me/notification-prefs', { method: 'PATCH', body });
+
+export const getTicketPreferences = () => apiFetch('/users/me/ticket-preferences');
+
+export const updateTicketPreferences = (body) =>
+  apiFetch('/users/me/ticket-preferences', { method: 'PATCH', body });
+
+export const resetTicketPreferences = () =>
+  apiFetch('/users/me/ticket-preferences/reset', { method: 'POST' });

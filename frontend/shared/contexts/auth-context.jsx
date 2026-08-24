@@ -3,6 +3,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch, setAccessToken, setSessionLostHandler } from '../api/client.js';
+import {
+  applyDocumentBranding,
+  neutralBranding,
+  resolveEffectiveBranding,
+} from '../lib/branding.js';
 
 export const AUTH_BOOTING = 'AUTH_BOOTING';
 export const AUTHENTICATED = 'AUTHENTICATED';
@@ -23,19 +28,39 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [status, setStatus] = useState(AUTH_BOOTING);
   const [impersonation, setImpersonation] = useState(null);
+  const [effectiveBranding, setEffectiveBranding] = useState(() => neutralBranding());
   const router = useRouter();
   const loading = status === AUTH_BOOTING;
+
+  const setBranding = useCallback((rawBranding) => {
+    const next = resolveEffectiveBranding(rawBranding);
+    applyDocumentBranding(next);
+    setEffectiveBranding(next);
+    return next;
+  }, []);
+
+  const resetBrandingToNeutral = useCallback(() => {
+    setBranding(neutralBranding());
+  }, [setBranding]);
+
+  const applySession = useCallback((session) => {
+    setUser(session?.user ?? null);
+    setImpersonation(session?.impersonation ?? null);
+    setBranding(session?.effectiveBranding);
+  }, [setBranding]);
 
   useEffect(() => {
     setSessionLostHandler(() => {
       setAccessToken(null);
+      setImpersonation(null);
+      resetBrandingToNeutral();
       setStatus((current) => (
         current === AUTHENTICATED || current === AUTH_EXPIRED
           ? AUTH_EXPIRED
           : AUTH_REQUIRED
       ));
     });
-  }, []);
+  }, [resetBrandingToNeutral]);
 
   useEffect(() => {
     // The access token is gone after a reload; the httpOnly refresh cookie is not.
@@ -45,30 +70,31 @@ export function AuthProvider({ children }) {
         const session = await apiFetch('/auth/refresh', { method: 'POST' });
         setAccessToken(session.accessToken);
         if (!cancelled) {
-          setUser(session.user);
-          setImpersonation(session.impersonation ?? null);
+          applySession(session);
           setStatus(AUTHENTICATED);
         }
       } catch {
-        // The access token now lives in memory only — a failed boot refresh
-        // must not leave a stale one behind.
+        // A remount (React Strict Mode, Fast Refresh) cancels this probe.
+        // Clearing the in-memory token here logs out a still-valid session
+        // that the replacement effect is about to restore.
+        if (cancelled) return;
         setAccessToken(null);
-        if (!cancelled) {
-          setUser(null);
-          setStatus(AUTH_REQUIRED);
-        }
+        setUser(null);
+        setImpersonation(null);
+        resetBrandingToNeutral();
+        setStatus(AUTH_REQUIRED);
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [applySession, resetBrandingToNeutral]);
 
   const login = useCallback(async (email, password) => {
     const session = await apiFetch('/auth/login', { method: 'POST', body: { email, password } });
     setAccessToken(session.accessToken);
-    setUser(session.user);
+    applySession(session);
     setStatus(AUTHENTICATED);
     return session.user;
-  }, []);
+  }, [applySession]);
 
   const logout = useCallback(async () => {
     try {
@@ -77,26 +103,25 @@ export function AuthProvider({ children }) {
       setAccessToken(null);
       setUser(null);
       setImpersonation(null);
+      resetBrandingToNeutral();
       setStatus(AUTH_REQUIRED);
       router.replace('/login');
     }
-  }, [router]);
+  }, [resetBrandingToNeutral, router]);
 
   const startImpersonation = useCallback(async (userId) => {
     const session = await apiFetch(`/auth/impersonate/${userId}`, { method: 'POST' });
     setAccessToken(session.accessToken);
-    setUser(session.user);
-    setImpersonation(session.impersonation ?? null);
+    applySession(session);
     return session.user;
-  }, []);
+  }, [applySession]);
 
   const stopImpersonation = useCallback(async () => {
     const session = await apiFetch('/auth/stop-impersonation', { method: 'POST' });
-    setAccessToken(session.accessToken);
-    setUser(session.user);
-    setImpersonation(null);
+    if (session.accessToken) setAccessToken(session.accessToken);
+    applySession(session);
     return session.user;
-  }, []);
+  }, [applySession]);
 
   const refreshUser = useCallback(async (knownUser) => {
     if (knownUser) {
@@ -104,17 +129,17 @@ export function AuthProvider({ children }) {
       return knownUser;
     }
     const session = await apiFetch('/auth/me');
-    setUser(session.user);
+    applySession(session);
     return session.user;
-  }, []);
+  }, [applySession]);
 
   const value = useMemo(
     () => ({
-      user, loading, status, impersonation, login, logout, refreshUser,
+      user, loading, status, impersonation, effectiveBranding, login, logout, refreshUser,
       startImpersonation, stopImpersonation,
     }),
     [
-      user, loading, status, impersonation, login, logout, refreshUser,
+      user, loading, status, impersonation, effectiveBranding, login, logout, refreshUser,
       startImpersonation, stopImpersonation,
     ],
   );

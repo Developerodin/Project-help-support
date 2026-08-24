@@ -15,12 +15,14 @@ const ProjectContext = createContext(null);
 
 export function ProjectProvider({ children }) {
   const { user } = useAuth();
+  const userId = user?.id ?? null;
+  const isExternal = Boolean(user && isExternalUser(user));
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeProjectId, setActiveProjectIdState] = useState(null);
 
   useEffect(() => {
-    if (!user) {
+    if (!userId) {
       setProjects([]);
       setActiveProjectIdState(null);
       setLoading(false);
@@ -34,7 +36,6 @@ export function ProjectProvider({ children }) {
         if (cancelled) return;
         const active = page.results.filter((p) => p.status === 'active');
         setProjects(active);
-        const isExternal = isExternalUser(user);
         if (isExternal && active.length === 1) {
           setActiveProjectIdState(active[0].id);
           writeStoredProjectId(active[0].id);
@@ -53,7 +54,7 @@ export function ProjectProvider({ children }) {
       });
 
     return () => { cancelled = true; };
-  }, [user]);
+  }, [userId, isExternal]);
 
   const setActiveProjectId = useCallback((projectId) => {
     setActiveProjectIdState(projectId);
@@ -65,7 +66,6 @@ export function ProjectProvider({ children }) {
     [projects, activeProjectId],
   );
 
-  const isExternal = Boolean(user && isExternalUser(user));
   const hasWorkspace = !isExternal || projects.length > 0;
 
   const value = useMemo(() => ({

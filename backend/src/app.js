@@ -17,6 +17,7 @@ import ticketRoutes from './modules/tickets/ticket.route.js';
 import userRoutes from './modules/users/user.route.js';
 import notificationRoutes from './modules/notifications/notification.route.js';
 import analyticsRoutes from './modules/tickets/analytics.route.js';
+import rbacRoutes from './modules/rbac/rbac.route.js';
 
 export function createApp(config, { deliverReset, deliverInvite } = {}) {
   const app = express();
@@ -66,6 +67,7 @@ export function createApp(config, { deliverReset, deliverInvite } = {}) {
   app.use('/v1/users', userRoutes(config, deliverInvite));
   app.use('/v1/notifications', notificationRoutes(config));
   app.use('/v1/analytics', analyticsRoutes(config));
+  app.use('/v1/rbac', rbacRoutes(config));
 
   app.use('/v1', (_req, _res, next) => next(new ApiError(404, 'NOT_FOUND', 'Resource not found')));
 

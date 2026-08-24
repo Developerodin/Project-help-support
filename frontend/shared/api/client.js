@@ -33,6 +33,7 @@ purgeStoredAccessToken();
 
 let accessToken = null;
 let onSessionLost = null;
+let inFlightRefresh = null;
 
 export const setAccessToken = (token) => { accessToken = token; };
 export const getAccessToken = () => accessToken;
@@ -75,12 +76,18 @@ async function rawFetch(path, { method = 'GET', body, formData, signal, redirect
 }
 
 async function refreshSession() {
-  const response = await rawFetch('/auth/refresh', { method: 'POST' });
-  if (!response.ok) return false;
-
-  const data = await response.json();
-  setAccessToken(data.accessToken);
-  return true;
+  if (!inFlightRefresh) {
+    inFlightRefresh = (async () => {
+      const response = await rawFetch('/auth/refresh', { method: 'POST' });
+      if (!response.ok) return null;
+      const data = await response.json();
+      setAccessToken(data.accessToken);
+      return data;
+    })().finally(() => {
+      inFlightRefresh = null;
+    });
+  }
+  return inFlightRefresh;
 }
 
 async function fetchWithAuthRetry(path, options = {}) {
@@ -116,6 +123,18 @@ export async function apiFetchResponse(path, options = {}) {
 }
 
 export async function apiFetch(path, options = {}) {
+  if (path === '/auth/refresh') {
+    const session = await refreshSession();
+    if (!session) {
+      throw new ApiClientError({
+        status: 401,
+        code: 'INVALID_REFRESH_TOKEN',
+        message: 'Refresh token is invalid or expired',
+      });
+    }
+    return session;
+  }
+
   const response = await fetchWithAuthRetry(path, options);
 
   if (!response.ok) throw await readError(response);

@@ -1,6 +1,6 @@
 'use client';
 
-import { STAGES, stageIndex, stageLabel } from '@pms/shared';
+import { STAGES, stageIndex, stageLabel, sortAriaValue } from '@pms/shared';
 import { initials, isOverdue } from '../icons.jsx';
 
 function stageAgeDays(ticket) {
@@ -26,7 +26,28 @@ function Rail({ ticket }) {
   );
 }
 
-export default function TicketTable({ tickets, onOpen }) {
+const SORTABLE_COLUMNS = [
+  { key: 'ticketId', label: 'Ticket' },
+  { key: 'title', label: 'Title' },
+  { key: 'status', label: 'Stage' },
+  { key: 'owner', label: 'Owner' },
+  { key: 'inStage', label: 'In stage' },
+  { key: 'estimatedDone', label: 'Est. done' },
+];
+
+function SortHeader({ column, sort, onSort }) {
+  const ariaSort = sortAriaValue(sort, column.key);
+  return (
+    <th scope="col" className="sortable" aria-sort={ariaSort}>
+      <button type="button" onClick={() => onSort(column.key)}>
+        <span>{column.label}</span>
+        <span className="arrow" aria-hidden="true">↓</span>
+      </button>
+    </th>
+  );
+}
+
+export default function TicketTable({ tickets, onOpen, sort, onSort }) {
   if (tickets.length === 0) {
     return (
       <div className="empty-state">
@@ -41,25 +62,33 @@ export default function TicketTable({ tickets, onOpen }) {
       <table>
         <thead>
           <tr>
-            <th scope="col">Ticket</th>
-            <th scope="col">Title</th>
+            <SortHeader column={SORTABLE_COLUMNS[0]} sort={sort} onSort={onSort} />
+            <SortHeader column={SORTABLE_COLUMNS[1]} sort={sort} onSort={onSort} />
             <th scope="col">Pipeline</th>
-            <th scope="col">Stage</th>
-            <th scope="col">Owner</th>
-            <th scope="col">In stage</th>
-            <th scope="col">Est. done</th>
+            <SortHeader column={SORTABLE_COLUMNS[2]} sort={sort} onSort={onSort} />
+            <SortHeader column={SORTABLE_COLUMNS[3]} sort={sort} onSort={onSort} />
+            <SortHeader column={SORTABLE_COLUMNS[4]} sort={sort} onSort={onSort} />
+            <SortHeader column={SORTABLE_COLUMNS[5]} sort={sort} onSort={onSort} />
           </tr>
         </thead>
         <tbody>
           {tickets.map((ticket) => {
             const late = isOverdue(ticket);
+            const rowLabel = `Open ticket ${ticket.ticketId}: ${ticket.title}`;
+            const ownerName = ticket.assignedTo?.name;
             return (
               <tr
                 key={ticket.id || ticket.ticketId}
                 data-click
                 tabIndex={0}
+                aria-label={rowLabel}
                 onClick={() => onOpen(ticket.ticketId)}
-                onKeyDown={(e) => { if (e.key === 'Enter') onOpen(ticket.ticketId); }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onOpen(ticket.ticketId);
+                  }
+                }}
               >
                 <td className="t-id">{ticket.ticketId}</td>
                 <td className="t-title">
@@ -77,8 +106,11 @@ export default function TicketTable({ tickets, onOpen }) {
                 <td><Rail ticket={ticket} /></td>
                 <td className="t-stage">{stageLabel(ticket.status)}</td>
                 <td>
-                  <span className={`avatar sm${ticket.assignedTo ? '' : ' none'}`}>
-                    {ticket.assignedTo ? initials(ticket.assignedTo.name) : '—'}
+                  <span
+                    className={`avatar sm${ownerName ? '' : ' none'}`}
+                    aria-label={ownerName ? `Owner: ${ownerName}` : 'Unassigned'}
+                  >
+                    {ownerName ? initials(ownerName) : '—'}
                   </span>
                 </td>
                 <td className="t-num">{stageAgeDays(ticket)}d</td>

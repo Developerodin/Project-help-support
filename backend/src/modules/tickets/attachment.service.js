@@ -60,7 +60,7 @@ export async function addAttachments(actor, idOrKey, files, config, opts = {}) {
   defaultStorage.assertStorageEnabled(config);
 
   const ticket = await resolveTicketDoc(idOrKey);
-  assertCanEditTicket(actor, ticket);
+  await assertCanEditTicket(actor, ticket);
 
   if (isExternalUser(actor) && !(await canExternalViewTicket(actor, ticket))) {
     throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this ticket');

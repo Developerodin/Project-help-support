@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import bcrypt from 'bcryptjs';
-import { ROLE_IDS, pickPrimaryRole, isSuperAdmin, hasAnyRole } from '@pms/shared';
+import { ROLE_IDS, pickPrimaryRole, validateImpersonation } from '@pms/shared';
 import User from '../users/user.model.js';
+import { isAccountDeleted } from '../users/user.service.js';
 import { ApiError } from '../../platform/errors.js';
 import logger from '../../platform/logger.js';
 import {
@@ -23,6 +24,37 @@ const badCredentials = () => new ApiError(401, 'INVALID_CREDENTIALS', 'Incorrect
 const badInvite = () => new ApiError(
   400, 'INVALID_INVITE', 'This invitation link is invalid or has expired',
 );
+
+const IMPERSONATION_STATUS = {
+  CANNOT_IMPERSONATE_SELF: 400,
+  USER_NOT_FOUND: 404,
+  USER_NOT_ACTIVE: 400,
+  NOT_IMPERSONATION_INITIATOR: 403,
+  SUPER_ADMIN_PROTECTED: 403,
+  CANNOT_IMPERSONATE_PEER: 403,
+  INSUFFICIENT_IMPERSONATION_RANK: 403,
+};
+
+const IMPERSONATION_MESSAGE = {
+  CANNOT_IMPERSONATE_SELF: 'You are already signed in as this user',
+  USER_NOT_FOUND: 'User not found',
+  USER_NOT_ACTIVE: 'Only active users can be impersonated',
+  NOT_IMPERSONATION_INITIATOR: 'You do not have permission to impersonate users',
+  SUPER_ADMIN_PROTECTED: 'Super Admin accounts cannot be impersonated',
+  CANNOT_IMPERSONATE_PEER: 'Admins cannot impersonate other Admins',
+  INSUFFICIENT_IMPERSONATION_RANK: 'You cannot impersonate a user at or above your privilege level',
+};
+
+function assertImpersonationAllowed(initiator, target) {
+  const result = validateImpersonation(initiator, target);
+  if (result.allowed) return;
+  const code = result.code || 'FORBIDDEN';
+  throw new ApiError(
+    IMPERSONATION_STATUS[code] ?? 403,
+    code,
+    IMPERSONATION_MESSAGE[code] ?? 'Impersonation not allowed',
+  );
+}
 
 function newRawToken() {
   return randomBytes(32).toString('hex');
@@ -78,6 +110,13 @@ export async function createInvite(_actor, { email, role, roles }) {
     : [role || ROLE_IDS.DEVELOPER];
   const existing = await User.findByNormalisedEmail(email);
   if (existing) {
+    if (isAccountDeleted(existing)) {
+      throw new ApiError(
+        400,
+        'USER_DELETED',
+        'This user was deleted. Restore is not available; use a different email.',
+      );
+    }
     if (existing.status === 'inactive') {
       throw new ApiError(
         400,
@@ -113,24 +152,17 @@ export async function createInvite(_actor, { email, role, roles }) {
 /**
  * Starts an impersonated session for `targetId`, keeping the admin's own
  * refresh token untouched so stopImpersonation can hand it straight back to
- * rotateRefreshToken later. Gated only by requireRole('admin') on the route —
- * swap for can('users:impersonate') once the Phase 1 access-control system ships.
+ * rotateRefreshToken later. Route gates initiator roles; this enforces the
+ * full multi-role hierarchy so privilege cannot be escalated via impersonation.
  */
 export async function impersonate(admin, targetId, adminRefreshRaw, config, meta = {}) {
-  if (String(admin._id) === String(targetId)) {
-    throw new ApiError(400, 'CANNOT_IMPERSONATE_SELF', 'You are already signed in as this user');
-  }
-
   const target = await User.findById(targetId);
-  if (!target) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found');
+  assertImpersonationAllowed(admin, target);
   if (target.status !== 'active') {
-    throw new ApiError(400, 'USER_NOT_ACTIVE', 'Only active users can be impersonated');
+    throw new ApiError(400, 'USER_NOT_ACTIVE', IMPERSONATION_MESSAGE.USER_NOT_ACTIVE);
   }
-  if (isSuperAdmin(target)) {
-    throw new ApiError(403, 'SUPER_ADMIN_PROTECTED', 'Super Admin accounts cannot be impersonated');
-  }
-  if (hasAnyRole(admin, ROLE_IDS.ADMIN) && hasAnyRole(target, ROLE_IDS.ADMIN)) {
-    throw new ApiError(403, 'CANNOT_IMPERSONATE_PEER', 'Admins cannot impersonate other Admins');
+  if (isAccountDeleted(target)) {
+    throw new ApiError(404, 'USER_NOT_FOUND', IMPERSONATION_MESSAGE.USER_NOT_FOUND);
   }
 
   const adminValid = await User.exists({

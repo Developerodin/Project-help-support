@@ -1,6 +1,8 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
-import { ROLES, ROLE_IDS, DEFAULT_NOTIFICATION_PREFS, pickPrimaryRole } from '@pms/shared';
+import {
+  ROLES, ROLE_IDS, DEFAULT_NOTIFICATION_PREFS, DEFAULT_TICKET_PREFERENCES, pickPrimaryRole,
+} from '@pms/shared';
 import toJSON from '../../platform/toJSON.plugin.js';
 
 export const MAX_REFRESH_TOKENS = 10;
@@ -64,7 +66,7 @@ const userSchema = new mongoose.Schema(
     kind: { type: String, enum: ['internal', 'reporter'], default: 'internal' },
     status: {
       type: String,
-      enum: ['invited', 'active', 'inactive'],
+      enum: ['invited', 'active', 'inactive', 'deleted'],
       default: 'invited',
       index: true,
     },
@@ -91,6 +93,37 @@ const userSchema = new mongoose.Schema(
         of: Boolean,
         default: () => new Map(Object.entries(DEFAULT_NOTIFICATION_PREFS.inApp)),
       },
+    },
+    /** Per-user ticket list/board filters and table sort — survives refresh and navigation. */
+    ticketPreferences: {
+      filters: {
+        q: { type: String, trim: true, default: DEFAULT_TICKET_PREFERENCES.filters.q },
+        status: { type: String, trim: true, default: DEFAULT_TICKET_PREFERENCES.filters.status },
+        priority: { type: String, trim: true, default: DEFAULT_TICKET_PREFERENCES.filters.priority },
+        scope: {
+          type: String,
+          enum: ['all', 'assigned', 'reported', 'unassigned'],
+          default: DEFAULT_TICKET_PREFERENCES.filters.scope,
+        },
+        assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+        blocked: { type: Boolean, default: DEFAULT_TICKET_PREFERENCES.filters.blocked },
+        overdue: { type: Boolean, default: DEFAULT_TICKET_PREFERENCES.filters.overdue },
+        reopened: { type: Boolean, default: DEFAULT_TICKET_PREFERENCES.filters.reopened },
+      },
+      sort: {
+        column: {
+          type: String,
+          enum: [...['ticketId', 'title', 'status', 'owner', 'inStage', 'estimatedDone'], null],
+          default: DEFAULT_TICKET_PREFERENCES.sort.column,
+        },
+        direction: {
+          type: String,
+          enum: ['asc', 'desc', null],
+          default: DEFAULT_TICKET_PREFERENCES.sort.direction,
+        },
+      },
+      boardMine: { type: Boolean, default: DEFAULT_TICKET_PREFERENCES.boardMine },
+      limit: { type: Number, min: 1, max: 100, default: DEFAULT_TICKET_PREFERENCES.limit },
     },
   },
   { timestamps: true },

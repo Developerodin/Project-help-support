@@ -8,12 +8,19 @@ import {
   focusTicketSearch,
 } from '@/shared/lib/ticket-search-focus.js';
 
-export default function TicketFilters({ value, onChange }) {
+export default function TicketFilters({
+  filters,
+  onChange,
+  ownerOptions = [],
+  onReset,
+  resetBusy = false,
+  showReset = false,
+}) {
   const searchRef = useRef(null);
-  const set = (key) => (event) => onChange({ ...value, [key]: event.target.value, page: 1 });
+  const set = (key) => (event) => onChange({ ...filters, [key]: event.target.value });
   const toggle = (key) => {
-    const next = value[key] ? undefined : true;
-    onChange({ ...value, [key]: next, page: 1 });
+    const next = filters[key] ? false : true;
+    onChange({ ...filters, [key]: next });
   };
 
   useEffect(() => {
@@ -34,21 +41,28 @@ export default function TicketFilters({ value, onChange }) {
         type="search"
         aria-label="Filter tickets"
         placeholder="Filter by number, title or module"
-        value={value.q || ''}
+        value={filters.q || ''}
         onChange={set('q')}
       />
 
-<select aria-label="Stage" value={value.status || ''} onChange={set('status')}>
+      <select aria-label="Stage" value={filters.status || ''} onChange={set('status')}>
         <option value="">Any stage</option>
         {STAGES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
       </select>
 
-      <select aria-label="Priority" value={value.priority || ''} onChange={set('priority')}>
+      <select aria-label="Priority" value={filters.priority || ''} onChange={set('priority')}>
         <option value="">Any priority</option>
         {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
       </select>
 
-      <select aria-label="Scope" value={value.scope || 'all'} onChange={set('scope')}>
+      <select aria-label="Owner" value={filters.assignedTo || ''} onChange={set('assignedTo')}>
+        <option value="">Any owner</option>
+        {ownerOptions.map((person) => (
+          <option key={person.id} value={person.id}>{person.name}</option>
+        ))}
+      </select>
+
+      <select aria-label="Scope" value={filters.scope || 'all'} onChange={set('scope')}>
         <option value="all">All tickets</option>
         <option value="assigned">Assigned to me</option>
         <option value="reported">Reported by me</option>
@@ -57,28 +71,39 @@ export default function TicketFilters({ value, onChange }) {
 
       <button
         type="button"
-        className={`btn btn-sm${value.blocked ? ' chip-on' : ''}`}
-        aria-pressed={Boolean(value.blocked)}
+        className={`btn btn-sm${filters.blocked ? ' chip-on' : ''}`}
+        aria-pressed={Boolean(filters.blocked)}
         onClick={() => toggle('blocked')}
       >
         Blocked
       </button>
       <button
         type="button"
-        className={`btn btn-sm${value.overdue ? ' chip-on' : ''}`}
-        aria-pressed={Boolean(value.overdue)}
+        className={`btn btn-sm${filters.overdue ? ' chip-on' : ''}`}
+        aria-pressed={Boolean(filters.overdue)}
         onClick={() => toggle('overdue')}
       >
         Overdue
       </button>
       <button
         type="button"
-        className={`btn btn-sm${value.reopened ? ' chip-on' : ''}`}
-        aria-pressed={Boolean(value.reopened)}
+        className={`btn btn-sm${filters.reopened ? ' chip-on' : ''}`}
+        aria-pressed={Boolean(filters.reopened)}
         onClick={() => toggle('reopened')}
       >
         Reopened
       </button>
+
+      {showReset && (
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={onReset}
+          disabled={resetBusy}
+        >
+          {resetBusy ? 'Resetting…' : 'Reset to default'}
+        </button>
+      )}
     </div>
   );
 }

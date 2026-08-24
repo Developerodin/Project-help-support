@@ -16,7 +16,7 @@ function FakeWorkspace() {
   return (
     <div className="auth-preview-workspace" aria-hidden="true">
       <aside className="auth-preview-workspace__rail">
-        <b>Dharwin PMS</b>
+        <b>ProwPlus</b>
         <span>Board</span>
         <span>Tickets</span>
         <span>Projects</span>

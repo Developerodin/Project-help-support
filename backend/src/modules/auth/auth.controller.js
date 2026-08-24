@@ -1,5 +1,6 @@
 import catchAsync from '../../platform/catchAsync.js';
 import { ApiError } from '../../platform/errors.js';
+import { resolveEffectiveBrandingForUser } from '../../platform/branding.js';
 import User from '../users/user.model.js';
 import * as authService from './auth.service.js';
 
@@ -28,12 +29,27 @@ async function impersonationPayload(impersonatedBy) {
   };
 }
 
+function userIdOf(user) {
+  return user?.id ?? user?._id ?? null;
+}
+
+async function buildSessionBody(config, { user, accessToken = null, impersonation = null }) {
+  const body = { user };
+  if (accessToken) body.accessToken = accessToken;
+  body.effectiveBranding = await resolveEffectiveBrandingForUser(userIdOf(user), config);
+  if (impersonation) body.impersonation = impersonation;
+  return body;
+}
+
 export const login = (config) => catchAsync(async (req, res) => {
   const result = await authService.login(
     req.body.email, req.body.password, config, requestMeta(req),
   );
   res.cookie(REFRESH_COOKIE, result.refreshToken, refreshCookieOptions(config, result.refreshExpiresAt));
-  res.status(200).json({ user: result.user, accessToken: result.accessToken });
+  res.status(200).json(await buildSessionBody(config, {
+    user: result.user,
+    accessToken: result.accessToken,
+  }));
 });
 
 export const refresh = (config) => catchAsync(async (req, res) => {
@@ -44,10 +60,12 @@ export const refresh = (config) => catchAsync(async (req, res) => {
 
   const result = await authService.refresh(presented, config, requestMeta(req));
   res.cookie(REFRESH_COOKIE, result.refreshToken, refreshCookieOptions(config, result.refreshExpiresAt));
-  const body = { user: result.user, accessToken: result.accessToken };
   const impersonation = await impersonationPayload(result.impersonatedBy);
-  if (impersonation) body.impersonation = impersonation;
-  res.status(200).json(body);
+  res.status(200).json(await buildSessionBody(config, {
+    user: result.user,
+    accessToken: result.accessToken,
+    impersonation,
+  }));
 });
 
 export const logout = (config) => catchAsync(async (req, res) => {
@@ -57,12 +75,14 @@ export const logout = (config) => catchAsync(async (req, res) => {
   res.status(204).send();
 });
 
-export const me = catchAsync(async (req, res) => {
-  const body = { user: req.user.toJSON() };
-  if (req.impersonation) {
-    body.impersonation = await impersonationPayload(req.impersonation.by);
-  }
-  res.status(200).json(body);
+export const me = (config) => catchAsync(async (req, res) => {
+  const impersonation = req.impersonation
+    ? await impersonationPayload(req.impersonation.by)
+    : null;
+  res.status(200).json(await buildSessionBody(config, {
+    user: req.user.toJSON(),
+    impersonation,
+  }));
 });
 
 export const previewInvite = catchAsync(async (req, res) => {
@@ -111,16 +131,16 @@ export const impersonate = (config) => catchAsync(async (req, res) => {
     refreshCookieOptions(config, adminCookieExpiry),
   );
   res.cookie(REFRESH_COOKIE, result.refreshToken, refreshCookieOptions(config, result.refreshExpiresAt));
-  res.status(200).json({
+  res.status(200).json(await buildSessionBody(config, {
     user: result.user,
     accessToken: result.accessToken,
     impersonation: result.impersonation,
-  });
+  }));
 });
 
 export const stopImpersonation = (config) => catchAsync(async (req, res) => {
   if (!req.impersonation) {
-    return res.status(200).json({ user: req.user.toJSON() });
+    return res.status(200).json(await buildSessionBody(config, { user: req.user.toJSON() }));
   }
 
   const targetRefresh = req.cookies?.[REFRESH_COOKIE];
@@ -132,5 +152,8 @@ export const stopImpersonation = (config) => catchAsync(async (req, res) => {
   res.cookie(REFRESH_COOKIE, result.refreshToken, refreshCookieOptions(config, result.refreshExpiresAt));
   const { expires, ...clearOptions } = refreshCookieOptions(config, new Date(0));
   res.clearCookie(IMPERSONATION_ADMIN_COOKIE, clearOptions);
-  res.status(200).json({ user: result.user, accessToken: result.accessToken });
+  res.status(200).json(await buildSessionBody(config, {
+    user: result.user,
+    accessToken: result.accessToken,
+  }));
 });
