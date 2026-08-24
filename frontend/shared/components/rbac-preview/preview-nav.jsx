@@ -6,7 +6,6 @@ import { usePathname } from 'next/navigation';
 // ponytail: role baseline, per-user deltas, and audit trail — no mock-only screens.
 const PREVIEW_LINKS = [
   { href: '/settings/rbac-preview/matrix', label: 'User roles' },
-  { href: '/settings/rbac-preview/board-permissions', label: 'Board permissions' },
   { href: '/settings/rbac-preview/people-access', label: 'People & overrides' },
   { href: '/settings/rbac-preview/audit-log', label: 'Audit log' },
 ];

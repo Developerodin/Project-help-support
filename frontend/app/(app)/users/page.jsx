@@ -18,6 +18,7 @@ import AccessProfileDrawer from '@/shared/components/rbac-preview/access-profile
 import RoleMultiSelect from '@/shared/components/role-multi-select.jsx';
 import Icon, { initials } from '@/shared/components/icons.jsx';
 import { normalizeApiError } from '@/shared/lib/api-error.js';
+import { getDefaultRedirect } from '@/shared/lib/route-permissions.js';
 import { filterEffectivelyActiveAssignments } from '@/shared/lib/rbac-preview/matrix-utils.js';
 import { commitAccessMutation } from '@/shared/lib/rbac-preview/people-access-mutations.js';
 import { showToast } from '@/shared/lib/toast.js';
@@ -253,8 +254,11 @@ export default function UsersPage() {
     setRowActionBusy(actionKey, true);
     setRowActionFeedback(actionKey, null);
     try {
-      await startImpersonation(user.id);
-      router.push('/');
+      const impersonated = await startImpersonation(user.id, user.name || user.email);
+      // Not '/': that page lives in the (auth) route group, so landing there
+      // tears down the whole (app) tree, remounts AuthProvider, and burns two
+      // extra /auth/refresh rotations before bouncing back into (app).
+      router.replace(getDefaultRedirect(impersonated || user));
     } catch (err) {
       const message = normalizeApiError(err)?.message || 'Could not impersonate';
       setRowActionFeedback(actionKey, { error: message });

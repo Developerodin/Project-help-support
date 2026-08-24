@@ -31,6 +31,7 @@ import TicketHistory from './ticket-history.jsx';
 import TicketComments from './ticket-comments.jsx';
 import TicketQaReport, { qaRejections } from './ticket-qa-report.jsx';
 import TicketDrawerFooter from './ticket-drawer-footer.jsx';
+import { useTicketAssignment } from './use-ticket-assignment.js';
 import { useBoardPolicy } from '@/shared/hooks/use-board-policy.js';
 import { usePermissionContext } from '@/shared/hooks/use-permission-context.js';
 import AppLoader from '../app-loader.jsx';

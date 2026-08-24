@@ -16,6 +16,8 @@ export const AUTH_EXPIRED = 'AUTH_EXPIRED';
 
 const AuthContext = createContext(null);
 
+const nameOf = (person) => person?.name || person?.email || null;
+
 /**
  * Carries `user.role` and nothing else. No permissions array, no route
  * permission map. Role is used ONLY to hide or disable navigation — server
@@ -28,6 +30,10 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [status, setStatus] = useState(AUTH_BOOTING);
   const [impersonation, setImpersonation] = useState(null);
+  // What the app is in the middle of doing to the session, so a guard that
+  // blocks on the way through can say "Impersonating Dev Chhugani…" instead of
+  // a bare "Redirecting…". Cleared by whoever stops blocking on it.
+  const [sessionNotice, setSessionNotice] = useState(null);
   const [effectiveBranding, setEffectiveBranding] = useState(() => neutralBranding());
   const router = useRouter();
   const loading = status === AUTH_BOOTING;
@@ -103,25 +109,42 @@ export function AuthProvider({ children }) {
       setAccessToken(null);
       setUser(null);
       setImpersonation(null);
+      setSessionNotice(null);
       resetBrandingToNeutral();
       setStatus(AUTH_REQUIRED);
       router.replace('/login');
     }
   }, [resetBrandingToNeutral, router]);
 
-  const startImpersonation = useCallback(async (userId) => {
-    const session = await apiFetch(`/auth/impersonate/${userId}`, { method: 'POST' });
-    setAccessToken(session.accessToken);
-    applySession(session);
-    return session.user;
+  const clearSessionNotice = useCallback(() => setSessionNotice(null), []);
+
+  const startImpersonation = useCallback(async (userId, displayName) => {
+    setSessionNotice(displayName ? `Impersonating ${displayName}…` : 'Starting impersonation…');
+    try {
+      const session = await apiFetch(`/auth/impersonate/${userId}`, { method: 'POST' });
+      setAccessToken(session.accessToken);
+      applySession(session);
+      setSessionNotice(`Impersonating ${nameOf(session.user) || displayName || 'user'}…`);
+      return session.user;
+    } catch (error) {
+      setSessionNotice(null);
+      throw error;
+    }
   }, [applySession]);
 
   const stopImpersonation = useCallback(async () => {
-    const session = await apiFetch('/auth/stop-impersonation', { method: 'POST' });
-    if (session.accessToken) setAccessToken(session.accessToken);
-    applySession(session);
-    return session.user;
-  }, [applySession]);
+    const leaving = nameOf(user);
+    setSessionNotice(leaving ? `Exiting impersonation of ${leaving}…` : 'Exiting impersonation…');
+    try {
+      const session = await apiFetch('/auth/stop-impersonation', { method: 'POST' });
+      if (session.accessToken) setAccessToken(session.accessToken);
+      applySession(session);
+      return session.user;
+    } catch (error) {
+      setSessionNotice(null);
+      throw error;
+    }
+  }, [applySession, user]);
 
   const refreshUser = useCallback(async (knownUser) => {
     if (knownUser) {
@@ -136,11 +159,11 @@ export function AuthProvider({ children }) {
   const value = useMemo(
     () => ({
       user, loading, status, impersonation, effectiveBranding, login, logout, refreshUser,
-      startImpersonation, stopImpersonation,
+      startImpersonation, stopImpersonation, sessionNotice, clearSessionNotice,
     }),
     [
       user, loading, status, impersonation, effectiveBranding, login, logout, refreshUser,
-      startImpersonation, stopImpersonation,
+      startImpersonation, stopImpersonation, sessionNotice, clearSessionNotice,
     ],
   );
 

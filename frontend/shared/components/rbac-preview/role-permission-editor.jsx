@@ -14,6 +14,7 @@ import {
   additionalPermissionsForRole,
 } from '@pms/shared';
 import Icon from '@/shared/components/icons.jsx';
+import BoardPermissionEditor from '@/shared/components/rbac-preview/board-permission-editor.jsx';
 
 const ACTION_LABELS = {
   view: 'View',
@@ -73,6 +74,8 @@ export default function RolePermissionEditor({
   mode = 'view',
   onToggleAction,
   onTogglePermission,
+  boardSnapshot = null,
+  onToggleBoardCapability = null,
 }) {
   const extras = additionalPermissionsForRole(snapshot, role);
   const isEdit = mode === 'edit';
@@ -129,6 +132,20 @@ export default function RolePermissionEditor({
               </tbody>
             </table>
           </div>
+          {group.label === 'Board' && boardSnapshot && onToggleBoardCapability && (
+            <>
+              <p className="meta rbac-board-role__lane-hint">
+                Lane capabilities for Intake → Development → QA → Release → Done.
+              </p>
+              <BoardPermissionEditor
+                role={role}
+                snapshot={boardSnapshot}
+                mode={mode}
+                onToggleCapability={onToggleBoardCapability}
+                embedded
+              />
+            </>
+          )}
         </section>
       ))}
 

@@ -13,7 +13,6 @@ import AppLoader from '@/shared/components/app-loader.jsx';
 import Icon from '@/shared/components/icons.jsx';
 import RbacPreviewNav from '@/shared/components/rbac-preview/preview-nav.jsx';
 import RolePermissionEditor, { RolePermissionPageHead } from '@/shared/components/rbac-preview/role-permission-editor.jsx';
-import BoardPermissionEditor from '@/shared/components/rbac-preview/board-permission-editor.jsx';
 import { usePreviewViewState } from '@/shared/lib/rbac-preview/preview-view-state.js';
 import {
   cloneRoleMatrix,
@@ -98,13 +97,6 @@ export default function RbacRoleDetailPage() {
   useEffect(() => {
     if (demoViewMode === 'data') loadRole();
   }, [demoViewMode, loadRole]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || viewMode !== 'data') return;
-    if (window.location.hash === '#board-permissions') {
-      document.getElementById('board-permissions')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  }, [viewMode]);
 
   useEffect(() => {
     if (!isKnownRole && demoViewMode === 'data') {
@@ -330,15 +322,9 @@ export default function RbacRoleDetailPage() {
             mode={matrixMode}
             onToggleAction={toggleAction}
             onTogglePermission={togglePermission}
+            boardSnapshot={activeBoard}
+            onToggleBoardCapability={isExternalRole ? null : toggleBoardCapability}
           />
-          {!isExternalRole && (
-            <BoardPermissionEditor
-              role={role}
-              snapshot={activeBoard}
-              mode={matrixMode}
-              onToggleCapability={toggleBoardCapability}
-            />
-          )}
         </>
       )}
     </>

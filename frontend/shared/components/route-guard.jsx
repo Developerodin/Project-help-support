@@ -11,7 +11,7 @@ import AppLoader from '@/shared/components/app-loader.jsx';
  * the current user may access the pathname; redirects silently otherwise.
  */
 export default function RouteGuard({ children }) {
-  const { user, loading } = useAuth();
+  const { user, loading, sessionNotice, clearSessionNotice } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
 
@@ -24,8 +24,17 @@ export default function RouteGuard({ children }) {
     if (pathname !== target) router.replace(target);
   }, [loading, user, pathname, router]);
 
+  // The notice exists to label this gate while it blocks. Once the new session
+  // can see where it landed, the switch is over.
+  useEffect(() => {
+    if (allowed && sessionNotice) clearSessionNotice();
+  }, [allowed, sessionNotice, clearSessionNotice]);
+
   if (loading) return <AppLoader />;
-  if (!allowed) return <AppLoader inline label="Redirecting\u2026" ariaLabel="Redirecting" />;
+  if (!allowed) {
+    const label = sessionNotice || 'Redirecting…';
+    return <AppLoader inline label={label} ariaLabel={label} />;
+  }
 
   return children;
 }

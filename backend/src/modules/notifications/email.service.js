@@ -35,7 +35,7 @@ function renderBody(event, ticket, context, config) {
   return { text, html };
 }
 
-async function attempt(row, transport) {
+async function attempt(row, transport, config) {
   const now = new Date();
   try {
     await transport.sendMail({
@@ -108,7 +108,7 @@ export async function sendTicketEmail(event, ticket, recipients, context, config
   for (const row of rows) {
     // text/html are not persisted Ã¢â‚¬â€ a retry re-renders them from the ticket,
     // which is the source of truth for what the email should say.
-    const ok = await attempt({ ...row.toObject(), text, html }, transport);
+    const ok = await attempt({ ...row.toObject(), text, html }, transport, config);
     if (ok) sent += 1; else failed += 1;
   }
 
@@ -147,7 +147,7 @@ export async function retryPendingEmails(config, deps = {}, options = {}) {
   for (const row of rows) {
     const ticket = row.ticket ?? { ticketId: '', title: '' };
     const { text, html } = renderBody(row.event, ticket, {}, config);
-    const ok = await attempt({ ...row.toObject(), text, html }, transport);
+    const ok = await attempt({ ...row.toObject(), text, html }, transport, config);
     if (ok) sent += 1;
   }
 

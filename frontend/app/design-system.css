@@ -2758,6 +2758,15 @@ a.button3{ display:block; text-align:center; text-decoration:none; cursor:pointe
   margin-bottom:0;
 }
 .project-panel.collapsed .project-form{ display:none; }
+.project-panel-title-row{
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+}
+.project-panel-actions{
+  display:flex; align-items:center; gap:8px; flex:none;
+}
+.project-panel-title-row > .project-panel-title{
+  flex:1 1 auto; min-width:0; width:auto;
+}
 .project-panel-title{ margin:0; font:inherit; width:100%; }
 .project-panel-head-toggle{
   display:flex; align-items:center; gap:8px; width:100%;

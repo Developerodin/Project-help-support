@@ -18,6 +18,7 @@ export const PERMISSION_GROUPS = Object.freeze([
   { label: 'Clients', permissions: ['clients.view', 'clients.manage'] },
   { label: 'Projects', permissions: ['projects.view', 'projects.manage'] },
   { label: 'Teams', permissions: ['teams.view', 'teams.create', 'teams.edit', 'teams.delete'] },
+  { label: 'Board', permissions: ['boards.view', 'boards.use'] },
   {
     label: 'Tickets',
     permissions: [

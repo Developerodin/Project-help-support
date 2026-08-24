@@ -17,18 +17,35 @@ import ExternalWorkspaceNotice from '@/shared/components/external-workspace-noti
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/shared/components/ui/sidebar';
 import { FOCUS_TICKET_SEARCH_KEY, focusTicketSearch } from '@/shared/lib/ticket-search-focus.js';
 import { readNavCollapsed, storeNavCollapsed } from '@/shared/lib/nav-preference.js';
+import { normalizeApiError } from '@/shared/lib/api-error.js';
+import { showToast } from '@/shared/lib/toast.js';
 
 function ImpersonationBanner() {
-  const { impersonation, stopImpersonation } = useAuth();
+  const { user, impersonation, stopImpersonation } = useAuth();
+  const [exiting, setExiting] = useState(false);
   if (!impersonation) return null;
+
+  const viewingAs = user?.name || user?.email || 'this user';
 
   return (
     <div className="banner">
       <Icon name="eye" size={14} />
-      <span>Viewing as this user, impersonated by {impersonation.byName}.</span>
+      <span>Impersonating {viewingAs} — started by {impersonation.byName}.</span>
       <span className="spacer" />
-      <button type="button" className="btn btn-sm" onClick={stopImpersonation}>
-        Stop impersonating
+      <button
+        type="button"
+        className="btn btn-sm"
+        disabled={exiting}
+        aria-busy={exiting || undefined}
+        onClick={() => {
+          setExiting(true);
+          stopImpersonation().catch((err) => {
+            setExiting(false);
+            showToast(normalizeApiError(err)?.message || 'Could not stop impersonating');
+          });
+        }}
+      >
+        {exiting ? `Exiting impersonation of ${viewingAs}…` : 'Stop impersonating'}
       </button>
     </div>
   );

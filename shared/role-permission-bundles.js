@@ -12,6 +12,7 @@ export const PERMISSIONS = Object.freeze([
   'tickets.manage_assignment', 'tickets.manage_stage',
   'tickets.manage_comments', 'tickets.manage_attachments',
   'tickets.accept',
+  'boards.view', 'boards.use',
   'users.view', 'users.manage',
   'access.view', 'access.grant', 'access.revoke',
   'audit.view',
@@ -53,7 +54,7 @@ export function migratePermissionKeys(permissions = []) {
   return [...migrated];
 }
 
-const VIEW_ONLY = Object.freeze(['clients.view', 'projects.view', 'teams.view', 'tickets.view']);
+const VIEW_ONLY = Object.freeze(['clients.view', 'projects.view', 'teams.view', 'tickets.view', 'boards.view']);
 const FULL_ADMIN_BUNDLE = PERMISSIONS;
 
 const TICKET_ACTIONS = Object.freeze([
@@ -63,15 +64,16 @@ const TICKET_ACTIONS = Object.freeze([
 const PROJECT_ADMIN = Object.freeze([
   'clients.view', 'projects.view', 'projects.manage',
   'teams.view', 'teams.create', 'teams.edit', 'teams.delete',
+  'boards.view', 'boards.use',
   'tickets.view', 'tickets.create', 'tickets.edit', 'tickets.manage_assignment',
   ...TICKET_ACTIONS, 'users.view',
 ]);
 
 const DEVELOPER = Object.freeze([
-  ...VIEW_ONLY, 'tickets.create', 'tickets.edit', ...TICKET_ACTIONS,
+  ...VIEW_ONLY, 'boards.use', 'tickets.create', 'tickets.edit', ...TICKET_ACTIONS,
 ]);
 const TESTER = Object.freeze([
-  ...VIEW_ONLY, 'tickets.create', 'tickets.edit', ...TICKET_ACTIONS,
+  ...VIEW_ONLY, 'boards.use', 'tickets.create', 'tickets.edit', ...TICKET_ACTIONS,
 ]);
 const SUPPORT = Object.freeze([
   ...VIEW_ONLY, 'tickets.create', 'tickets.edit', ...TICKET_ACTIONS,

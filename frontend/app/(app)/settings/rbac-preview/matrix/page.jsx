@@ -83,7 +83,7 @@ export default function RbacRoleListPage() {
         <div>
           <h1>User roles</h1>
           <p className="sub">
-            Manage permissions role by role. Select a role to edit its feature access and board capabilities.
+            Manage permissions role by role. Select a role to edit its feature and board access.
           </p>
         </div>
         <span className="spacer" />

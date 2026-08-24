@@ -69,9 +69,28 @@ export function brandDescription(branding) {
   return `Project and ticket management on ${formatBrandDisplayName(NEUTRAL_BRAND_NAME)}`;
 }
 
-function removeAllBrandIcons() {
-  document.querySelectorAll('link[rel~="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]')
-    .forEach((node) => node.remove());
+const BRAND_ICON_ATTR = 'data-brand-icon';
+
+/**
+ * React owns every <link>, <title> and <meta> it renders into <head> — they are
+ * hoistables with a fiber behind them. Detaching one leaves React holding a
+ * fiber whose node has no parent, and its next unmount dies on
+ * `parentNode.removeChild(...)` of null, taking the pending navigation with it.
+ *
+ * So branding creates exactly one icon link and only ever rewrites that one.
+ * It never queries for, moves, or removes an icon it did not create — which is
+ * also why the app ships no `app/icon.png`: a second, React-owned favicon would
+ * be a second owner of the same slot.
+ */
+function brandIconLink() {
+  const existing = document.head.querySelector(`link[${BRAND_ICON_ATTR}]`);
+  if (existing) return existing;
+
+  const node = document.createElement('link');
+  node.setAttribute('rel', 'icon');
+  node.setAttribute(BRAND_ICON_ATTR, '');
+  document.head.appendChild(node);
+  return node;
 }
 
 export function applyDocumentBranding(raw) {
@@ -84,10 +103,5 @@ export function applyDocumentBranding(raw) {
     : displayName;
 
   const targetIcon = branding.faviconUrl ?? neutralFaviconUrlFromEnv() ?? DEFAULT_NEUTRAL_ICON_URL;
-  removeAllBrandIcons();
-
-  const node = document.createElement('link');
-  node.setAttribute('rel', 'icon');
-  node.setAttribute('href', targetIcon);
-  document.head.appendChild(node);
+  brandIconLink().setAttribute('href', targetIcon);
 }

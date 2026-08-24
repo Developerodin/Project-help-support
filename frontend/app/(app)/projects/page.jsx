@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { canAccessProjectsModule } from '@pms/shared';
-import { listClients } from '@/shared/api/clients.js';
+import { can, canAccessProjectsModule } from '@pms/shared';
+import { listClients, patchClient } from '@/shared/api/clients.js';
 import { listProjects, patchProject, replaceModules } from '@/shared/api/projects.js';
 import { listTeams } from '@/shared/api/teams.js';
 import CompanyLogo from '@/shared/components/companies/company-logo.jsx';
 import EditCompanyDialog from '@/shared/components/companies/edit-company-dialog.jsx';
 import NewCompanyDialog from '@/shared/components/companies/new-company-dialog.jsx';
+import ConfirmDialog from '@/shared/components/confirm-dialog.jsx';
 import FormError from '@/shared/components/form-error.jsx';
 import Icon from '@/shared/components/icons.jsx';
 import AppLoader from '@/shared/components/app-loader.jsx';
@@ -96,7 +97,9 @@ function ProjectPanel({
   moduleRows,
   hasModuleDraft,
   isExpanded,
+  canDelete,
   onToggleExpanded,
+  onDelete,
   onUpdate,
   onSaveModules,
   onModulesChange,
@@ -106,25 +109,34 @@ function ProjectPanel({
       className={`panel project-panel${isExpanded ? '' : ' collapsed'}`}
     >
       <header className="project-panel-head">
-        <h4 className="project-panel-title">
-          <button
-            type="button"
-            className="project-panel-head-toggle"
-            aria-expanded={isExpanded}
-            aria-controls={`project-body-${project.id}`}
-            onClick={() => onToggleExpanded(project.id)}
-          >
-            <span className="project-panel-chev" aria-hidden="true">
-              <Icon name="chev-right" size={14} />
-            </span>
-            <span className="project-panel-head-label">
-              <span className="mono">{project.key}</span> — {project.name}
-            </span>
-            <span className="spacer" />
-            <span className="chip">{project.status}</span>
-            <span className="sr">{isExpanded ? 'Collapse' : 'Expand'} {project.name}</span>
-          </button>
-        </h4>
+        <div className="project-panel-title-row">
+          <h4 className="project-panel-title">
+            <button
+              type="button"
+              className="project-panel-head-toggle"
+              aria-expanded={isExpanded}
+              aria-controls={`project-body-${project.id}`}
+              onClick={() => onToggleExpanded(project.id)}
+            >
+              <span className="project-panel-chev" aria-hidden="true">
+                <Icon name="chev-right" size={14} />
+              </span>
+              <span className="project-panel-head-label">
+                <span className="mono">{project.key}</span> — {project.name}
+              </span>
+              <span className="spacer" />
+              <span className="chip">{project.status}</span>
+              <span className="sr">{isExpanded ? 'Collapse' : 'Expand'} {project.name}</span>
+            </button>
+          </h4>
+          {canDelete ? (
+            <div className="project-panel-actions">
+              <button type="button" className="btn btn-sm btn-danger" onClick={onDelete}>
+                Delete
+              </button>
+            </div>
+          ) : null}
+        </div>
       </header>
 
       <div className="project-form" id={`project-body-${project.id}`}>
@@ -167,6 +179,8 @@ function ProjectPanel({
 export default function ProjectsPage() {
   const { user, loading: authLoading } = useAuth();
   const canViewProjects = Boolean(user && canAccessProjectsModule(user));
+  const canManageClients = Boolean(user && can(user, 'clients.manage'));
+  const canManageProjects = Boolean(user && can(user, 'projects.manage'));
 
   const [companies, setCompanies] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -181,6 +195,10 @@ export default function ProjectsPage() {
   const [networkError, setNetworkError] = useState(null);
   const [newCompanyOpen, setNewCompanyOpen] = useState(false);
   const [editCompany, setEditCompany] = useState(null);
+  const [confirmDeleteCompany, setConfirmDeleteCompany] = useState(null);
+  const [confirmDeleteProject, setConfirmDeleteProject] = useState(null);
+  const [deleteCompanyBusy, setDeleteCompanyBusy] = useState(false);
+  const [deleteProjectBusy, setDeleteProjectBusy] = useState(false);
 
   const companyGroups = useMemo(() => {
     const projectMap = new Map();
@@ -358,6 +376,42 @@ export default function ProjectsPage() {
     showToast(`Company ${company.name} updated`);
   };
 
+  async function confirmDeleteCompanyAction() {
+    if (!confirmDeleteCompany) return;
+    setDeleteCompanyBusy(true);
+    setError(null);
+    try {
+      await patchClient(confirmDeleteCompany.id, { status: 'archived' });
+      showToast(`${confirmDeleteCompany.name} deleted`);
+      setConfirmDeleteCompany(null);
+      await reload();
+    } catch (err) {
+      const message = normalizeApiError(err)?.message || 'Could not delete company';
+      setError(err);
+      showToast(message);
+    } finally {
+      setDeleteCompanyBusy(false);
+    }
+  }
+
+  async function confirmDeleteProjectAction() {
+    if (!confirmDeleteProject) return;
+    setDeleteProjectBusy(true);
+    setError(null);
+    try {
+      await patchProject(confirmDeleteProject.id, { status: 'archived' });
+      showToast(`${confirmDeleteProject.key} deleted`);
+      setConfirmDeleteProject(null);
+      await reload();
+    } catch (err) {
+      const message = normalizeApiError(err)?.message || 'Could not delete project';
+      setError(err);
+      showToast(message);
+    } finally {
+      setDeleteProjectBusy(false);
+    }
+  }
+
   const pageBusy = authLoading || (canViewProjects && loading);
 
   return (
@@ -456,6 +510,15 @@ export default function ProjectsPage() {
                         >
                           Edit
                         </button>
+                        {canManageClients ? (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-danger"
+                            onClick={() => setConfirmDeleteCompany(company)}
+                          >
+                            Delete
+                          </button>
+                        ) : null}
                         <Link
                           href={`/projects/new?clientId=${company.id}`}
                           className="btn btn-sm btn-primary"
@@ -486,7 +549,9 @@ export default function ProjectsPage() {
                             moduleRows={moduleRows}
                             hasModuleDraft={hasModuleDraft}
                             isExpanded={isExpanded}
+                            canDelete={canManageProjects}
                             onToggleExpanded={toggleExpanded}
+                            onDelete={() => setConfirmDeleteProject(project)}
                             onUpdate={update}
                             onSaveModules={saveModules}
                             onModulesChange={(projectId, rows) => setModulesDraft((prev) => ({ ...prev, [projectId]: rows }))}
@@ -513,6 +578,34 @@ export default function ProjectsPage() {
         company={editCompany}
         onClose={() => setEditCompany(null)}
         onUpdated={onCompanyUpdated}
+      />
+
+      <ConfirmDialog
+        open={Boolean(confirmDeleteCompany)}
+        title={confirmDeleteCompany ? `Delete ${confirmDeleteCompany.name}?` : ''}
+        message={confirmDeleteCompany
+          ? 'This archives the company and hides it from active listings. Its projects are also hidden from active project lists.'
+          : ''}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        danger
+        busy={deleteCompanyBusy}
+        onConfirm={confirmDeleteCompanyAction}
+        onCancel={() => { if (!deleteCompanyBusy) setConfirmDeleteCompany(null); }}
+      />
+
+      <ConfirmDialog
+        open={Boolean(confirmDeleteProject)}
+        title={confirmDeleteProject ? `Delete ${confirmDeleteProject.key} — ${confirmDeleteProject.name}?` : ''}
+        message={confirmDeleteProject
+          ? 'This archives the project. Tickets already filed keep their history.'
+          : ''}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        danger
+        busy={deleteProjectBusy}
+        onConfirm={confirmDeleteProjectAction}
+        onCancel={() => { if (!deleteProjectBusy) setConfirmDeleteProject(null); }}
       />
     </>
   );

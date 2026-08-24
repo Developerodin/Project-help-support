@@ -1,7 +1,6 @@
 import {
   ROLE_IDS,
   EXTERNAL_ROLES,
-  INTERNAL_ROLES,
   hasRole,
   isSuperAdmin,
   isExternalUser,
@@ -38,14 +37,22 @@ export async function activeAssignmentsForUser(userId, { clientId = null, projec
 
 /**
  * Whether an external user has assignment coverage for a project within a client.
+ * Client → company scope; client_tester → project scope when any project row exists.
  */
 export async function externalUserCoversProject(userId, clientId, projectId) {
-  const rows = await AccessAssignment.find(activeNotExpiredFilter({
-    user: userId,
-    client: clientId,
-    $or: [{ project: null }, { project: projectId }],
-  })).lean();
-  return rows.length > 0;
+  const user = await User.findById(userId).select('role roles').lean();
+  if (!user) return false;
+
+  const assignments = await AccessAssignment.find(activeNotExpiredFilter({ user: userId }))
+    .select('role client project').lean();
+  const visibleProjectIds = await resolveTicketProjectScope(user, assignments);
+  if (!visibleProjectIds) return false;
+
+  const projectIdStr = String(projectId);
+  if (!visibleProjectIds.includes(projectIdStr)) return false;
+
+  const project = await Project.findById(projectId).select('client').lean();
+  return project?.client && String(project.client) === String(clientId);
 }
 
 /**
@@ -135,116 +142,77 @@ export async function assertExternalCanCreateTicket(actor, projectId) {
 
 /** Project ids an external user may access from AccessAssignment union. */
 export async function permittedProjectIdsForExternalUser(userId) {
+  const user = await User.findById(userId).select('role roles').lean();
+  if (!user) return [];
+
   const assignments = await AccessAssignment.find(activeNotExpiredFilter({ user: userId }))
-    .select('client project').lean();
-
-  const projectIdSet = new Set();
-  for (const row of assignments) {
-    if (row.project) {
-      projectIdSet.add(String(row.project));
-    } else if (row.client) {
-      const ids = await Project.find({ client: row.client, status: 'active' }).distinct('_id');
-      for (const id of ids) projectIdSet.add(String(id));
-    }
-  }
-  return [...projectIdSet];
+    .select('role client project').lean();
+  const projectIds = await resolveTicketProjectScope(user, assignments);
+  return projectIds ?? [];
 }
 
-async function projectScopeFromAssignments(assignments) {
-  const clauses = [];
-  for (const row of assignments) {
-    if (row.project) {
-      clauses.push({ project: row.project });
-    } else if (row.client) {
-      const ids = await Project.find({ client: row.client, status: 'active' }).distinct('_id');
-      if (ids.length) clauses.push({ project: { $in: ids } });
-    }
-  }
-  if (!clauses.length) return { _id: null };
-  return clauses.length === 1 ? clauses[0] : { $or: clauses };
-}
-
-function isInternalActor(user) {
-  return getUserRoles(user).some((role) => INTERNAL_ROLES.includes(role));
-}
-
-/** Client testers authorized in the same company/project boundary. */
-async function listAuthorizedClientTesterIds(clientId, projectId = null) {
-  const criteria = {
-    client: clientId,
-    role: ROLE_IDS.CLIENT_TESTER,
-  };
-  if (projectId) {
-    criteria.$or = [{ project: null }, { project: projectId }];
-  }
-  const rows = await AccessAssignment.find(activeNotExpiredFilter(criteria)).distinct('user');
-  return rows.map(String);
-}
-
-async function clientVisibilityCreatedByIds(assignments) {
-  const testerIdSet = new Set();
-  const seen = new Set();
-
-  for (const row of assignments) {
-    const clientId = row.client ? String(row.client) : null;
-    if (!clientId) continue;
-    const scopeKey = `${clientId}:${row.project ? String(row.project) : '*'}`;
-    if (seen.has(scopeKey)) continue;
-    seen.add(scopeKey);
-
-    const ids = await listAuthorizedClientTesterIds(
-      clientId,
-      row.project ? String(row.project) : null,
-    );
-    for (const id of ids) testerIdSet.add(id);
-  }
-
-  return [...testerIdSet];
-}
-
-async function visibilityCreatedByFilter(actor, assignments) {
-  const clauses = [];
-
-  if (hasRole(actor, ROLE_IDS.CLIENT_TESTER)) {
-    clauses.push({ createdBy: actor._id });
-  }
+/**
+ * Resolve authorized ticket project ids for external roles.
+ * Client → all active projects under assigned companies.
+ * Client tester → union of assigned projects when any project row exists;
+ * otherwise all projects under company-wide assignments.
+ */
+async function resolveTicketProjectScope(actor, assignments) {
+  if (!assignments.length) return null;
 
   if (hasRole(actor, ROLE_IDS.CLIENT)) {
-    clauses.push({ createdBy: actor._id });
-    const testerIds = await clientVisibilityCreatedByIds(assignments);
-    if (testerIds.length) clauses.push({ createdBy: { $in: testerIds } });
+    const clientIds = [...new Set(
+      assignments
+        .filter((row) => row.role === ROLE_IDS.CLIENT && row.client)
+        .map((row) => String(row.client)),
+    )];
+    if (!clientIds.length) return null;
+
+    const ids = await Project.find({ client: { $in: clientIds }, status: 'active' }).distinct('_id');
+    return ids.length ? ids.map(String) : null;
   }
 
-  if (!clauses.length) return { _id: null };
-  return clauses.length === 1 ? clauses[0] : { $or: clauses };
+  if (hasRole(actor, ROLE_IDS.CLIENT_TESTER)) {
+    const testerRows = assignments.filter((row) => row.role === ROLE_IDS.CLIENT_TESTER);
+    if (!testerRows.length) return null;
+
+    const projectRows = testerRows.filter((row) => row.project);
+    if (projectRows.length) {
+      return [...new Set(projectRows.map((row) => String(row.project)))];
+    }
+
+    const clientIds = [...new Set(
+      testerRows.filter((row) => row.client).map((row) => String(row.client)),
+    )];
+    if (!clientIds.length) return null;
+
+    const ids = await Project.find({ client: { $in: clientIds }, status: 'active' }).distinct('_id');
+    return ids.length ? ids.map(String) : null;
+  }
+
+  return null;
 }
 
 /**
  * Mongo filter restricting list/search to externally visible tickets.
  *
- * Visibility matrix (Phase F):
- * - `client_tester`: own tickets within assignment scope only.
- * - `client`: own tickets plus externally raised tickets (`createdBy` is an
- *   authorized `client_tester` in the same company boundary).
- * - Internal staff tickets are never visible to external viewers.
+ * Visibility matrix:
+ * - `client`: all tickets in assigned company projects (Ticket → Project → Company).
+ * - `client_tester`: tickets in assigned project(s), or all company projects when
+ *   only company-wide assignment exists (no project rows).
  */
 export async function buildExternalTicketFilter(actor) {
   const assignments = await AccessAssignment.find(activeNotExpiredFilter({ user: actor._id }))
-    .select('client project').lean();
+    .select('role client project').lean();
 
-  if (!assignments.length) return { _id: null };
+  const projectIds = await resolveTicketProjectScope(actor, assignments);
+  if (!projectIds?.length) return { _id: null };
 
-  const projectScope = await projectScopeFromAssignments(assignments);
-  if (projectScope._id === null) return { _id: null };
-
-  const createdByScope = await visibilityCreatedByFilter(actor, assignments);
-  if (createdByScope._id === null) return { _id: null };
-
-  return { $and: [projectScope, createdByScope] };
+  return { project: { $in: projectIds } };
 }
 
 /**
- * External ticket visibility: assignment scope plus role-specific creator rules.
+ * External ticket visibility: assignment scope via Ticket → Project → Company.
  * Field-level stripping is sanitizeExternalTicket's job, not this one's.
  */
 export async function canExternalViewTicket(actor, ticket) {
@@ -260,32 +228,7 @@ export async function canExternalViewTicket(actor, ticket) {
   }
   if (!clientId) return false;
 
-  if (!await externalUserCoversProject(actor._id, clientId, projectId)) return false;
-
-  const creatorId = ticket.createdBy?._id ?? ticket.createdBy;
-  if (!creatorId) return false;
-
-  const actorId = String(actor._id ?? actor.id);
-  const creatorIdStr = String(creatorId);
-
-  if (creatorIdStr === actorId) {
-    return hasRole(actor, ROLE_IDS.CLIENT) || hasRole(actor, ROLE_IDS.CLIENT_TESTER);
-  }
-
-  let creator = ticket.createdBy;
-  if (!creator?.role && !creator?.roles) {
-    creator = await User.findById(creatorId).select('role roles').lean();
-  }
-  if (!creator || isInternalActor(creator)) return false;
-
-  if (hasRole(actor, ROLE_IDS.CLIENT_TESTER)) return false;
-
-  if (hasRole(actor, ROLE_IDS.CLIENT) && hasRole(creator, ROLE_IDS.CLIENT_TESTER)) {
-    const testerIds = await listAuthorizedClientTesterIds(clientId, projectId);
-    return testerIds.includes(creatorIdStr);
-  }
-
-  return false;
+  return externalUserCoversProject(actor._id, clientId, projectId);
 }
 
 /** Validate scoped grants to external roles target users with matching global roles. */

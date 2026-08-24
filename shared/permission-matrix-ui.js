@@ -41,6 +41,21 @@ export const PERMISSION_FEATURE_MATRIX = Object.freeze([
     ],
   },
   {
+    label: 'Board',
+    features: [
+      {
+        key: 'board',
+        label: 'Board',
+        actions: {
+          view: ['boards.view'],
+          create: [],
+          edit: ['boards.use'],
+          delete: [],
+        },
+      },
+    ],
+  },
+  {
     label: 'Tickets',
     features: [
       {
@@ -170,6 +185,10 @@ function isTicketPermission(keys) {
   return keys.some((key) => key.startsWith('tickets.'));
 }
 
+function isBoardPermission(keys) {
+  return keys.some((key) => key.startsWith('boards.'));
+}
+
 export function actionPermissionKeys(actionKeys) {
   if (!actionKeys?.length) return null;
   return [...new Set(actionKeys)];
@@ -179,7 +198,7 @@ export function actionPermissionKeys(actionKeys) {
 export function isMatrixActionSupported(role, actionKeys) {
   const keys = actionPermissionKeys(actionKeys);
   if (!keys) return false;
-  if (EXTERNAL_ROLES.includes(role) && isTicketPermission(keys)) return false;
+  if (EXTERNAL_ROLES.includes(role) && (isTicketPermission(keys) || isBoardPermission(keys))) return false;
   return true;
 }
 
