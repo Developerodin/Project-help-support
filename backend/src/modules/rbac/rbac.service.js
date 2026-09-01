@@ -8,6 +8,7 @@ import {
   diffRoleMatrices,
   getEffectivePermissions,
   getRoleBaselinePermissions,
+  mergeRoleMatrixWithBaseline,
   normaliseUserOverrides,
   recordToRoleMatrix,
   roleMatrixToRecord,
@@ -20,6 +21,7 @@ import {
   recordToBoardPolicy,
   diffBoardPolicies,
   DEFAULT_BOARD_ROLE_POLICY,
+  MATRIX_ROLES,
 } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
@@ -208,13 +210,18 @@ function overridesToEntries(overrides = {}) {
   return Object.entries(overrides).map(([permission, state]) => ({ permission, state }));
 }
 
-function grantsMapToMatrix(grantsMap) {
+function grantsMapToStoredRecord(grantsMap) {
   const record = {};
   const source = grantsMap instanceof Map ? Object.fromEntries(grantsMap) : grantsMap;
   for (const [role, permissions] of Object.entries(source || {})) {
+    if (!MATRIX_ROLES.includes(role)) continue;
     record[role] = [...permissions];
   }
-  return recordToRoleMatrix(record);
+  return record;
+}
+
+function storedRecordToMatrix(storedRecord) {
+  return recordToRoleMatrix(mergeRoleMatrixWithBaseline(storedRecord || {}));
 }
 
 export function getCodeBaselineMatrix() {
@@ -224,13 +231,13 @@ export function getCodeBaselineMatrix() {
 async function loadStoredMatrixRecord() {
   const doc = await RoleMatrix.findOne({ key: MATRIX_KEY });
   if (!doc) return null;
-  return grantsMapToMatrix(doc.grants);
+  return grantsMapToStoredRecord(doc.grants);
 }
 
 export async function getEffectiveRoleMatrixRecord() {
   const stored = await loadStoredMatrixRecord();
   if (!stored) return roleMatrixToRecord(getCodeBaselineMatrix());
-  return roleMatrixToRecord(stored);
+  return mergeRoleMatrixWithBaseline(stored);
 }
 
 export async function loadPermissionContextForUser(userId) {
@@ -241,7 +248,7 @@ export async function loadPermissionContextForUser(userId) {
   ]);
 
   return {
-    roleMatrix: roleMatrix ? roleMatrixToRecord(roleMatrix) : null,
+    roleMatrix: roleMatrix ? mergeRoleMatrixWithBaseline(roleMatrix) : null,
     userOverrides: entriesToOverrides(overrideDoc?.entries),
     scopedAssignments,
     loadFailed: false,
@@ -320,12 +327,15 @@ export async function getRoleMatrix(actor) {
   assertCanManageRbac(actor);
   const baseline = roleMatrixToRecord(getCodeBaselineMatrix());
   const storedDoc = await RoleMatrix.findOne({ key: MATRIX_KEY });
-  const effective = await getEffectiveRoleMatrixRecord();
+  const storedRecord = storedDoc ? grantsMapToStoredRecord(storedDoc.grants) : null;
+  const effective = storedRecord
+    ? mergeRoleMatrixWithBaseline(storedRecord)
+    : baseline;
 
   return {
     baseline,
     effective,
-    customizations: storedDoc ? roleMatrixToRecord(grantsMapToMatrix(storedDoc.grants)) : null,
+    customizations: storedRecord,
     updatedAt: storedDoc?.updatedAt ?? null,
     updatedBy: storedDoc?.updatedBy ?? null,
   };
@@ -338,20 +348,20 @@ export async function updateRoleMatrix(actor, body) {
   }
 
   const baselineRecord = roleMatrixToRecord(getCodeBaselineMatrix());
-  const previous = await loadStoredMatrixRecord();
-  const previousRecord = previous ? roleMatrixToRecord(previous) : baselineRecord;
+  const previousStored = await loadStoredMatrixRecord();
+  const previousEffective = previousStored
+    ? mergeRoleMatrixWithBaseline(previousStored)
+    : baselineRecord;
+  const previousMatrix = recordToRoleMatrix(previousEffective);
 
-  // Patch-like merge against stored customizations (or baseline when none stored).
-  const mergedRecord = { ...previousRecord, ...body.grants };
-  const nextMatrix = recordToRoleMatrix(mergedRecord);
-  const nextRecord = roleMatrixToRecord(nextMatrix);
+  const mergedStored = { ...(previousStored || {}), ...body.grants };
+  const nextEffective = mergeRoleMatrixWithBaseline(mergedStored);
+  const nextMatrix = recordToRoleMatrix(nextEffective);
+  const nextRecord = nextEffective;
   assertMatrixSafety(nextRecord);
-  const changes = diffRoleMatrices(
-    previous || getCodeBaselineMatrix(),
-    nextMatrix,
-  );
+  const changes = diffRoleMatrices(previousMatrix, nextMatrix);
 
-  const grantsMap = new Map(Object.entries(nextRecord));
+  const grantsMap = new Map(Object.entries(mergedStored));
   let doc;
   if (body.ifMatch) {
     const expectedUpdatedAt = parseIfMatchTimestamp(body.ifMatch);
@@ -373,7 +383,7 @@ export async function updateRoleMatrix(actor, body) {
   await auditRbacChange(actor, 'role_matrix.update', {
     changeCount: changes.length,
     changes,
-    previous: previousRecord,
+    previous: previousEffective,
     next: nextRecord,
   });
 
@@ -399,10 +409,10 @@ export async function resetRoleMatrix(actor) {
     };
   }
 
-  const previous = roleMatrixToRecord(grantsMapToMatrix(existing.grants));
+  const previous = grantsMapToStoredRecord(existing.grants);
   await RoleMatrix.deleteOne({ key: MATRIX_KEY });
   const baseline = roleMatrixToRecord(getCodeBaselineMatrix());
-  const changes = diffRoleMatrices(grantsMapToMatrix(existing.grants), getCodeBaselineMatrix());
+  const changes = diffRoleMatrices(storedRecordToMatrix(previous), getCodeBaselineMatrix());
 
   await auditRbacChange(actor, 'role_matrix.reset', { previous, next: baseline, changes });
 
@@ -421,7 +431,7 @@ export async function getUserPermissionOverrides(actor, userId) {
   assertTargetUserVisible(actor, user);
 
   const roleMatrix = await loadStoredMatrixRecord();
-  const roleMatrixRecord = roleMatrix ? roleMatrixToRecord(roleMatrix) : null;
+  const roleMatrixRecord = roleMatrix ? mergeRoleMatrixWithBaseline(roleMatrix) : null;
   const overrideDoc = await UserPermissionOverride.findOne({ user: userId });
   const overrides = entriesToOverrides(overrideDoc?.entries);
 
@@ -499,7 +509,7 @@ export async function updateUserPermissionOverrides(actor, userId, body) {
   }
 
   const roleMatrix = await loadStoredMatrixRecord();
-  const roleMatrixRecord = roleMatrix ? roleMatrixToRecord(roleMatrix) : null;
+  const roleMatrixRecord = roleMatrix ? mergeRoleMatrixWithBaseline(roleMatrix) : null;
   const userJson = user.toJSON();
 
   await auditRbacChange(actor, 'user_overrides.update', {

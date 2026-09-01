@@ -1,7 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import { WEB_MODULE_TAXONOMY } from '@pms/shared';
 import Icon from '@/shared/components/icons.jsx';
+import PageScreensDrawer from '@/shared/components/page-screens-drawer.jsx';
 import {
   cloneModules,
   isModulesDraftEmpty,
@@ -26,6 +28,7 @@ export default function ProjectModulesEditor({
   hasUnsavedChanges = false,
 }) {
   const rows = value ?? [];
+  const [screensTarget, setScreensTarget] = useState(null);
 
   const updateRows = (next) => onChange(next);
 
@@ -44,7 +47,7 @@ export default function ProjectModulesEditor({
   const addPage = (moduleId) => {
     updateRows(rows.map((mod) => (
       mod.id === moduleId
-        ? { ...mod, pages: [...mod.pages, { id: newRowId(), label: '', path: '' }] }
+        ? { ...mod, pages: [...mod.pages, { id: newRowId(), label: '', path: '', screens: [] }] }
         : mod
     )));
   };
@@ -66,7 +69,30 @@ export default function ProjectModulesEditor({
         ? { ...mod, pages: mod.pages.filter((page) => page.id !== pageId) }
         : mod
     )));
+    if (screensTarget?.moduleId === moduleId && screensTarget?.pageId === pageId) {
+      setScreensTarget(null);
+    }
   };
+
+  const updatePageScreens = (moduleId, pageId, screens) => {
+    updateRows(rows.map((mod) => (
+      mod.id === moduleId
+        ? {
+          ...mod,
+          pages: mod.pages.map((page) => (page.id === pageId ? { ...page, screens } : page)),
+        }
+        : mod
+    )));
+  };
+
+  const openScreensDrawer = screensTarget
+    ? rows
+      .find((mod) => mod.id === screensTarget.moduleId)
+      ?.pages.find((page) => page.id === screensTarget.pageId)
+    : null;
+  const openScreensModule = screensTarget
+    ? rows.find((mod) => mod.id === screensTarget.moduleId)
+    : null;
 
   const loadDefaultCatalog = () => {
     updateRows(modulesToFormRows(cloneModules(WEB_MODULE_TAXONOMY)));
@@ -130,6 +156,7 @@ export default function ProjectModulesEditor({
                 <div className="page-rows-head" aria-hidden="true">
                   <span>Page label</span>
                   <span>Path</span>
+                  <span>Screens</span>
                   <span />
                 </div>
               ) : null}
@@ -151,6 +178,17 @@ export default function ProjectModulesEditor({
                       value={page.path}
                       onChange={(e) => updatePage(mod.id, page.id, { path: e.target.value })}
                     />
+                    <button
+                      type="button"
+                      className="btn btn-sm page-screens-btn"
+                      aria-label={`Manage screens for ${page.label || `page ${pageIndex + 1}`}`}
+                      onClick={() => setScreensTarget({ moduleId: mod.id, pageId: page.id })}
+                    >
+                      Screens
+                      {page.screens?.length ? (
+                        <span className="page-screens-btn__count">{page.screens.length}</span>
+                      ) : null}
+                    </button>
                     <button
                       type="button"
                       className="btn btn-sm btn-ghost btn-ico"
@@ -193,6 +231,20 @@ export default function ProjectModulesEditor({
           </div>
         </>
       )}
+
+      {screensTarget && openScreensDrawer && openScreensModule ? (
+        <PageScreensDrawer
+          open
+          onClose={() => setScreensTarget(null)}
+          moduleLabel={openScreensModule.label || 'Module'}
+          pageLabel={openScreensDrawer.label || 'Page'}
+          pagePath={openScreensDrawer.path}
+          screens={openScreensDrawer.screens ?? []}
+          onChange={(screens) => {
+            updatePageScreens(screensTarget.moduleId, screensTarget.pageId, screens);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

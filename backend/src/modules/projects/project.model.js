@@ -9,10 +9,30 @@ import { ApiError } from '../../platform/errors.js';
  */
 export const RESERVED_PROJECT_KEYS = Object.freeze(['DEV']);
 
+const screenSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, trim: true },
+    type: {
+      type: String,
+      enum: ['list', 'detail', 'create', 'edit', 'other'],
+      default: 'other',
+    },
+    route: { type: String, trim: true },
+    status: {
+      type: String,
+      enum: ['active', 'draft', 'deprecated'],
+      default: 'active',
+    },
+    documentation: { type: String, trim: true },
+  },
+  { _id: false },
+);
+
 const pageSchema = new mongoose.Schema(
   {
     label: { type: String, required: true, trim: true },
     path: { type: String, trim: true },
+    screens: { type: [screenSchema], default: [] },
   },
   { _id: false },
 );

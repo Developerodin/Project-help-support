@@ -1,4 +1,5 @@
-/** @typedef {{ id: string, label: string, path: string }} PageFormRow */
+/** @typedef {{ id: string, name: string, type: string, route: string, status: string, documentation: string }} ScreenFormRow */
+/** @typedef {{ id: string, label: string, path: string, screens: ScreenFormRow[] }} PageFormRow */
 /** @typedef {{ id: string, label: string, pages: PageFormRow[] }} ModuleFormRow */
 
 let rowCounter = 0;
@@ -9,7 +10,7 @@ export function newRowId() {
   return `row-${rowCounter}`;
 }
 
-/** @param {Array<{ label?: string, pages?: Array<{ label?: string, path?: string }> }>} [modules] @returns {ModuleFormRow[]} */
+/** @param {Array<{ label?: string, pages?: Array<{ label?: string, path?: string, screens?: Array<{ name?: string, type?: string, route?: string, status?: string, documentation?: string }> }> }>} [modules] @returns {ModuleFormRow[]} */
 export function modulesToFormRows(modules = []) {
   return modules.map((mod) => ({
     id: newRowId(),
@@ -18,20 +19,41 @@ export function modulesToFormRows(modules = []) {
       id: newRowId(),
       label: page.label ?? '',
       path: page.path ?? '',
+      screens: (page.screens ?? []).map((screen) => ({
+        id: newRowId(),
+        name: screen.name ?? '',
+        type: screen.type ?? 'list',
+        route: screen.route ?? '',
+        status: screen.status ?? 'active',
+        documentation: screen.documentation ?? '',
+      })),
     })),
   }));
 }
 
-/** @param {ModuleFormRow[]} rows @returns {Array<{ label: string, pages: Array<{ label: string, path: string }> }>} */
+/** @param {ModuleFormRow[]} rows @returns {Array<{ label: string, pages: Array<{ label: string, path: string, screens: Array<{ name: string, type: string, route: string, status: string, documentation: string }> }> }>} */
 export function formRowsToModules(rows) {
   return rows
     .map((mod) => ({
       label: mod.label.trim(),
       pages: mod.pages
-        .map((page) => ({
-          label: page.label.trim(),
-          path: (page.path ?? '').trim(),
-        }))
+        .map((page) => {
+          const screens = (page.screens ?? [])
+            .map((screen) => ({
+              name: screen.name.trim(),
+              type: screen.type || 'other',
+              route: (screen.route ?? '').trim(),
+              status: screen.status || 'active',
+              documentation: (screen.documentation ?? '').trim(),
+            }))
+            .filter((screen) => screen.name);
+          const nextPage = {
+            label: page.label.trim(),
+            path: (page.path ?? '').trim(),
+          };
+          if (screens.length) nextPage.screens = screens;
+          return nextPage;
+        })
         .filter((page) => page.label),
     }))
     .filter((mod) => mod.label);
