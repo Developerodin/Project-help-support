@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import { NAV_GROUPS, canAccessNavItem } from '@/shared/lib/route-permissions.js';
+import { usePermissionContext } from '@/shared/hooks/use-permission-context.js';
 import { formatBrandDisplayName } from '@/shared/lib/branding.js';
 import Icon from '@/shared/components/icons.jsx';
 import BrandMark from '@/shared/components/brand-mark.jsx';
@@ -28,8 +29,10 @@ function isCurrent(pathname, href) {
 
 export default function AppSidebar() {
   const { user, logout, effectiveBranding } = useAuth();
+  const { permissionContext } = usePermissionContext();
   const pathname = usePathname();
   if (!user) return null;
+  const ctx = permissionContext.loadFailed ? null : permissionContext;
 
   return (
     <Sidebar collapsible="icon" aria-label="Primary">
@@ -44,7 +47,7 @@ export default function AppSidebar() {
 
       <SidebarContent>
         {NAV_GROUPS.map((group) => {
-          const items = group.items.filter((item) => canAccessNavItem(item.href, user));
+          const items = group.items.filter((item) => canAccessNavItem(item.href, user, ctx));
           if (items.length === 0) return null;
           return (
             <SidebarGroup key={group.cap}>

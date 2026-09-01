@@ -314,9 +314,7 @@ export function canBoardTransition(
 
   const required = resolveTransitionCapabilities(from, to);
   const allowed = required.length === 0
-    || (required.length > 1
-      ? required.some(({ board, capability }) => roleHasBoardCapability(actor, board, capability, policy))
-      : roleHasBoardCapability(actor, required[0].board, required[0].capability, policy));
+    || required.every(({ board, capability }) => roleHasBoardCapability(actor, board, capability, policy));
   if (!allowed) {
     const roleLabel = ROLE_LABELS[actor?.role] || actor?.role || 'your role';
     const missing = required.find(

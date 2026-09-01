@@ -25,7 +25,10 @@ export function writeStoredProjectId(projectId) {
 export function resolveInitialProjectId(projects, { isExternal = false } = {}) {
   const stored = readStoredProjectId();
   if (stored && projects.some((p) => p.id === stored)) return stored;
-  if (isExternal) return projects[0]?.id ?? null;
+  if (isExternal) {
+    if (projects.length === 1) return projects[0].id;
+    return projects[0]?.id ?? null;
+  }
   const web = projects.find((p) => p.key === 'WEB');
   return web?.id ?? projects[0]?.id ?? null;
 }

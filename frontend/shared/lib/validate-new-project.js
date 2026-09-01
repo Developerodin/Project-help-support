@@ -3,8 +3,13 @@
   name: 'npn',
 };
 
+export const EDIT_PROJECT_FIELD_IDS = {
+  clientId: 'epc',
+  name: 'epn',
+};
+
 /** @param {{ clientId?: string, name?: string, description?: string }} draft */
-export function validateNewProjectDraft(draft) {
+export function validateNewProjectDraft(draft, fieldIds = NEW_PROJECT_FIELD_IDS) {
   const errors = [];
 
   if (!draft.clientId?.trim()) {
@@ -31,7 +36,7 @@ export function validateNewProjectDraft(draft) {
   return {
     valid: errors.length === 0,
     errors,
-    firstFieldId: first ? NEW_PROJECT_FIELD_IDS[first.field] : null,
+    firstFieldId: first ? fieldIds[first.field] : null,
     summaryItems: errors.map((e) => e.summary),
     liveMessage: errors.map((e) => `${e.label}: ${e.message}`).join(' '),
   };

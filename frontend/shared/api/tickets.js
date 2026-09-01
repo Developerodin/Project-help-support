@@ -9,12 +9,16 @@ const query = (params) => {
   return string ? `?${string}` : '';
 };
 
-export const listTickets = (params) => apiFetch(`/tickets${query(params)}`);
+/** `options` carries the AbortSignal so a superseded list request is dropped. */
+export const listTickets = (params, options) => apiFetch(`/tickets${query(params)}`, options);
 export const getTicket = (id) => apiFetch(`/tickets/${encodeURIComponent(id)}`);
 export const createTicket = (body) => apiFetch('/tickets', { method: 'POST', body });
 
 export const patchTicket = (id, body) =>
   apiFetch(`/tickets/${encodeURIComponent(id)}`, { method: 'PATCH', body });
+
+export const deleteTicket = (id) =>
+  apiFetch(`/tickets/${encodeURIComponent(id)}`, { method: 'DELETE' });
 
 export const transitionTicket = (id, body) =>
   apiFetch(`/tickets/${encodeURIComponent(id)}/transition`, { method: 'POST', body });

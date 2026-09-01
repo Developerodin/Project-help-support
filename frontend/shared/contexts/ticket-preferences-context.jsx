@@ -22,42 +22,39 @@ export function TicketPreferencesProvider({ children }) {
   const { user, refreshUser, status } = useAuth();
   const [preferences, setPreferences] = useState(() => DEFAULT_TICKET_PREFERENCES);
   const [ready, setReady] = useState(false);
-  const [page, setPage] = useState(1);
   const saveTimer = useRef(null);
   const pendingSave = useRef(null);
-  const hydratedUserId = useRef(null);
+  const hydrateRequestId = useRef(0);
+  const userRef = useRef(user);
+  userRef.current = user;
 
   useEffect(() => {
     if (status !== AUTHENTICATED || !user?.id) {
       setReady(false);
-      hydratedUserId.current = null;
       return undefined;
     }
 
-    if (hydratedUserId.current === user.id) return undefined;
-    hydratedUserId.current = user.id;
-
-    let cancelled = false;
-    const fromUser = preferencesFromUser(user);
+    const requestId = hydrateRequestId.current + 1;
+    hydrateRequestId.current = requestId;
+    const fromUser = preferencesFromUser(userRef.current);
     setPreferences(fromUser);
-    setPage(1);
     setReady(false);
 
     getTicketPreferences()
       .then((stored) => {
-        if (cancelled) return;
+        if (hydrateRequestId.current !== requestId) return;
         setPreferences(mergeTicketPreferences(stored));
-        setPage(1);
       })
       .catch(() => {
-        if (!cancelled) setPreferences(fromUser);
+        if (hydrateRequestId.current !== requestId) return;
+        setPreferences(fromUser);
       })
       .finally(() => {
-        if (!cancelled) setReady(true);
+        if (hydrateRequestId.current === requestId) setReady(true);
       });
 
-    return () => { cancelled = true; };
-  }, [status, user]);
+    return undefined;
+  }, [status, user?.id]);
 
   const flushSave = useCallback(async (nextPrefs) => {
     try {
@@ -96,7 +93,6 @@ export function TicketPreferencesProvider({ children }) {
   }, [scheduleSave]);
 
   const setFilters = useCallback((updater) => {
-    setPage(1);
     setPreferences((current) => {
       const filters = typeof updater === 'function'
         ? updater(current.filters)
@@ -108,7 +104,6 @@ export function TicketPreferencesProvider({ children }) {
   }, [scheduleSave]);
 
   const setSort = useCallback((sort) => {
-    setPage(1);
     patchPreferences({ sort });
   }, [patchPreferences]);
 
@@ -123,13 +118,11 @@ export function TicketPreferencesProvider({ children }) {
       const updated = await resetTicketPreferences();
       const next = preferencesFromUser(updated);
       setPreferences(next);
-      setPage(1);
       await refreshUser(updated);
       return next;
     } catch (err) {
       const fallback = mergeTicketPreferences(DEFAULT_TICKET_PREFERENCES);
       setPreferences(fallback);
-      setPage(1);
       throw err;
     }
   }, [refreshUser]);
@@ -141,15 +134,13 @@ export function TicketPreferencesProvider({ children }) {
     sort: preferences.sort,
     boardMine: preferences.boardMine,
     limit: preferences.limit,
-    page,
-    setPage,
     setFilters,
     setSort,
     setBoardMine,
     patchPreferences,
     reset,
   }), [
-    ready, preferences, page, setFilters, setSort, setBoardMine, patchPreferences, reset,
+    ready, preferences, setFilters, setSort, setBoardMine, patchPreferences, reset,
   ]);
 
   return (

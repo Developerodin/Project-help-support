@@ -5,7 +5,6 @@ import { useParams, useRouter } from 'next/navigation';
 import {
   MATRIX_ROLES,
   ROLE_LABELS,
-  EXTERNAL_ROLES,
   countRoleGrants,
   setFeatureActionGranted,
 } from '@pms/shared';
@@ -61,7 +60,6 @@ export default function RbacRoleDetailPage() {
   const [saveNotice, setSaveNotice] = useState(null);
 
   const isKnownRole = MATRIX_ROLES.includes(role);
-  const isExternalRole = EXTERNAL_ROLES.includes(role);
 
   const loadRole = useCallback(async () => {
     if (!isKnownRole) {
@@ -323,7 +321,7 @@ export default function RbacRoleDetailPage() {
             onToggleAction={toggleAction}
             onTogglePermission={togglePermission}
             boardSnapshot={activeBoard}
-            onToggleBoardCapability={isExternalRole ? null : toggleBoardCapability}
+            onToggleBoardCapability={toggleBoardCapability}
           />
         </>
       )}

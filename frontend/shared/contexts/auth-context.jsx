@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiFetch, setAccessToken, setSessionLostHandler } from '../api/client.js';
+import { apiFetch, isTransientApiError, setAccessToken, setSessionLostHandler } from '../api/client.js';
 import {
   applyDocumentBranding,
   neutralBranding,
@@ -17,6 +17,9 @@ export const AUTH_EXPIRED = 'AUTH_EXPIRED';
 const AuthContext = createContext(null);
 
 const nameOf = (person) => person?.name || person?.email || null;
+
+/** Backoff between boot refresh attempts while the backend is unreachable. Last value repeats. */
+const BOOT_RETRY_DELAYS_MS = [400, 1000, 2500, 5000];
 
 /**
  * Carries `user.role` and nothing else. No permissions array, no route
@@ -70,28 +73,46 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     // The access token is gone after a reload; the httpOnly refresh cookie is not.
+    // Transient boot failures (backend restart, 502/503, network) must retry
+    // rather than AUTH_REQUIRED — that would send a still-valid session to login.
+    // Invalid refresh (401) stops immediately so we never spin on a dead session.
     let cancelled = false;
+    let retryTimer;
+    const wait = (ms) => new Promise((resolve) => {
+      retryTimer = setTimeout(resolve, ms);
+    });
+
     (async () => {
-      try {
-        const session = await apiFetch('/auth/refresh', { method: 'POST' });
-        setAccessToken(session.accessToken);
-        if (!cancelled) {
+      for (let attempt = 0; !cancelled; attempt += 1) {
+        if (attempt > 0) {
+          const delay = BOOT_RETRY_DELAYS_MS[Math.min(attempt - 1, BOOT_RETRY_DELAYS_MS.length - 1)];
+          await wait(delay);
+          if (cancelled) return;
+        }
+        try {
+          const session = await apiFetch('/auth/refresh', { method: 'POST' });
+          if (cancelled) return;
+          setAccessToken(session.accessToken);
           applySession(session);
           setStatus(AUTHENTICATED);
+          return;
+        } catch (error) {
+          if (cancelled) return;
+          if (isTransientApiError(error)) continue;
+          setAccessToken(null);
+          setUser(null);
+          setImpersonation(null);
+          resetBrandingToNeutral();
+          setStatus(AUTH_REQUIRED);
+          return;
         }
-      } catch {
-        // A remount (React Strict Mode, Fast Refresh) cancels this probe.
-        // Clearing the in-memory token here logs out a still-valid session
-        // that the replacement effect is about to restore.
-        if (cancelled) return;
-        setAccessToken(null);
-        setUser(null);
-        setImpersonation(null);
-        resetBrandingToNeutral();
-        setStatus(AUTH_REQUIRED);
       }
     })();
-    return () => { cancelled = true; };
+
+    return () => {
+      cancelled = true;
+      clearTimeout(retryTimer);
+    };
   }, [applySession, resetBrandingToNeutral]);
 
   const login = useCallback(async (email, password) => {

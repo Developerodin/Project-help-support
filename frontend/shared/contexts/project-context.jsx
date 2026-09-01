@@ -36,12 +36,10 @@ export function ProjectProvider({ children }) {
         if (cancelled) return;
         const active = page.results.filter((p) => p.status === 'active');
         setProjects(active);
-        if (isExternal && active.length === 1) {
-          setActiveProjectIdState(active[0].id);
-          writeStoredProjectId(active[0].id);
-        } else {
-          setActiveProjectIdState(resolveInitialProjectId(active, { isExternal }));
-        }
+        const nextProjectId = resolveInitialProjectId(active, { isExternal });
+        setActiveProjectIdState(nextProjectId);
+        // Always sync storage so a revoked project id cannot survive in localStorage.
+        writeStoredProjectId(nextProjectId);
       })
       .catch(() => {
         if (!cancelled) {

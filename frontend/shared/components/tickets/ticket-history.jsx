@@ -91,8 +91,8 @@ function EventRow({ event, onOpenDiscussion }) {
   );
 }
 
-export default function TicketHistory({ ticket, onOpenDiscussion }) {
-  const feed = buildActivityFeed(ticket);
+export default function TicketHistory({ ticket, activityFeed, onOpenDiscussion }) {
+  const feed = activityFeed ?? buildActivityFeed(ticket);
 
   if (feed.length === 0) {
     return (

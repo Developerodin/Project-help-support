@@ -46,18 +46,23 @@ export default function TicketDrawerFooter({
   const rejecting = isQaRejection(ticket.status);
   const backLabel = rejecting ? 'Reject' : 'Reopen';
 
-  const forward = nextForwardStage(ticket, actor, boardPolicy, permissionContext);
+  const forward = onTransition
+    ? nextForwardStage(ticket, actor, boardPolicy, permissionContext)
+    : null;
   const currentIdx = stageIndex(ticket.status);
-  const canReopen = currentIdx >= REOPEN_MIN_INDEX
+  const canReopen = Boolean(onTransition)
+    && currentIdx >= REOPEN_MIN_INDEX
     && canTransition(
       ticket.status, 'in_progress', actor, ticket, boardPolicy, permissionContext,
     ).ok;
-  const canClose = ticket.status !== 'closed'
+  const canClose = Boolean(onTransition)
+    && ticket.status !== 'closed'
     && canTransition(
       ticket.status, 'closed', actor, ticket, boardPolicy, permissionContext,
     ).ok;
 
   function requestTransition(to, verdict) {
+    if (!onTransition) return;
     if (verdict?.isReopen || verdict?.isClose) {
       setPending({ to, kind: verdict.isReopen ? 'note' : 'reason' });
       setText('');
@@ -74,6 +79,7 @@ export default function TicketDrawerFooter({
   }
 
   async function confirmPending() {
+    if (!onTransition) return;
     setBusy(true);
     try {
       await onTransition({

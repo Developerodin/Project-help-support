@@ -20,11 +20,13 @@ export const PERMISSION_GROUPS = Object.freeze([
   { label: 'Teams', permissions: ['teams.view', 'teams.create', 'teams.edit', 'teams.delete'] },
   { label: 'Board', permissions: ['boards.view', 'boards.use'] },
   {
+    label: 'UI & QA',
+    permissions: ['ui_qa.view', 'ui_qa.create', 'ui_qa.edit', 'ui_qa.delete'],
+  },
+  {
     label: 'Tickets',
     permissions: [
       'tickets.view', 'tickets.create', 'tickets.edit', 'tickets.delete',
-      'tickets.manage_assignment', 'tickets.manage_stage',
-      'tickets.manage_comments', 'tickets.manage_attachments',
       'tickets.accept',
     ],
   },
@@ -47,7 +49,8 @@ export const OVERRIDE_EDITABLE_PERMISSIONS = Object.freeze([
   'tickets.create',
   'tickets.edit',
   'tickets.delete',
-  'tickets.manage_assignment',
+  'ui_qa.edit',
+  'ui_qa.delete',
   'users.manage',
   'access.grant',
 ]);
@@ -55,12 +58,6 @@ export const OVERRIDE_EDITABLE_PERMISSIONS = Object.freeze([
 function assertKnownPermission(permission) {
   if (!PERMISSIONS.includes(permission)) {
     throw new Error(`Unknown permission: ${permission}`);
-  }
-}
-
-function assertKnownRole(role) {
-  if (!MATRIX_ROLES.includes(role)) {
-    throw new Error(`Unknown matrix role: ${role}`);
   }
 }
 
@@ -74,19 +71,73 @@ function roleHasStoredGrants(record, role) {
   return record != null && Object.prototype.hasOwnProperty.call(record, role);
 }
 
+/** Stored customization is a delta when it is `{ add, remove }` rather than a grant list. */
+export function isRoleGrantDelta(value) {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return false;
+  return Array.isArray(value.add) || Array.isArray(value.remove);
+}
+
+export function cloneStoredRoleCustomization(value) {
+  const raw = value && typeof value.toObject === 'function' ? value.toObject() : value;
+  if (Array.isArray(raw)) return [...raw];
+  if (isRoleGrantDelta(raw)) {
+    return {
+      add: [...(raw.add || [])].sort(),
+      remove: [...(raw.remove || [])].sort(),
+    };
+  }
+  return raw;
+}
+
+/**
+ * Resolve one role's stored customization to an effective grant list.
+ * - string[] → explicit full grant list (legacy replacement)
+ * - { add, remove } → baseline + additions - removals
+ * - [] → deny-all
+ */
+export function resolveStoredRoleGrants(stored, role, baselineSource = ROLE_PERMISSIONS) {
+  const baseline = baselineSource[role] || [];
+  if (isRoleGrantDelta(stored)) {
+    const add = migratePermissionKeys(stored.add || []);
+    const remove = migratePermissionKeys(stored.remove || []);
+    for (const permission of [...add, ...remove]) assertKnownPermission(permission);
+    const grants = new Set(baseline);
+    for (const permission of add) grants.add(permission);
+    for (const permission of remove) grants.delete(permission);
+    return [...grants].sort();
+  }
+  const permissions = migratePermissionKeys(stored || []);
+  for (const permission of permissions) assertKnownPermission(permission);
+  return [...permissions].sort();
+}
+
+/**
+ * Diff desired grants against the code baseline.
+ * Returns null when they match (caller should delete the stored key).
+ */
+export function buildRoleCustomization(role, desiredPermissions, baselineSource = ROLE_PERMISSIONS) {
+  const baseline = new Set(baselineSource[role] || []);
+  const desired = new Set(migratePermissionKeys(desiredPermissions || []));
+  for (const permission of desired) assertKnownPermission(permission);
+
+  const add = [...desired].filter((permission) => !baseline.has(permission)).sort();
+  const remove = [...baseline].filter((permission) => !desired.has(permission)).sort();
+  if (add.length === 0 && remove.length === 0) return null;
+  return { add, remove };
+}
+
 /**
  * Merge sparse stored customizations with the code baseline.
- * Only roles present in `storedRecord` replace baseline; untouched roles inherit code defaults.
+ * Missing keys inherit code defaults. Legacy string[] replaces baseline.
+ * `{ add, remove }` deltas apply on top of the current baseline.
  */
-export function mergeRoleMatrixWithBaseline(storedRecord = {}) {
+export function mergeRoleMatrixWithBaseline(storedRecord = {}, baselineSource = ROLE_PERMISSIONS) {
   const merged = {};
   for (const role of MATRIX_ROLES) {
     if (roleHasStoredGrants(storedRecord, role)) {
-      const permissions = migratePermissionKeys(storedRecord[role] || []);
-      for (const permission of permissions) assertKnownPermission(permission);
-      merged[role] = [...permissions].sort();
+      merged[role] = resolveStoredRoleGrants(storedRecord[role], role, baselineSource);
     } else {
-      merged[role] = [...(ROLE_PERMISSIONS[role] || [])].sort();
+      merged[role] = [...(baselineSource[role] || [])].sort();
     }
   }
   return merged;
@@ -118,14 +169,7 @@ export function roleMatrixToRecord(matrix) {
 }
 
 export function recordToRoleMatrix(record) {
-  const matrix = {};
-  for (const role of MATRIX_ROLES) {
-    assertKnownRole(role);
-    const permissions = migratePermissionKeys(record[role] || []);
-    for (const permission of permissions) assertKnownPermission(permission);
-    matrix[role] = new Set(permissions);
-  }
-  return matrix;
+  return buildRoleMatrix(mergeRoleMatrixWithBaseline(record || {}));
 }
 
 export function matrixHasPermission(matrix, role, permission) {
@@ -148,7 +192,7 @@ export function diffRoleMatrices(fromMatrix, toMatrix) {
 /** Resolve role bundle for one role, preferring a stored matrix over code baseline. */
 export function getRoleBundle(role, roleMatrix = null) {
   if (roleHasStoredGrants(roleMatrix, role)) {
-    return new Set(migratePermissionKeys(roleMatrix[role] || []));
+    return new Set(resolveStoredRoleGrants(roleMatrix[role], role));
   }
   return new Set(ROLE_PERMISSIONS[role] || []);
 }

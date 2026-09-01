@@ -154,8 +154,9 @@ export async function permittedProjectIdsForExternalUser(userId) {
 /**
  * Resolve authorized ticket project ids for external roles.
  * Client → all active projects under assigned companies.
- * Client tester → union of assigned projects when any project row exists;
- * otherwise all projects under company-wide assignments.
+ * Client tester → explicit project rows plus every active project for each
+ * company-wide assignment (project: null). Project-only rows never expand to
+ * sibling projects in the same company.
  */
 async function resolveTicketProjectScope(actor, assignments) {
   if (!assignments.length) return null;
@@ -176,18 +177,22 @@ async function resolveTicketProjectScope(actor, assignments) {
     const testerRows = assignments.filter((row) => row.role === ROLE_IDS.CLIENT_TESTER);
     if (!testerRows.length) return null;
 
-    const projectRows = testerRows.filter((row) => row.project);
-    if (projectRows.length) {
-      return [...new Set(projectRows.map((row) => String(row.project)))];
+    const projectIds = new Set(
+      testerRows.filter((row) => row.project).map((row) => String(row.project)),
+    );
+
+    const companyWideClientIds = [...new Set(
+      testerRows.filter((row) => row.client && !row.project).map((row) => String(row.client)),
+    )];
+    if (companyWideClientIds.length) {
+      const ids = await Project.find({
+        client: { $in: companyWideClientIds },
+        status: 'active',
+      }).distinct('_id');
+      for (const id of ids) projectIds.add(String(id));
     }
 
-    const clientIds = [...new Set(
-      testerRows.filter((row) => row.client).map((row) => String(row.client)),
-    )];
-    if (!clientIds.length) return null;
-
-    const ids = await Project.find({ client: { $in: clientIds }, status: 'active' }).distinct('_id');
-    return ids.length ? ids.map(String) : null;
+    return projectIds.size ? [...projectIds] : null;
   }
 
   return null;

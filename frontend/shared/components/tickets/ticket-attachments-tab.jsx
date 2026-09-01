@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useId, useRef, useState } from 'react';
-import { ROLE_IDS, hasAnyRole } from '@pms/shared';
 import Icon from '../icons.jsx';
 import ConfirmDialog from '../confirm-dialog.jsx';
 import AttachmentUploadLoader from '../attachment-upload-loader.jsx';
@@ -38,13 +37,6 @@ function formatUploadedAt(iso) {
   return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 }
 
-function canDeleteAttachment(attachment, user) {
-  if (!user) return false;
-  const uploaderId = attachment.uploadedBy?.id || attachment.uploadedBy?._id || attachment.uploadedBy;
-  const userId = user.id || user._id;
-  return hasAnyRole(user, ROLE_IDS.ADMIN, ROLE_IDS.SUPER_ADMIN) || String(uploaderId) === String(userId);
-}
-
 function pendingStatusLabel(status, error) {
   if (status === 'uploading') return 'Uploading…';
   if (status === 'failed') return error || 'Upload failed';
@@ -69,13 +61,16 @@ function LocalImagePreview({ file, alt }) {
 function UploadedAttachmentRow({
   attachment,
   ticketId,
-  user,
+  canDelete,
   onDelete,
   thumbFailed,
   onThumbError,
+  AttachmentLink = TicketAttachmentLink,
+  AttachmentImage = TicketAttachmentImage,
+  attachmentProps = {},
 }) {
   const attachmentId = attachment._id || attachment.id;
-  const showDelete = onDelete && canDeleteAttachment(attachment, user);
+  const showDelete = Boolean(onDelete && canDelete);
   const image = isImage(attachment) && !thumbFailed;
 
   return (
@@ -84,12 +79,13 @@ function UploadedAttachmentRow({
         <AttachmentMedia variant={image ? 'image' : 'icon'}>
           {image ? (
             <AttachmentTrigger asChild>
-              <TicketAttachmentImage
+              <AttachmentImage
                 ticketId={ticketId}
                 attachmentId={attachmentId}
                 alt=""
                 className="attach-thumb"
                 onError={onThumbError}
+                {...attachmentProps}
               />
             </AttachmentTrigger>
           ) : (
@@ -100,12 +96,13 @@ function UploadedAttachmentRow({
         <AttachmentContent>
           <AttachmentTitle>
             <AttachmentTrigger asChild>
-              <TicketAttachmentLink
+              <AttachmentLink
                 ticketId={ticketId}
                 attachmentId={attachmentId}
+                {...attachmentProps}
               >
                 <span title={attachment.name}>{attachment.name}</span>
-              </TicketAttachmentLink>
+              </AttachmentLink>
             </AttachmentTrigger>
           </AttachmentTitle>
           <AttachmentDescription>
@@ -124,12 +121,13 @@ function UploadedAttachmentRow({
             asChild
             aria-label={`Download ${attachment.name}`}
           >
-            <TicketAttachmentLink
+            <AttachmentLink
               ticketId={ticketId}
               attachmentId={attachmentId}
+              {...attachmentProps}
             >
               <Icon name="download" size={16} aria-hidden="true" />
-            </TicketAttachmentLink>
+            </AttachmentLink>
           </AttachmentAction>
           {showDelete && (
             <AttachmentAction
@@ -206,8 +204,13 @@ function PendingAttachmentRow({
 export default function TicketAttachmentsTab({
   ticket,
   user,
+  canUpload = false,
+  canDelete = false,
   onUpload,
   onDelete,
+  AttachmentLink = TicketAttachmentLink,
+  AttachmentImage = TicketAttachmentImage,
+  attachmentProps = {},
 }) {
   const inputRef = useRef(null);
   const hintId = useId();
@@ -221,7 +224,7 @@ export default function TicketAttachmentsTab({
 
   const attachments = ticket.attachments ?? [];
   const readyCount = pendingFiles.filter((item) => item.status === 'ready').length;
-  const canUpload = Boolean(onUpload);
+  const showUpload = Boolean(canUpload && onUpload);
 
   function addIncoming(incoming) {
     if (!incoming.length || uploading) return;
@@ -351,17 +354,20 @@ export default function TicketAttachmentsTab({
                 key={attachmentId}
                 attachment={attachment}
                 ticketId={ticket.ticketId}
-                user={user}
-                onDelete={onDelete ? (target) => setDeleteTarget(target) : null}
+                canDelete={canDelete}
+                onDelete={canDelete && onDelete ? (target) => setDeleteTarget(target) : null}
                 thumbFailed={thumbFailed[attachmentId]}
                 onThumbError={() => setThumbFailed((prev) => ({ ...prev, [attachmentId]: true }))}
+                AttachmentLink={AttachmentLink}
+                AttachmentImage={AttachmentImage}
+                attachmentProps={attachmentProps}
               />
             );
           })}
         </AttachmentList>
       </div>
 
-      {canUpload && (
+      {showUpload && (
         <div className="attach-section">
           <h3 className="attach-section-title">Files to upload</h3>
 

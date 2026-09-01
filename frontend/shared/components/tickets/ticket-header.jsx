@@ -4,7 +4,15 @@ import Link from 'next/link';
 import Icon, { initials, priorityChipClass, priorityLabel, isOverdue } from '../icons.jsx';
 import { daysBetween, formatDateOnly } from './ticket-drawer-utils.js';
 
-export default function TicketHeader({ ticket, watching, onClose, onToggleWatch }) {
+export default function TicketHeader({
+  ticket,
+  watching,
+  onClose,
+  onToggleWatch,
+  canEdit = false,
+  canDelete = false,
+  onRequestDelete,
+}) {
   return (
     <>
       <div className="drawer-id">
@@ -14,12 +22,19 @@ export default function TicketHeader({ ticket, watching, onClose, onToggleWatch 
         {ticket.module && <span className="chip">{ticket.module}</span>}
         <span className="spacer" />
         <span className="acts">
-          <Link
-            href={`/tickets/${encodeURIComponent(ticket.ticketId)}/edit`}
-            className="btn btn-sm"
-          >
-            Edit
-          </Link>
+          {canEdit ? (
+            <Link
+              href={`/tickets/${encodeURIComponent(ticket.ticketId)}/edit`}
+              className="btn btn-sm"
+            >
+              Edit
+            </Link>
+          ) : null}
+          {canDelete ? (
+            <button type="button" className="btn btn-sm btn-danger" onClick={onRequestDelete}>
+              Delete
+            </button>
+          ) : null}
           <button
             type="button"
             className={`btn btn-sm${watching ? ' chip-on' : ''}`}

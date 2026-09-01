@@ -6,6 +6,7 @@ import {
 } from './board-role-policy.js';
 import {
   canTransition,
+  legalDestinations,
   stageIndex,
   stageLabel,
   laneOf,
@@ -87,6 +88,24 @@ export function canDragTicket(
   if (!board) return false;
   return roleHasBoardCapability(actor, board, 'operate', boardPolicy)
     || roleHasBoardCapability(actor, board, 'transition', boardPolicy);
+}
+
+/** Whether the actor may change this ticket's stage (board lane policy). */
+export function canChangeTicketStage(
+  actor,
+  ticket,
+  boardPolicy = buildBoardRolePolicy(),
+  permissionContext = null,
+) {
+  if (!actor || !ticket) return false;
+  if (isPureExternalActor(actor)) {
+    if (!canExternalCloseReopen(actor, permissionContext)) return false;
+    return ticket.status === 'live' || ticket.status === 'closed';
+  }
+  if (!canInteractWithBoard(actor, boardPolicy)) return false;
+  return legalDestinations(
+    ticket.status, actor, ticket, boardPolicy, permissionContext,
+  ).some((key) => key !== ticket.status);
 }
 
 function buildBlock(code, message, extra = {}) {

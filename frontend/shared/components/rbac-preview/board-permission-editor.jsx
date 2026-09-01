@@ -4,7 +4,6 @@ import {
   BOARD_KEYS,
   BOARD_LABELS,
   BOARD_CAPABILITY_LABELS,
-  EXTERNAL_ROLES,
 } from '@pms/shared';
 import { boardHasCapability } from '@/shared/lib/rbac-preview/board-permissions-utils.js';
 
@@ -21,10 +20,6 @@ export default function BoardPermissionEditor({
   onToggleCapability,
   embedded = false,
 }) {
-  if (EXTERNAL_ROLES.includes(role)) {
-    return null;
-  }
-
   const table = (
     <div className="rbac-role-permissions__table-wrap">
       <table className="rbac-board-role__table">

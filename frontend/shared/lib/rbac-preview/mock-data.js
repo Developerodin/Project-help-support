@@ -77,7 +77,7 @@ export const MOCK_USERS = [
  */
 export const MOCK_USER_OVERRIDES = {
   usr_6: {
-    'tickets.manage_assignment': 'allow',
+    'tickets.delete': 'allow',
   },
   usr_7: {
     'tickets.create': 'deny',
@@ -89,7 +89,8 @@ export const OVERRIDE_EDITABLE_PERMISSIONS = [
   'tickets.create',
   'tickets.edit',
   'tickets.delete',
-  'tickets.manage_assignment',
+  'ui_qa.edit',
+  'ui_qa.delete',
   'users.manage',
   'access.grant',
 ];
@@ -145,10 +146,13 @@ export const PERMISSION_GROUPS = [
   { label: 'Clients', permissions: ['clients.view', 'clients.manage'] },
   { label: 'Projects', permissions: ['projects.view', 'projects.manage'] },
   { label: 'Teams', permissions: ['teams.view', 'teams.create', 'teams.edit', 'teams.delete'] },
+  { label: 'Board', permissions: ['boards.view', 'boards.use'] },
+  {
+    label: 'UI & QA',
+    permissions: ['ui_qa.view', 'ui_qa.create', 'ui_qa.edit', 'ui_qa.delete'],
+  },
   { label: 'Tickets', permissions: [
     'tickets.view', 'tickets.create', 'tickets.edit', 'tickets.delete',
-    'tickets.manage_assignment', 'tickets.manage_stage',
-    'tickets.manage_comments', 'tickets.manage_attachments',
     'tickets.accept',
   ] },
   { label: 'People', permissions: ['users.view', 'users.manage'] },

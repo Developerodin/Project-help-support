@@ -56,6 +56,21 @@ export const PERMISSION_FEATURE_MATRIX = Object.freeze([
     ],
   },
   {
+    label: 'UI & QA',
+    features: [
+      {
+        key: 'ui-qa',
+        label: 'UI & QA',
+        actions: {
+          view: ['ui_qa.view'],
+          create: [],
+          edit: ['ui_qa.edit'],
+          delete: ['ui_qa.delete'],
+        },
+      },
+    ],
+  },
+  {
     label: 'Tickets',
     features: [
       {
@@ -66,46 +81,6 @@ export const PERMISSION_FEATURE_MATRIX = Object.freeze([
           create: ['tickets.create'],
           edit: ['tickets.edit'],
           delete: ['tickets.delete'],
-        },
-      },
-      {
-        key: 'tickets-assignment',
-        label: 'Assignment',
-        actions: {
-          view: [],
-          create: [],
-          edit: ['tickets.manage_assignment'],
-          delete: [],
-        },
-      },
-      {
-        key: 'tickets-stage',
-        label: 'Stage transitions',
-        actions: {
-          view: [],
-          create: [],
-          edit: ['tickets.manage_stage'],
-          delete: [],
-        },
-      },
-      {
-        key: 'tickets-comments',
-        label: 'Comments',
-        actions: {
-          view: [],
-          create: [],
-          edit: ['tickets.manage_comments'],
-          delete: [],
-        },
-      },
-      {
-        key: 'tickets-attachments',
-        label: 'Attachments',
-        actions: {
-          view: [],
-          create: [],
-          edit: ['tickets.manage_attachments'],
-          delete: [],
         },
       },
     ],
@@ -181,14 +156,6 @@ export const EXTERNAL_TOGGLE_PERMISSIONS = Object.freeze(
   EXTERNAL_ROLE_TOGGLES.map((toggle) => toggle.permission),
 );
 
-function isTicketPermission(keys) {
-  return keys.some((key) => key.startsWith('tickets.'));
-}
-
-function isBoardPermission(keys) {
-  return keys.some((key) => key.startsWith('boards.'));
-}
-
 export function actionPermissionKeys(actionKeys) {
   if (!actionKeys?.length) return null;
   return [...new Set(actionKeys)];
@@ -196,10 +163,8 @@ export function actionPermissionKeys(actionKeys) {
 
 /** Whether this matrix cell is supported for the role (false → show —). */
 export function isMatrixActionSupported(role, actionKeys) {
-  const keys = actionPermissionKeys(actionKeys);
-  if (!keys) return false;
-  if (EXTERNAL_ROLES.includes(role) && (isTicketPermission(keys) || isBoardPermission(keys))) return false;
-  return true;
+  void role;
+  return actionPermissionKeys(actionKeys) != null;
 }
 
 /** Whether the matrix cell should render an editable checkbox (editor mode only). */

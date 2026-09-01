@@ -19,6 +19,8 @@ import { FOCUS_TICKET_SEARCH_KEY, focusTicketSearch } from '@/shared/lib/ticket-
 import { readNavCollapsed, storeNavCollapsed } from '@/shared/lib/nav-preference.js';
 import { normalizeApiError } from '@/shared/lib/api-error.js';
 import { showToast } from '@/shared/lib/toast.js';
+import { can } from '@pms/shared';
+import { usePermissionContext } from '@/shared/hooks/use-permission-context.js';
 
 function ImpersonationBanner() {
   const { user, impersonation, stopImpersonation } = useAuth();
@@ -53,9 +55,12 @@ function ImpersonationBanner() {
 
 function TopBar() {
   const { user } = useAuth();
+  const { permissionContext } = usePermissionContext();
   const { activeProject, hasWorkspace } = useProject();
   const router = useRouter();
   const pathname = usePathname();
+  const ctx = permissionContext.loadFailed ? null : permissionContext;
+  const canCreateTicket = Boolean(user && can(user, 'tickets.create', ctx));
 
   const openSearch = useCallback(() => {
     if (pathname === '/tickets' || pathname.startsWith('/tickets?')) {
@@ -96,7 +101,7 @@ function TopBar() {
         <kbd>/</kbd>
       </button>
       <span className="spacer" />
-      {hasWorkspace ? (
+      {hasWorkspace && canCreateTicket ? (
         <Link href="/tickets/new" className="btn btn-primary">
           <Icon name="plus" size={12} /> New ticket
         </Link>

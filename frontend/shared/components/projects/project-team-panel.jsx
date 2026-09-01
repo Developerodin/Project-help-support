@@ -1,28 +1,66 @@
 'use client';
 
 import { useMemo } from 'react';
+import { getUserRoles } from '@pms/shared';
 import { capRole } from '@/shared/lib/profile-utils.js';
 import { filterTeamsForProjectAssignment } from '@/shared/lib/team-scope.js';
 
-export default function ProjectTeamPanel({ project, teams, onUpdated }) {
-  const members = project.teamMembers || [];
+function entityId(ref) {
+  if (!ref) return '';
+  if (typeof ref === 'string') return ref;
+  return String(ref.id || ref._id || '');
+}
+
+function membersFromProject(project) {
+  return project.teamMembers || [];
+}
+
+function membersFromTeam(team) {
+  return (team?.members || []).map((user) => ({
+    user: {
+      id: user.id || user._id,
+      name: user.name,
+      email: user.email,
+      globalRole: user.globalRole || getUserRoles(user)[0] || user.role,
+    },
+  }));
+}
+
+export default function ProjectTeamPanel({
+  project,
+  teams,
+  teamId,
+  onTeamChange,
+  disabled = false,
+}) {
+  const currentTeamId = teamId !== undefined
+    ? (teamId || '')
+    : entityId(project.team);
   const selectableTeams = useMemo(
     () => filterTeamsForProjectAssignment(teams, project.id, project.team),
     [teams, project.id, project.team],
   );
+  const selectedTeam = selectableTeams.find((team) => entityId(team) === currentTeamId);
+  const members = currentTeamId && currentTeamId === entityId(project.team)
+    ? membersFromProject(project)
+    : membersFromTeam(selectedTeam);
+  const selectId = `project-team-${project.id}`;
 
-  async function changeTeam(teamId) {
-    await onUpdated(project.id, { team: teamId || null });
+  function changeTeam(nextId) {
+    if (onTeamChange) {
+      onTeamChange(nextId);
+    }
   }
 
   return (
     <div className="project-team-panel">
       <div className="form-row">
-        <label htmlFor={`project-team-${project.id}`}>Project team</label>
+        <label htmlFor={selectId}>Project team</label>
         <select
-          id={`project-team-${project.id}`}
-          value={project.team?.id || ''}
+          id={selectId}
+          value={currentTeamId}
           onChange={(e) => changeTeam(e.target.value)}
+          disabled={disabled}
         >
           <option value="">No team assigned</option>
           {selectableTeams.map((team) => (
@@ -31,7 +69,7 @@ export default function ProjectTeamPanel({ project, teams, onUpdated }) {
         </select>
       </div>
 
-      {project.team ? (
+      {currentTeamId ? (
         <>
           <div className="project-team-panel__head">
             <span className="lbl">Team members</span>

@@ -29,6 +29,7 @@ import {
   migrateProjectTeamFromLegacy,
   replaceProjectTeamMemberRoles,
 } from './project-team-member.service.js';
+import { mergeModuleQaData } from './ui-qa.service.js';
 
 const PROJECT_KEY_PATTERN = /^[A-Z][A-Z0-9]{1,9}$/;
 
@@ -350,7 +351,7 @@ export async function getProjectTeamMembers(id) {
 }
 
 export async function replaceModules(id, modules, actor = null, permissionContext = null) {
-  const existing = await Project.findById(id).select('client');
+  const existing = await Project.findById(id).select('client modules');
   if (!existing) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
   if (actor) {
     await assertScopedPermissionWhenConstrained(
@@ -361,8 +362,10 @@ export async function replaceModules(id, modules, actor = null, permissionContex
     );
   }
 
+  const mergedModules = mergeModuleQaData(existing.modules || [], modules);
+
   const project = await Project.findByIdAndUpdate(
-    id, { $set: { modules } }, { new: true, runValidators: true },
+    id, { $set: { modules: mergedModules } }, { new: true, runValidators: true },
   );
   if (!project) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
   return project.toJSON();

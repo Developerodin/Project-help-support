@@ -31,7 +31,20 @@ import {
 } from '../access/scope-enforcement.js';
 import Ticket from './ticket.model.js';
 
+const EXTERNAL_ACCESS_ASSIGNMENT_PERMISSIONS = new Set(['tickets.view', 'tickets.create']);
+
+async function assertHasTicketPermission(actor, permission, permissionContext = null) {
+  const ctx = await resolvePermissionContext(actor, permissionContext);
+  // External visibility and filing are governed by AccessAssignment scope, not RBAC.
+  if (isExternalUser(actor) && EXTERNAL_ACCESS_ASSIGNMENT_PERMISSIONS.has(permission)) return ctx;
+  if (!can(actor, permission, ctx)) {
+    throw new ApiError(403, 'FORBIDDEN', `Requires permission: ${permission}`);
+  }
+  return ctx;
+}
+
 export async function createTicket(actor, body, permissionContext = null) {
+  await assertHasTicketPermission(actor, 'tickets.create', permissionContext);
   const project = await Project.findById(body.project);
   if (!project) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
   if (project.status !== 'active') {
@@ -207,19 +220,19 @@ function ticketVisibilityOr(actorId, teamIds = [], projectIds = []) {
 }
 
 /** Roles with unrestricted ticket list/detail visibility via the permission matrix. */
-function hasGlobalTicketView(actor) {
-  return can(actor, 'tickets.view')
+function hasGlobalTicketView(actor, permissionContext = null) {
+  return can(actor, 'tickets.view', permissionContext)
     && hasAnyRole(actor, ...ADMIN_ROLES, ROLE_IDS.PROJECT_ADMIN);
 }
 
-async function applyTicketVisibility(filter, actor) {
+async function applyTicketVisibility(filter, actor, permissionContext = null) {
   if (isExternalUser(actor)) {
     const externalFilter = await buildExternalTicketFilter(actor);
     if (Object.keys(filter).length === 0) return externalFilter;
     return { $and: [filter, externalFilter] };
   }
 
-  if (hasGlobalTicketView(actor)) return filter;
+  if (hasGlobalTicketView(actor, permissionContext)) return filter;
 
   const teamIds = await actorTeamIds(actor._id);
   const projectIds = await projectIdsForTeams(teamIds);
@@ -228,7 +241,61 @@ async function applyTicketVisibility(filter, actor) {
   return { $and: [filter, visibility] };
 }
 
-export async function buildTicketFilter(actor, query = {}) {
+// "WEB-63", "web-63", "WEB63", "web 63", "63" — a project key is optional, and any
+// run of spaces/hyphens/unicode dashes between key and number is noise.
+const ID_SHAPE = /^([a-z]{2,10})?[\s\-\u2010-\u2015]*(\d{1,7})$/i;
+const MAX_WORDS = 6;
+const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * The three fields the filter box advertises: number, title, module. Never
+ * description — matching it is what made "Admin" return tickets with no
+ * "Admin" anywhere the user could see.
+ *
+ * Returns a filter fragment to AND into the caller's filter, or null when
+ * there is nothing to search for.
+ *
+ * ponytail: the word branch is an unanchored regex, so it is a collection
+ * scan. Fine at this ticket volume; revisit around ~50k tickets, where the
+ * upgrade is an Atlas Search `autocomplete` index. Do not reach for it early:
+ * $search must be the first aggregation stage, which would push the RBAC
+ * visibility filter to run after the match.
+ */
+export function ticketSearchClause(raw) {
+  const term = String(raw ?? '').trim().replace(/\s+/g, ' ');
+  if (!term) return null;
+
+  const id = term.match(ID_SHAPE);
+  if (id) {
+    // Anchored both ends: "63" means ticket 63, not 630. With a key it is
+    // "^WEB-63$", a literal prefix the unique ticketId index can seek on.
+    const key = id[1] ? `^${escapeRegex(id[1])}-` : '^[A-Za-z0-9]+-';
+    return { ticketId: { $regex: `${key}${id[2]}$`, $options: 'i' } };
+  }
+
+  const words = term
+    .split(' ')
+    // A lone "-" typed against an en-dash title matches nothing useful, and an
+    // all-punctuation term would otherwise match every ticket.
+    .filter((word) => /[a-z0-9]/i.test(word))
+    .slice(0, MAX_WORDS)
+    .map(escapeRegex);
+  if (!words.length) return null;
+
+  // Every word must appear somewhere: "administrator role" is not "anything
+  // containing role".
+  return {
+    $and: words.map((word) => ({
+      $or: [
+        { title: { $regex: word, $options: 'i' } },
+        { module: { $regex: word, $options: 'i' } },
+        { ticketId: { $regex: word, $options: 'i' } },
+      ],
+    })),
+  };
+}
+
+export async function buildTicketFilter(actor, query = {}, permissionContext = null) {
   const filter = {};
 
   if (query.project) filter.project = query.project;
@@ -251,22 +318,12 @@ export async function buildTicketFilter(actor, query = {}) {
   const scope = scopeFilter(query.scope, actor._id);
   if (scope) Object.assign(filter, scope);
 
-  if (query.q) {
-    const term = String(query.q).trim();
-    // A text index will never match "WEB-101" — the tokenizer splits it and the
-    // hyphenated form is not a stored term. The exact-id clause is what makes
-    // pasting a ticket number work. Module uses regex because labels like
-    // "User Management" are not always tokenized usefully by $text.
-    // Both indexed clauses are required of every branch of an $or that contains $text.
-    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    filter.$or = [
-      { $text: { $search: term } },
-      { ticketId: term.toUpperCase() },
-      { module: { $regex: escaped, $options: 'i' } },
-    ];
-  }
+  // $and, never $or: the search must narrow the filter above, not widen it,
+  // and applyTicketVisibility wraps whatever we return in another $and.
+  const search = ticketSearchClause(query.q);
+  if (search) filter.$and = [...(filter.$and ?? []), search];
 
-  return applyTicketVisibility(filter, actor);
+  return applyTicketVisibility(filter, actor, permissionContext);
 }
 
 const TICKET_OBJECT_ID_FIELDS = new Set([
@@ -389,8 +446,10 @@ async function paginateTickets(model, filter, options = {}) {
   };
 }
 
-export async function listTickets(actor, query = {}) {
-  const page = await paginateTickets(Ticket, await buildTicketFilter(actor, query), {
+export async function listTickets(actor, query = {}, permissionContext = null) {
+  const ctx = await resolvePermissionContext(actor, permissionContext);
+  await assertHasTicketPermission(actor, 'tickets.view', ctx);
+  const page = await paginateTickets(Ticket, await buildTicketFilter(actor, query, ctx), {
     page: query.page,
     limit: query.limit,
     sortBy: query.sortBy || 'createdAt:desc',
@@ -446,7 +505,7 @@ async function isActorOnTicketTeam(actorId, ticket) {
     || (team.members || []).some((member) => sameId(member, actorId));
 }
 
-export async function assertCanViewTicket(actor, ticket, permissionContext = null) {
+async function assertTicketInActorScope(actor, ticket, permission, permissionContext = null) {
   if (isExternalUser(actor)) {
     if (!(await canExternalViewTicket(actor, ticket))) {
       throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this ticket');
@@ -457,13 +516,13 @@ export async function assertCanViewTicket(actor, ticket, permissionContext = nul
   const ctx = await resolvePermissionContext(actor, permissionContext);
   const scope = ticketScopeTarget(ticket);
   if (hasActiveScopedConstraints(ctx.scopedAssignments)) {
-    if (!canInScope(actor, 'tickets.view', scope, ctx)) {
+    if (!canInScope(actor, permission, scope, ctx)) {
       throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this ticket');
     }
     return;
   }
 
-  if (hasGlobalTicketView(actor)) return;
+  if (hasGlobalTicketView(actor, ctx)) return;
 
   if (sameId(ticket.createdBy, actor._id) || sameId(ticket.assignedTo, actor._id)) return;
 
@@ -475,12 +534,22 @@ export async function assertCanViewTicket(actor, ticket, permissionContext = nul
 
   throw new ApiError(
     403, 'FORBIDDEN',
-    'Only the reporter, assignee, tester, watcher, team member, project admin or admin may view this ticket',
+    'Only the reporter, assignee, tester, watcher, team member, project admin or admin may access this ticket',
   );
 }
 
+export async function assertCanViewTicket(actor, ticket, permissionContext = null) {
+  await assertHasTicketPermission(actor, 'tickets.view', permissionContext);
+  await assertTicketInActorScope(actor, ticket, 'tickets.view', permissionContext);
+}
+
 export async function assertCanEditTicket(actor, ticket, permissionContext = null) {
-  if (isExternalUser(actor)) return;
+  await assertHasTicketPermission(actor, 'tickets.edit', permissionContext);
+
+  if (isExternalUser(actor)) {
+    await assertTicketInActorScope(actor, ticket, 'tickets.edit', permissionContext);
+    return;
+  }
 
   const ctx = await resolvePermissionContext(actor, permissionContext);
   const scope = ticketScopeTarget(ticket);
@@ -607,8 +676,8 @@ export async function assignTicket(actor, idOrKey, { assignedTo, team, revision 
   const ctx = await resolvePermissionContext(actor, permissionContext);
   const scope = ticketScopeTarget(ticket);
   if (hasActiveScopedConstraints(ctx.scopedAssignments)) {
-    if (!canInScope(actor, 'tickets.manage_assignment', scope, ctx)) {
-      throw new ApiError(403, 'FORBIDDEN', 'Requires permission: tickets.manage_assignment in scope');
+    if (!canInScope(actor, 'tickets.edit', scope, ctx)) {
+      throw new ApiError(403, 'FORBIDDEN', 'Requires permission: tickets.edit in scope');
     }
   } else if (!hasAnyRole(actor, ...ADMIN_ROLES, ROLE_IDS.PROJECT_ADMIN)) {
     throw new ApiError(403, 'FORBIDDEN', 'Only a project admin or an admin may assign tickets');
@@ -725,9 +794,27 @@ export async function clearBlocked(actor, idOrKey, { revision }, permissionConte
   return written.toJSON();
 }
 
+export async function assertCanDeleteTicket(actor, ticket, permissionContext = null) {
+  await assertHasTicketPermission(actor, 'tickets.delete', permissionContext);
+  await assertTicketInActorScope(actor, ticket, 'tickets.delete', permissionContext);
+  if (!isExternalUser(actor)) {
+    await assertScopedPermissionWhenConstrained(
+      actor,
+      'tickets.delete',
+      ticketScopeTarget(ticket),
+      permissionContext,
+    );
+  }
+}
+
 export async function deleteTicket(idOrKey, actor = null, permissionContext = null) {
+  if (!actor) {
+    throw new ApiError(401, 'UNAUTHENTICATED', 'Authentication required');
+  }
   const ticket = await resolveTicketDoc(idOrKey);
-  if (actor) {
+  await assertHasTicketPermission(actor, 'tickets.delete', permissionContext);
+  await assertTicketInActorScope(actor, ticket, 'tickets.delete', permissionContext);
+  if (!isExternalUser(actor)) {
     await assertScopedPermissionWhenConstrained(
       actor,
       'tickets.delete',

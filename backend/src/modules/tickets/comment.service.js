@@ -3,7 +3,7 @@ import { ApiError } from '../../platform/errors.js';
 import { assertActiveUsers } from '../teams/team.service.js';
 import { canExternalViewTicket } from '../access/external-auth.service.js';
 import Ticket from './ticket.model.js';
-import { resolveTicketDoc } from './ticket.service.js';
+import { resolveTicketDoc, assertCanViewTicket, assertCanEditTicket } from './ticket.service.js';
 
 const sameId = (a, b) => !!a && !!b && String(a._id ?? a) === String(b._id ?? b);
 
@@ -25,14 +25,11 @@ export function findComment(ticket, commentId) {
  * evaluated as part of the same single-document write, so of two concurrent
  * submissions exactly one matches and the other returns null.
  */
-export async function addComment(actor, idOrKey, { content, mentions = [], clientRef, internal = false }) {
+export async function addComment(actor, idOrKey, { content, mentions = [], clientRef, internal = false }, permissionContext = null) {
   const ticket = await resolveTicketDoc(idOrKey);
+  await assertCanViewTicket(actor, ticket, permissionContext);
 
-  const external = isExternalUser(actor);
-  if (external && !(await canExternalViewTicket(actor, ticket))) {
-    throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this ticket');
-  }
-  if (external && internal === true) {
+  if (isExternalUser(actor) && internal === true) {
     throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this ticket');
   }
 
@@ -43,7 +40,7 @@ export async function addComment(actor, idOrKey, { content, mentions = [], clien
     commentedBy: actor._id,
     mentions,
     clientRef,
-    internal: external ? false : Boolean(internal),
+    internal: isExternalUser(actor) ? false : Boolean(internal),
     createdAt: new Date(),
   };
 
@@ -78,8 +75,9 @@ export async function addComment(actor, idOrKey, { content, mentions = [], clien
   };
 }
 
-export async function editComment(actor, idOrKey, commentId, { content }) {
+export async function editComment(actor, idOrKey, commentId, { content }, permissionContext = null) {
   const ticket = await resolveTicketDoc(idOrKey);
+  await assertCanEditTicket(actor, ticket, permissionContext);
   const comment = findComment(ticket, commentId);
 
   if (!sameId(comment.commentedBy, actor._id)) {
@@ -107,8 +105,9 @@ export async function editComment(actor, idOrKey, commentId, { content }) {
   return (await Ticket.findById(ticket._id)).comments.id(comment._id);
 }
 
-export async function deleteComment(actor, idOrKey, commentId) {
+export async function deleteComment(actor, idOrKey, commentId, permissionContext = null) {
   const ticket = await resolveTicketDoc(idOrKey);
+  await assertCanEditTicket(actor, ticket, permissionContext);
   const comment = findComment(ticket, commentId);
 
   const isAuthor = sameId(comment.commentedBy, actor._id);

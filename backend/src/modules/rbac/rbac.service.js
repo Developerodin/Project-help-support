@@ -9,6 +9,8 @@ import {
   getEffectivePermissions,
   getRoleBaselinePermissions,
   mergeRoleMatrixWithBaseline,
+  buildRoleCustomization,
+  cloneStoredRoleCustomization,
   normaliseUserOverrides,
   recordToRoleMatrix,
   roleMatrixToRecord,
@@ -213,9 +215,9 @@ function overridesToEntries(overrides = {}) {
 function grantsMapToStoredRecord(grantsMap) {
   const record = {};
   const source = grantsMap instanceof Map ? Object.fromEntries(grantsMap) : grantsMap;
-  for (const [role, permissions] of Object.entries(source || {})) {
+  for (const [role, value] of Object.entries(source || {})) {
     if (!MATRIX_ROLES.includes(role)) continue;
-    record[role] = [...permissions];
+    record[role] = cloneStoredRoleCustomization(value);
   }
   return record;
 }
@@ -354,30 +356,57 @@ export async function updateRoleMatrix(actor, body) {
     : baselineRecord;
   const previousMatrix = recordToRoleMatrix(previousEffective);
 
-  const mergedStored = { ...(previousStored || {}), ...body.grants };
-  const nextEffective = mergeRoleMatrixWithBaseline(mergedStored);
+  const nextStored = { ...(previousStored || {}) };
+  for (const [role, desired] of Object.entries(body.grants)) {
+    if (!MATRIX_ROLES.includes(role)) continue;
+    const customization = buildRoleCustomization(role, desired);
+    if (customization == null) delete nextStored[role];
+    else nextStored[role] = customization;
+  }
+
+  const nextEffective = mergeRoleMatrixWithBaseline(nextStored);
   const nextMatrix = recordToRoleMatrix(nextEffective);
   const nextRecord = nextEffective;
   assertMatrixSafety(nextRecord);
   const changes = diffRoleMatrices(previousMatrix, nextMatrix);
 
-  const grantsMap = new Map(Object.entries(mergedStored));
-  let doc;
-  if (body.ifMatch) {
-    const expectedUpdatedAt = parseIfMatchTimestamp(body.ifMatch);
-    if (!expectedUpdatedAt) throw buildPolicyConflictError();
-    doc = await RoleMatrix.findOneAndUpdate(
-      { key: MATRIX_KEY, updatedAt: expectedUpdatedAt },
-      { $set: { grants: grantsMap, updatedBy: actor._id } },
-      { new: true, runValidators: true },
-    );
-    if (!doc) throw buildPolicyConflictError();
+  const hasCustomizations = Object.keys(nextStored).length > 0;
+  let doc = null;
+  if (!hasCustomizations) {
+    if (body.ifMatch) {
+      const expectedUpdatedAt = parseIfMatchTimestamp(body.ifMatch);
+      if (!expectedUpdatedAt) throw buildPolicyConflictError();
+      const existing = await RoleMatrix.findOne({ key: MATRIX_KEY });
+      if (existing) {
+        doc = await RoleMatrix.findOneAndDelete({
+          key: MATRIX_KEY,
+          updatedAt: expectedUpdatedAt,
+        });
+        if (!doc) throw buildPolicyConflictError();
+      }
+    } else {
+      await RoleMatrix.deleteOne({ key: MATRIX_KEY });
+    }
   } else {
-    doc = await RoleMatrix.findOneAndUpdate(
-      { key: MATRIX_KEY },
-      { $set: { grants: grantsMap, updatedBy: actor._id }, $setOnInsert: { key: MATRIX_KEY } },
-      { upsert: true, new: true, runValidators: true },
+    const grantsMap = new Map(
+      Object.entries(nextStored).map(([role, value]) => [role, cloneStoredRoleCustomization(value)]),
     );
+    if (body.ifMatch) {
+      const expectedUpdatedAt = parseIfMatchTimestamp(body.ifMatch);
+      if (!expectedUpdatedAt) throw buildPolicyConflictError();
+      doc = await RoleMatrix.findOneAndUpdate(
+        { key: MATRIX_KEY, updatedAt: expectedUpdatedAt },
+        { $set: { grants: grantsMap, updatedBy: actor._id } },
+        { new: true, runValidators: true },
+      );
+      if (!doc) throw buildPolicyConflictError();
+    } else {
+      doc = await RoleMatrix.findOneAndUpdate(
+        { key: MATRIX_KEY },
+        { $set: { grants: grantsMap, updatedBy: actor._id }, $setOnInsert: { key: MATRIX_KEY } },
+        { upsert: true, new: true, runValidators: true },
+      );
+    }
   }
 
   await auditRbacChange(actor, 'role_matrix.update', {
@@ -389,9 +418,9 @@ export async function updateRoleMatrix(actor, body) {
 
   return {
     effective: nextRecord,
-    customizations: nextRecord,
-    updatedAt: doc.updatedAt,
-    updatedBy: doc.updatedBy,
+    customizations: hasCustomizations ? grantsMapToStoredRecord(doc.grants) : null,
+    updatedAt: doc?.updatedAt ?? null,
+    updatedBy: doc?.updatedBy ?? null,
     changes,
   };
 }

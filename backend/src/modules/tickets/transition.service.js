@@ -2,25 +2,22 @@ import {
   canTransition, stageIndex, stageLabel,
   GUARD_ESTIMATES_FROM_INDEX, GUARD_OWNERSHIP_FROM_INDEX,
   validateTicketEstimateDates, isExternalUser, REOPEN_TARGET,
-  hasActiveScopedConstraints, canInScope,
-  EXTERNAL_ACCEPTANCE_PERMISSION,
   userHasEffectivePermission,
+  EXTERNAL_ACCEPTANCE_PERMISSION,
 } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { assertActiveUsers } from '../teams/team.service.js';
 import { canExternalViewTicket, sanitizeExternalTicket } from '../access/external-auth.service.js';
 import Ticket from './ticket.model.js';
 import {
-  QA_TESTER_STAGES,
-  resolveDefaultTester,
   resolveTicketDoc,
   getTicket,
+  assertCanViewTicket,
+  QA_TESTER_STAGES,
+  resolveDefaultTester,
 } from './ticket.service.js';
 import { getEffectiveBoardRolePolicy } from '../rbac/rbac.service.js';
-import {
-  ticketScopeTarget,
-  resolvePermissionContext,
-} from '../access/scope-enforcement.js';
+import { resolvePermissionContext } from '../access/scope-enforcement.js';
 
 /**
  * Layer 3, the half that needs the ticket's own fields â€” which is why it lives
@@ -95,13 +92,9 @@ async function assertMayTransition(actor, ticket, to, permissionContext = null) 
     return;
   }
 
-  const ctx = await resolvePermissionContext(actor, permissionContext);
-  const scope = ticketScopeTarget(ticket);
-  if (hasActiveScopedConstraints(ctx.scopedAssignments)) {
-    if (!canInScope(actor, 'tickets.manage_stage', scope, ctx)) {
-      throw new ApiError(403, 'FORBIDDEN', 'Requires permission: tickets.manage_stage in scope');
-    }
-  }
+  // Stage moves are gated by board lane capabilities (canTransition below),
+  // not tickets.edit — same rule as the board view.
+  await assertCanViewTicket(actor, ticket, permissionContext);
 }
 
 function conflict(current) {

@@ -137,3 +137,13 @@ export const SCREEN_STATUS_LABELS = Object.freeze({
   draft: 'Draft',
   deprecated: 'Deprecated',
 });
+
+/** UI & QA workflow — distinct from catalog screen lifecycle statuses above. */
+export const QA_STATUSES = Object.freeze(['open', 'review', 'in_progress', 'done']);
+
+export const QA_STATUS_LABELS = Object.freeze({
+  open: 'Open',
+  review: 'Review',
+  in_progress: 'In Progress',
+  done: 'Done',
+});

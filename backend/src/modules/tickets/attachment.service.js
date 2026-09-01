@@ -1,10 +1,10 @@
 import mongoose from 'mongoose';
-import { ADMIN_ROLES, hasAnyRole, isExternalUser } from '@pms/shared';
+import { isExternalUser } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { sniffType, safeKey } from '../../platform/upload.js';
 import * as defaultStorage from '../../platform/s3.js';
 import Ticket from './ticket.model.js';
-import { resolveTicketDoc, assertCanEditTicket, assertCanViewTicket } from './ticket.service.js';
+import { resolveTicketDoc, assertCanViewTicket, assertCanDeleteTicket } from './ticket.service.js';
 import { findComment } from './comment.service.js';
 import { canExternalViewTicket } from '../access/external-auth.service.js';
 
@@ -55,16 +55,13 @@ export async function addAttachments(actor, idOrKey, files, config, opts = {}) {
     commentId,
     commentContent,
     commentClientRef,
+    permissionContext = null,
   } = opts;
 
   defaultStorage.assertStorageEnabled(config);
 
   const ticket = await resolveTicketDoc(idOrKey);
-  await assertCanEditTicket(actor, ticket);
-
-  if (isExternalUser(actor) && !(await canExternalViewTicket(actor, ticket))) {
-    throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this ticket');
-  }
+  await assertCanViewTicket(actor, ticket, permissionContext);
 
   const replayedAttachments = attachmentReplay(ticket, clientRef);
   if (replayedAttachments) {
@@ -192,14 +189,12 @@ export async function addAttachments(actor, idOrKey, files, config, opts = {}) {
 
 export async function removeAttachment(actor, idOrKey, attachmentId, config, opts = {}) {
   const storage = opts.storage ?? defaultStorage;
+  const { permissionContext = null } = opts;
   defaultStorage.assertStorageEnabled(config);
 
   const ticket = await resolveTicketDoc(idOrKey);
+  await assertCanDeleteTicket(actor, ticket, permissionContext);
   const attachment = findAttachment(ticket, attachmentId);
-
-  if (!sameId(attachment.uploadedBy, actor._id) && !hasAnyRole(actor, ...ADMIN_ROLES)) {
-    throw new ApiError(403, 'FORBIDDEN', 'Only the uploader or an admin may delete an attachment');
-  }
 
   await Ticket.updateOne(
     { _id: ticket._id },

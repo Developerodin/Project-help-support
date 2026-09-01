@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ESTIMATE_DATE_EDITOR_ROLES, hasAnyRole, isExternalUser, can,
+  ESTIMATE_DATE_EDITOR_ROLES, hasAnyRole, isExternalUser, can, canChangeTicketStage,
 } from '@pms/shared';
 import {
   getTicket, patchTicket, transitionTicket, addComment, editComment, deleteComment, uploadAttachments, deleteAttachment, assignTicket,
-  watchTicket, unwatchTicket, setBlocked, clearBlocked,
+  watchTicket, unwatchTicket, setBlocked, clearBlocked, deleteTicket,
 } from '@/shared/api/tickets.js';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import { useProject } from '@/shared/contexts/project-context.jsx';
@@ -31,6 +31,7 @@ import TicketHistory from './ticket-history.jsx';
 import TicketComments from './ticket-comments.jsx';
 import TicketQaReport, { qaRejections } from './ticket-qa-report.jsx';
 import TicketDrawerFooter from './ticket-drawer-footer.jsx';
+import ConfirmDialog from '../confirm-dialog.jsx';
 import { useTicketAssignment } from './use-ticket-assignment.js';
 import { useBoardPolicy } from '@/shared/hooks/use-board-policy.js';
 import { usePermissionContext } from '@/shared/hooks/use-permission-context.js';
@@ -56,6 +57,8 @@ function TicketDrawerContent({
   const [validationDialog, setValidationDialog] = useState(null);
   const [tab, setTab] = useState('discussion');
   const [blockReason, setBlockReason] = useState('');
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const discussionRef = useRef(null);
   const detailsRef = useRef(null);
   const attachmentsRef = useRef(null);
@@ -128,7 +131,13 @@ function TicketDrawerContent({
   const watching = Boolean(
     ticket.watchers?.some((w) => String(w.id || w._id) === String(user?.id || user?._id)),
   );
-  const canAssign = can(user, 'tickets.manage_assignment', permissionContext);
+  const canViewTicket = can(user, 'tickets.view', permissionContext);
+  const canEditTicket = can(user, 'tickets.edit', permissionContext);
+  const canAssign = canEditTicket;
+  const canDeleteTicket = can(user, 'tickets.delete', permissionContext);
+  const canTransitionTicket = canChangeTicketStage(
+    user, ticket, boardPolicy, permissionContext,
+  );
   const canEditEstimates = hasAnyRole(user, ...ESTIMATE_DATE_EDITOR_ROLES);
   const canSeeMetadataRail = hasAnyRole(user, ...ESTIMATE_DATE_EDITOR_ROLES);
   const showMetadataRail = canSeeMetadataRail && tab === 'details';
@@ -177,6 +186,9 @@ function TicketDrawerContent({
         <TicketHeader
           ticket={ticket}
           watching={watching}
+          canEdit={canEditTicket}
+          canDelete={canDeleteTicket}
+          onRequestDelete={() => setDeleteOpen(true)}
           onClose={onClose}
           onToggleWatch={run(() => (watching
             ? unwatchTicket(ticket.ticketId)
@@ -194,7 +206,9 @@ function TicketDrawerContent({
             actor={user}
             boardPolicy={boardPolicy}
             permissionContext={permissionContext}
-            onTransition={run((body) => transitionTicket(ticket.ticketId, body))}
+            onTransition={canTransitionTicket
+              ? run((body) => transitionTicket(ticket.ticketId, body))
+              : undefined}
           />
         </div>
         <div className="tabs" role="tablist" aria-label="Ticket detail" onKeyDown={onTabKeyDown}>
@@ -266,10 +280,21 @@ function TicketDrawerContent({
                 <TicketComments
                   ticket={ticket}
                   user={user}
-                  onAdd={run((body) => addComment(ticket.ticketId, body), { rethrow: true })}
-                  onUpload={run((form) => uploadAttachments(ticket.ticketId, form), { rethrow: true })}
-                  onEdit={run((commentId, body) => editComment(ticket.ticketId, commentId, body), { rethrow: true })}
-                  onDelete={run((commentId) => deleteComment(ticket.ticketId, commentId), { rethrow: true })}
+                  canComment={canViewTicket}
+                  canEditComments={canEditTicket}
+                  canDeleteComments={canEditTicket}
+                  onAdd={canViewTicket
+                    ? run((body) => addComment(ticket.ticketId, body), { rethrow: true })
+                    : undefined}
+                  onUpload={canViewTicket
+                    ? run((form) => uploadAttachments(ticket.ticketId, form), { rethrow: true })
+                    : undefined}
+                  onEdit={canEditTicket
+                    ? run((commentId, body) => editComment(ticket.ticketId, commentId, body), { rethrow: true })
+                    : undefined}
+                  onDelete={canEditTicket
+                    ? run((commentId) => deleteComment(ticket.ticketId, commentId), { rethrow: true })
+                    : undefined}
                 />
               </div>
               <div
@@ -324,16 +349,22 @@ function TicketDrawerContent({
                 <TicketAttachmentsTab
                   ticket={ticket}
                   user={user}
-                  onUpload={async (form) => {
-                    await uploadAttachments(ticket.ticketId, form);
-                    await load();
-                    onChanged?.();
-                  }}
-                  onDelete={async (attachmentId) => {
-                    await deleteAttachment(ticket.ticketId, attachmentId);
-                    await load();
-                    onChanged?.();
-                  }}
+                  canUpload={canViewTicket}
+                  canDelete={canDeleteTicket}
+                  onUpload={canViewTicket
+                    ? async (form) => {
+                      await uploadAttachments(ticket.ticketId, form);
+                      await load();
+                      onChanged?.();
+                    }
+                    : undefined}
+                  onDelete={canDeleteTicket
+                    ? async (attachmentId) => {
+                      await deleteAttachment(ticket.ticketId, attachmentId);
+                      await load();
+                      onChanged?.();
+                    }
+                    : undefined}
                 />
               </div>
               <div
@@ -368,18 +399,20 @@ function TicketDrawerContent({
         actor={user}
         boardPolicy={boardPolicy}
         permissionContext={permissionContext}
-        onTransition={run(async ({ image, ...body }) => {
-          // The report's screenshot goes up on /attachments first; the
-          // transition endpoint links ids, it does not take files.
-          if (image) {
-            const form = new FormData();
-            form.append('files', image);
-            form.append('clientRef', crypto.randomUUID());
-            const uploaded = await uploadAttachments(ticket.ticketId, form);
-            body.attachmentIds = (uploaded || []).map((a) => a.id || a._id).filter(Boolean);
-          }
-          return transitionTicket(ticket.ticketId, body);
-        })}
+        onTransition={canTransitionTicket
+          ? run(async ({ image, ...body }) => {
+            // The report's screenshot goes up on /attachments first; the
+            // transition endpoint links ids, it does not take files.
+            if (image) {
+              const form = new FormData();
+              form.append('files', image);
+              form.append('clientRef', crypto.randomUUID());
+              const uploaded = await uploadAttachments(ticket.ticketId, form);
+              body.attachmentIds = (uploaded || []).map((a) => a.id || a._id).filter(Boolean);
+            }
+            return transitionTicket(ticket.ticketId, body);
+          })
+          : undefined}
       />
 
       <ValidationDialog
@@ -388,6 +421,36 @@ function TicketDrawerContent({
         message={validationDialog?.message}
         items={validationDialog?.items || []}
         onClose={closeValidationDialog}
+      />
+
+      <ConfirmDialog
+        open={deleteOpen}
+        title={`Delete ${ticket.ticketId}?`}
+        message="This cannot be undone."
+        confirmLabel="Delete"
+        danger
+        busy={deleting}
+        onConfirm={async () => {
+          if (deleting) return;
+          setDeleting(true);
+          setError(null);
+          try {
+            await deleteTicket(ticket.ticketId);
+            onChanged?.();
+            onClose();
+          } catch (err) {
+            const apiError = normalizeApiError(err);
+            logApiError(apiError, { ticketId, operation: 'deleteTicket' });
+            setError(apiError);
+            setDeleteOpen(false);
+          } finally {
+            setDeleting(false);
+          }
+        }}
+        onCancel={() => {
+          if (deleting) return;
+          setDeleteOpen(false);
+        }}
       />
     </>
   );
@@ -492,7 +555,7 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
             onChanged={onChanged}
             load={load}
             boardPolicy={boardPolicy}
-            permissionContext={permissionContext}
+            permissionContext={permissionContext.loadFailed ? null : permissionContext}
           />
         )}
       </aside>

@@ -23,7 +23,7 @@ export default function ProjectSwitcher() {
   const wrapRef = useRef(null);
 
   const isExternal = isExternalUser(user);
-  const hideSwitcher = isExternal && projects.length <= 1;
+  const canSwitch = !isExternal || projects.length > 1;
 
   useEffect(() => {
     if (!open) return undefined;
@@ -50,7 +50,26 @@ export default function ProjectSwitcher() {
     ? 'Loading…'
     : activeProject?.name ?? (isExternal ? 'Project' : 'All projects');
 
-  if (hideSwitcher) return null;
+  if (isExternal && projects.length === 1) {
+    if (loading) {
+      return (
+        <div className="projsel projsel-readonly" aria-busy="true" aria-label="Loading project">
+          <span>Loading…</span>
+        </div>
+      );
+    }
+    if (activeProject) {
+      return (
+        <div className="projsel projsel-readonly" aria-label={`Current project: ${activeProject.name}`}>
+          {activeProject && <span className="tag">{activeProject.key}</span>}
+          <span>{activeProject.name}</span>
+        </div>
+      );
+    }
+    return null;
+  }
+
+  if (!canSwitch) return null;
 
   return (
     <div className="menuwrap" ref={wrapRef}>

@@ -6,7 +6,7 @@ import * as commentService from './comment.service.js';
 import * as attachmentService from './attachment.service.js';
 
 export const list = catchAsync(async (req, res) => {
-  res.json(await ticketService.listTickets(req.user, req.query));
+  res.json(await ticketService.listTickets(req.user, req.query, req.permissionContext));
 });
 
 export const create = (config) => catchAsync(async (req, res) => {
@@ -89,7 +89,7 @@ export const transition = (config) => catchAsync(async (req, res) => {
 
 export const addComment = (config) => catchAsync(async (req, res) => {
   const { comment, created, event } = await commentService.addComment(
-    req.user, req.params.id, req.body,
+    req.user, req.params.id, req.body, req.permissionContext,
   );
   res.status(created ? 201 : 200).json(comment);
 
@@ -102,12 +102,14 @@ export const addComment = (config) => catchAsync(async (req, res) => {
 
 export const editComment = catchAsync(async (req, res) => {
   res.json(await commentService.editComment(
-    req.user, req.params.id, req.params.commentId, req.body,
+    req.user, req.params.id, req.params.commentId, req.body, req.permissionContext,
   ));
 });
 
 export const deleteComment = catchAsync(async (req, res) => {
-  res.json(await commentService.deleteComment(req.user, req.params.id, req.params.commentId));
+  res.json(await commentService.deleteComment(
+    req.user, req.params.id, req.params.commentId, req.permissionContext,
+  ));
 });
 
 export const reactToComment = catchAsync(async (req, res) => {
@@ -123,6 +125,7 @@ export const addAttachments = (config) => catchAsync(async (req, res) => {
       commentId: req.body?.commentId,
       commentContent: req.body?.commentContent,
       commentClientRef: req.body?.commentClientRef,
+      permissionContext: req.permissionContext,
     },
   );
   res.status(201).json(attachments);
@@ -137,6 +140,7 @@ export const addAttachments = (config) => catchAsync(async (req, res) => {
 export const removeAttachment = (config) => catchAsync(async (req, res) => {
   res.json(await attachmentService.removeAttachment(
     req.user, req.params.id, req.params.attachmentId, config,
+    { permissionContext: req.permissionContext },
   ));
 });
 

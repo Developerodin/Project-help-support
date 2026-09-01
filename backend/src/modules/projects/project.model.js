@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import toJSON from '../../platform/toJSON.plugin.js';
 import { ApiError } from '../../platform/errors.js';
+import { QA_STATUSES } from '@pms/shared';
 
 /**
  * DEV is reserved so a later import of legacy `DEV-MSIN0F6Q-0BFD8854` tickets
@@ -9,8 +10,54 @@ import { ApiError } from '../../platform/errors.js';
  */
 export const RESERVED_PROJECT_KEYS = Object.freeze(['DEV']);
 
+const objectId = mongoose.Schema.Types.ObjectId;
+
+const uiQaAttachmentSchema = new mongoose.Schema(
+  {
+    key: { type: String, required: true },
+    name: { type: String, required: true, trim: true },
+    size: { type: Number },
+    mimeType: { type: String },
+    uploadedBy: { type: objectId, ref: 'User', required: true },
+    uploadedAt: { type: Date, default: Date.now },
+    clientRef: { type: String },
+  },
+  { _id: true },
+);
+
+const uiQaStatusHistorySchema = new mongoose.Schema(
+  {
+    from: { type: String, enum: QA_STATUSES },
+    to: { type: String, enum: QA_STATUSES, required: true },
+    by: { type: objectId, ref: 'User', required: true },
+    at: { type: Date, default: Date.now },
+    note: { type: String, trim: true },
+  },
+  { _id: true },
+);
+
+const uiQaCommentSchema = new mongoose.Schema(
+  {
+    content: { type: String, required: true, trim: true },
+    commentedBy: { type: objectId, ref: 'User', required: true },
+    attachments: { type: [uiQaAttachmentSchema], default: [] },
+    clientRef: { type: String },
+    editedAt: { type: Date },
+  },
+  { timestamps: { createdAt: true, updatedAt: false } },
+);
+
+const uiQaFields = {
+  key: { type: String, trim: true },
+  qaStatus: { type: String, enum: QA_STATUSES, default: 'open' },
+  comments: { type: [uiQaCommentSchema], default: [] },
+  attachments: { type: [uiQaAttachmentSchema], default: [] },
+  qaStatusHistory: { type: [uiQaStatusHistorySchema], default: [] },
+};
+
 const screenSchema = new mongoose.Schema(
   {
+    ...uiQaFields,
     name: { type: String, required: true, trim: true },
     type: {
       type: String,
@@ -30,6 +77,7 @@ const screenSchema = new mongoose.Schema(
 
 const pageSchema = new mongoose.Schema(
   {
+    ...uiQaFields,
     label: { type: String, required: true, trim: true },
     path: { type: String, trim: true },
     screens: { type: [screenSchema], default: [] },
@@ -39,6 +87,7 @@ const pageSchema = new mongoose.Schema(
 
 const moduleSchema = new mongoose.Schema(
   {
+    ...uiQaFields,
     label: { type: String, required: true, trim: true },
     pages: { type: [pageSchema], default: [] },
   },

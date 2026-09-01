@@ -302,7 +302,7 @@ export default function NewProjectPage() {
           <div className="panel">
             <header><h3>Project team and modules</h3></header>
             <p className="note-line">
-              Assign a team now and set member roles after creation, or adjust them anytime on the Projects page.
+              Assign a team now and set member roles after creation, or adjust them anytime from Edit on the Projects page.
             </p>
           </div>
         </aside>

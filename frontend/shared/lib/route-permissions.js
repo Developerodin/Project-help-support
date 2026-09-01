@@ -7,9 +7,14 @@ import {
   canManageProjectsModule,
 } from '@pms/shared';
 
-/** Ticket routes: role bundle or scoped external access (backend enforces scope). */
-function ticketRouteAccess(user) {
-  return can(user, 'tickets.view') || isExternalUser(user);
+/** Ticket routes: matrix grant or external AccessAssignment scope (backend enforces scope). */
+function ticketRouteAccess(user, permissionContext) {
+  return can(user, 'tickets.view', permissionContext) || isExternalUser(user);
+}
+
+/** UI & QA routes: matrix grant or external AccessAssignment scope (backend enforces scope). */
+function uiQaRouteAccess(user, permissionContext) {
+  return can(user, 'ui_qa.view', permissionContext) || isExternalUser(user);
 }
 
 function internalTeamAccess(permission) {
@@ -33,6 +38,7 @@ const ROUTE_RULES = [
   { match: /^\/teams\/[^/]+\/edit\/?$/, access: internalTeamAccess('teams.edit') },
   { match: /^\/teams(\/|$)/, access: internalTeamAccess('teams.view') },
   { match: /^\/projects\/new\/?$/, access: internalProjectsManage },
+  { match: /^\/projects\/[^/]+\/edit\/?$/, access: internalProjectsManage },
   { match: /^\/projects(\/|$)/, access: internalProjectsView },
   { match: /^\/users(\/|$)/, access: (user) => can(user, 'users.view') },
   { match: /^\/audit-log(\/|$)/, access: (user) => can(user, 'audit.view') },
@@ -48,9 +54,10 @@ const ROUTE_RULES = [
       ROLE_IDS.TESTER,
     ),
   },
-  { match: /^\/tickets\/new\/?$/, access: (user) => can(user, 'tickets.create') || isExternalUser(user) },
-  { match: /^\/tickets\/[^/]+\/edit\/?$/, access: (user) => can(user, 'tickets.edit') || isExternalUser(user) },
+  { match: /^\/tickets\/new\/?$/, access: (user, ctx) => can(user, 'tickets.create', ctx) || isExternalUser(user) },
+  { match: /^\/tickets\/[^/]+\/edit\/?$/, access: (user, ctx) => can(user, 'tickets.edit', ctx) || isExternalUser(user) },
   { match: /^\/tickets(\/|$)/, access: ticketRouteAccess },
+  { match: /^\/ui-qa(\/|$)/, access: uiQaRouteAccess },
 ];
 
 /** First accessible destination when blocking an unauthorized route. */
@@ -67,19 +74,19 @@ export const REDIRECT_CANDIDATES = [
   '/admin',
 ];
 
-export function canAccessRoute(pathname, user) {
+export function canAccessRoute(pathname, user, permissionContext = null) {
   if (!user) return false;
   const path = pathname.split('?')[0];
   for (const rule of ROUTE_RULES) {
-    if (rule.match.test(path)) return rule.access(user);
+    if (rule.match.test(path)) return rule.access(user, permissionContext);
   }
   return true;
 }
 
-export function getDefaultRedirect(user) {
+export function getDefaultRedirect(user, permissionContext = null) {
   if (!user) return '/login';
   for (const path of REDIRECT_CANDIDATES) {
-    if (canAccessRoute(path, user)) return path;
+    if (canAccessRoute(path, user, permissionContext)) return path;
   }
   return '/profile';
 }
@@ -93,6 +100,7 @@ export const NAV_GROUPS = [
       { href: '/tickets', id: 'tickets', label: 'Tickets', icon: 'ticket' },
       { href: '/tickets/analytics', id: 'analytics', label: 'Analytics', icon: 'chart' },
       { href: '/notifications', id: 'inbox', label: 'Notifications', icon: 'bell' },
+      { href: '/ui-qa', id: 'ui-qa', label: 'UI & QA', icon: 'eye' },
     ],
   },
   {
@@ -108,6 +116,6 @@ export const NAV_GROUPS = [
   },
 ];
 
-export function canAccessNavItem(href, user) {
-  return canAccessRoute(href, user);
+export function canAccessNavItem(href, user, permissionContext = null) {
+  return canAccessRoute(href, user, permissionContext);
 }

@@ -4,8 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { can, canAccessProjectsModule } from '@pms/shared';
 import { listClients, patchClient } from '@/shared/api/clients.js';
-import { listProjects, patchProject, replaceModules } from '@/shared/api/projects.js';
-import { listTeams } from '@/shared/api/teams.js';
+import { listProjects, patchProject } from '@/shared/api/projects.js';
 import CompanyLogo from '@/shared/components/companies/company-logo.jsx';
 import EditCompanyDialog from '@/shared/components/companies/edit-company-dialog.jsx';
 import NewCompanyDialog from '@/shared/components/companies/new-company-dialog.jsx';
@@ -13,15 +12,10 @@ import ConfirmDialog from '@/shared/components/confirm-dialog.jsx';
 import FormError from '@/shared/components/form-error.jsx';
 import Icon from '@/shared/components/icons.jsx';
 import AppLoader from '@/shared/components/app-loader.jsx';
-import ProjectTeamPanel from '@/shared/components/projects/project-team-panel.jsx';
-import ProjectClientTestersPanel from '@/shared/components/projects/project-client-testers-panel.jsx';
-import ProjectModulesEditor from '@/shared/components/project-modules-editor.jsx';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
-import { formRowsToModules, modulesToFormRows } from '@/shared/lib/project-modules.js';
 import { normalizeApiError } from '@/shared/lib/api-error.js';
 import { showToast } from '@/shared/lib/toast.js';
 
-const EXPANDED_STORAGE_KEY = 'pms-projects-expanded';
 const COMPANY_EXPANDED_STORAGE_KEY = 'pms-companies-expanded';
 
 function isForbiddenError(error) {
@@ -57,14 +51,6 @@ function mergeCompaniesFromProjects(clientPage, projectPage) {
   return [...companyById.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function mergeExpandedState(prev, projectIds) {
-  const next = { ...prev };
-  for (const id of projectIds) {
-    if (!(id in next)) next[id] = true;
-  }
-  return next;
-}
-
 function mergeCompanyExpandedState(prev, companyIds) {
   const next = { ...prev };
   for (const id of companyIds) {
@@ -93,85 +79,42 @@ function persistExpandedState(key, next) {
 
 function ProjectPanel({
   project,
-  teams,
-  moduleRows,
-  hasModuleDraft,
-  isExpanded,
+  canEdit,
   canDelete,
-  onToggleExpanded,
   onDelete,
-  onUpdate,
-  onSaveModules,
-  onModulesChange,
 }) {
   return (
-    <section
-      className={`panel project-panel${isExpanded ? '' : ' collapsed'}`}
-    >
+    <section className="panel project-panel">
       <header className="project-panel-head">
         <div className="project-panel-title-row">
           <h4 className="project-panel-title">
-            <button
-              type="button"
-              className="project-panel-head-toggle"
-              aria-expanded={isExpanded}
-              aria-controls={`project-body-${project.id}`}
-              onClick={() => onToggleExpanded(project.id)}
-            >
-              <span className="project-panel-chev" aria-hidden="true">
-                <Icon name="chev-right" size={14} />
-              </span>
+            <span className="project-panel-head-static">
               <span className="project-panel-head-label">
                 <span className="mono">{project.key}</span> — {project.name}
               </span>
               <span className="spacer" />
               <span className="chip">{project.status}</span>
-              <span className="sr">{isExpanded ? 'Collapse' : 'Expand'} {project.name}</span>
-            </button>
+            </span>
           </h4>
-          {canDelete ? (
+          {canEdit || canDelete ? (
             <div className="project-panel-actions">
-              <button type="button" className="btn btn-sm btn-danger" onClick={onDelete}>
-                Delete
-              </button>
+              {canEdit ? (
+                <Link
+                  href={`/projects/${project.id}/edit`}
+                  className="btn btn-sm"
+                >
+                  Edit
+                </Link>
+              ) : null}
+              {canDelete ? (
+                <button type="button" className="btn btn-sm btn-danger" onClick={onDelete}>
+                  Delete
+                </button>
+              ) : null}
             </div>
           ) : null}
         </div>
       </header>
-
-      <div className="project-form" id={`project-body-${project.id}`}>
-        <div className="project-form-section">
-          <div className="project-form-intro">
-            <h5 className="project-form-heading">Project team</h5>
-            <p className="project-form-hint">
-              Assign one team to this project. Member roles come from each person&apos;s profile.
-            </p>
-          </div>
-
-          <ProjectTeamPanel project={project} teams={teams} onUpdated={onUpdate} />
-        </div>
-
-        <div className="project-form-section">
-          <ProjectClientTestersPanel project={project} />
-        </div>
-
-        <div className="project-form-section project-form-section--catalog">
-          <div className="project-form-intro">
-            <h5 className="project-form-heading">Module catalog</h5>
-            <p className="project-form-hint">
-              Group pages under module names for ticket location fields on new tickets.
-            </p>
-          </div>
-
-          <ProjectModulesEditor
-            projectKey={project.key}
-            value={moduleRows}
-            onChange={(rows) => onModulesChange(project.id, rows)}
-            onSave={() => onSaveModules(project)}
-            hasUnsavedChanges={hasModuleDraft}
-          />
-        </div>
-      </div>
     </section>
   );
 }
@@ -184,9 +127,6 @@ export default function ProjectsPage() {
 
   const [companies, setCompanies] = useState([]);
   const [projects, setProjects] = useState([]);
-  const [teams, setTeams] = useState([]);
-  const [modulesDraft, setModulesDraft] = useState({});
-  const [expanded, setExpanded] = useState({});
   const [companyExpanded, setCompanyExpanded] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -217,32 +157,15 @@ export default function ProjectsPage() {
       }));
   }, [companies, projects]);
 
-  const syncModulesDraft = useCallback((nextProjects) => {
-    setModulesDraft((prev) => {
-      const next = { ...prev };
-      for (const project of nextProjects) {
-        if (!next[project.id]) {
-          next[project.id] = modulesToFormRows(project.modules);
-        }
-      }
-      return next;
-    });
-  }, []);
-
   const applyLoadedData = useCallback((clientPage, projectPage) => {
     const mergedCompanies = mergeCompaniesFromProjects(clientPage, projectPage);
     setCompanies(mergedCompanies);
     setProjects(projectPage.results ?? []);
-    syncModulesDraft(projectPage.results ?? []);
-    setExpanded((prev) => mergeExpandedState(
-      { ...readStoredExpanded(EXPANDED_STORAGE_KEY), ...prev },
-      (projectPage.results ?? []).map((x) => x.id),
-    ));
     setCompanyExpanded((prev) => mergeCompanyExpandedState(
       { ...readStoredExpanded(COMPANY_EXPANDED_STORAGE_KEY), ...prev },
       mergedCompanies.map((c) => c.id),
     ));
-  }, [syncModulesDraft]);
+  }, []);
 
   const reload = useCallback(async () => {
     if (!user || !canViewProjects) return;
@@ -312,26 +235,6 @@ export default function ProjectsPage() {
     return () => { cancelled = true; };
   }, [applyLoadedData, authLoading, canViewProjects, user]);
 
-  useEffect(() => {
-    if (authLoading || !user || !canViewProjects) return undefined;
-    let cancelled = false;
-    listTeams()
-      .then((page) => {
-        if (!cancelled) setTeams(page.results ?? []);
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [authLoading, canViewProjects, user]);
-
-  const toggleExpanded = (projectId) => {
-    setExpanded((prev) => {
-      const currentlyExpanded = prev[projectId] !== false;
-      const next = { ...prev, [projectId]: !currentlyExpanded };
-      persistExpandedState(EXPANDED_STORAGE_KEY, next);
-      return next;
-    });
-  };
-
   const toggleCompanyExpanded = (companyId) => {
     setCompanyExpanded((prev) => {
       const currentlyExpanded = prev[companyId] !== false;
@@ -339,31 +242,6 @@ export default function ProjectsPage() {
       persistExpandedState(COMPANY_EXPANDED_STORAGE_KEY, next);
       return next;
     });
-  };
-
-  const update = async (id, body) => {
-    setError(null);
-    try {
-      await patchProject(id, body);
-      reload();
-    } catch (err) { setError(err); }
-  };
-
-  const saveModules = async (project) => {
-    setError(null);
-    try {
-      const rows = modulesDraft[project.id] ?? modulesToFormRows(project.modules);
-      await replaceModules(project.id, formRowsToModules(rows));
-      setModulesDraft((prev) => {
-        const next = { ...prev };
-        delete next[project.id];
-        return next;
-      });
-      reload();
-      showToast(`Module catalog saved for ${project.key}`);
-    } catch (err) {
-      setError(err);
-    }
   };
 
   const onCompanyCreated = (company) => {
@@ -419,7 +297,7 @@ export default function ProjectsPage() {
       <div className="page-head">
         <div>
           <h1>Projects</h1>
-          <p className="sub">Companies, project teams, and module taxonomy for each project.</p>
+          <p className="sub">Companies and projects. Open Edit to manage team, testers, and modules.</p>
         </div>
         <span className="spacer" />
         {canViewProjects ? (
@@ -536,28 +414,15 @@ export default function ProjectsPage() {
                         <Link href={`/projects/new?clientId=${company.id}`}>Add a project</Link>
                       </p>
                     ) : (
-                      companyProjects.map((project) => {
-                        const moduleRows = modulesDraft[project.id] ?? modulesToFormRows(project.modules);
-                        const hasModuleDraft = Boolean(modulesDraft[project.id]);
-                        const isExpanded = expanded[project.id] !== false;
-
-                        return (
-                          <ProjectPanel
-                            key={project.id}
-                            project={project}
-                            teams={teams}
-                            moduleRows={moduleRows}
-                            hasModuleDraft={hasModuleDraft}
-                            isExpanded={isExpanded}
-                            canDelete={canManageProjects}
-                            onToggleExpanded={toggleExpanded}
-                            onDelete={() => setConfirmDeleteProject(project)}
-                            onUpdate={update}
-                            onSaveModules={saveModules}
-                            onModulesChange={(projectId, rows) => setModulesDraft((prev) => ({ ...prev, [projectId]: rows }))}
-                          />
-                        );
-                      })
+                      companyProjects.map((project) => (
+                        <ProjectPanel
+                          key={project.id}
+                          project={project}
+                          canEdit={canManageProjects}
+                          canDelete={canManageProjects}
+                          onDelete={() => setConfirmDeleteProject(project)}
+                        />
+                      ))
                     )}
                   </div>
                 </section>

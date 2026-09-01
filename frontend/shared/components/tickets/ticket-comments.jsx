@@ -107,7 +107,9 @@ function groupComments(comments = []) {
   return groups;
 }
 
-function CommentAttachment({ ticketId, file }) {
+function CommentAttachment({ ticketId, file, renderAttachment }) {
+  if (renderAttachment) return renderAttachment(file);
+
   const attachmentId = file._id || file.id;
 
   if (isImageAttachment(file) && attachmentId) {
@@ -142,9 +144,12 @@ function CommentBubble({
   user,
   ticketId,
   showHeader,
+  canEditComments = false,
+  canDeleteComments = false,
   onEdit,
   onDeleteRequest,
   actionBusy,
+  renderCommentAttachment = null,
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -157,8 +162,8 @@ function CommentBubble({
   const when = formatWhen(comment.createdAt);
   const edited = comment.editedAt ? ' (edited)' : '';
   const commentId = commentRecordId(comment);
-  const canEdit = Boolean(onEdit && canEditComment(comment, user));
-  const canDelete = Boolean(onDeleteRequest && canDeleteComment(comment, user));
+  const canEdit = Boolean(canEditComments && onEdit && canEditComment(comment, user));
+  const canDelete = Boolean(canDeleteComments && onDeleteRequest && canDeleteComment(comment, user));
   const showActions = (canEdit || canDelete) && !editing;
   const busy = editBusy || actionBusy;
 
@@ -261,6 +266,7 @@ function CommentBubble({
                     key={file._id || file.id || file.name}
                     ticketId={ticketId}
                     file={file}
+                    renderAttachment={renderCommentAttachment}
                   />
                 ))}
               </>
@@ -300,7 +306,17 @@ function CommentBubble({
   );
 }
 
-function CommentBubbleGroup({ group, user, ticketId, onEdit, onDeleteRequest, actionBusy }) {
+function CommentBubbleGroup({
+  group,
+  user,
+  ticketId,
+  canEditComments,
+  canDeleteComments,
+  onEdit,
+  onDeleteRequest,
+  actionBusy,
+  renderCommentAttachment = null,
+}) {
   const align = bubbleAlign(group.comments[0], user);
 
   return (
@@ -312,9 +328,12 @@ function CommentBubbleGroup({ group, user, ticketId, onEdit, onDeleteRequest, ac
           user={user}
           ticketId={ticketId}
           showHeader={index === 0}
+          canEditComments={canEditComments}
+          canDeleteComments={canDeleteComments}
           onEdit={onEdit}
           onDeleteRequest={onDeleteRequest}
           actionBusy={actionBusy}
+          renderCommentAttachment={renderCommentAttachment}
         />
       ))}
     </BubbleGroup>
@@ -326,7 +345,18 @@ function attachOnlyContent(files) {
   return `Attached ${files.length} files`;
 }
 
-export default function TicketComments({ ticket, user, onAdd, onUpload, onEdit, onDelete }) {
+export default function TicketComments({
+  ticket,
+  user,
+  canComment = false,
+  canEditComments = false,
+  canDeleteComments = false,
+  onAdd,
+  onUpload,
+  onEdit,
+  onDelete,
+  renderCommentAttachment = null,
+}) {
   const [content, setContent] = useState('');
   const [internalOnly, setInternalOnly] = useState(false);
   const [pendingFiles, setPendingFiles] = useState([]);
@@ -407,15 +437,20 @@ export default function TicketComments({ ticket, user, onAdd, onUpload, onEdit, 
               group={group}
               user={user}
               ticketId={ticket.ticketId}
+              canEditComments={canEditComments}
+              canDeleteComments={canDeleteComments}
               onEdit={onEdit}
               onDeleteRequest={onDelete ? (target) => setDeleteTarget(target) : null}
               actionBusy={actionBusy}
+              renderCommentAttachment={renderCommentAttachment}
             />
           ))}
         </div>
       )}
 
       <div className="composer">
+        {canComment && (
+          <>
         {attachError && (
           <p className="composer-error field-hint invalid" role="alert">{attachError}</p>
         )}
@@ -511,6 +546,8 @@ export default function TicketComments({ ticket, user, onAdd, onUpload, onEdit, 
             }}
           />
         </div>
+          </>
+        )}
       </div>
 
       <ConfirmDialog
