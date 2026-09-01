@@ -117,3 +117,23 @@ export const LINK_RELS = Object.freeze(['blocks', 'blocked-by', 'duplicate-of', 
 
 /** Ticket.stageHistory[].decision — set only on the QA hops, null everywhere else. */
 export const STAGE_DECISIONS = Object.freeze(['approved', 'rejected']);
+
+/** Module catalog page screen types — list/detail/create/edit cover the common CRUD surfaces. */
+export const SCREEN_TYPES = Object.freeze(['list', 'detail', 'create', 'edit', 'other']);
+
+export const SCREEN_TYPE_LABELS = Object.freeze({
+  list: 'List',
+  detail: 'Detail',
+  create: 'Create',
+  edit: 'Edit',
+  other: 'Other',
+});
+
+/** Lifecycle of a catalogued screen within a module page. */
+export const SCREEN_STATUSES = Object.freeze(['active', 'draft', 'deprecated']);
+
+export const SCREEN_STATUS_LABELS = Object.freeze({
+  active: 'Active',
+  draft: 'Draft',
+  deprecated: 'Deprecated',
+});

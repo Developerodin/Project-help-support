@@ -70,6 +70,28 @@ function assertOverrideState(state) {
   }
 }
 
+function roleHasStoredGrants(record, role) {
+  return record != null && Object.prototype.hasOwnProperty.call(record, role);
+}
+
+/**
+ * Merge sparse stored customizations with the code baseline.
+ * Only roles present in `storedRecord` replace baseline; untouched roles inherit code defaults.
+ */
+export function mergeRoleMatrixWithBaseline(storedRecord = {}) {
+  const merged = {};
+  for (const role of MATRIX_ROLES) {
+    if (roleHasStoredGrants(storedRecord, role)) {
+      const permissions = migratePermissionKeys(storedRecord[role] || []);
+      for (const permission of permissions) assertKnownPermission(permission);
+      merged[role] = [...permissions].sort();
+    } else {
+      merged[role] = [...(ROLE_PERMISSIONS[role] || [])].sort();
+    }
+  }
+  return merged;
+}
+
 /** Build a role→Set map from a ROLE_PERMISSIONS-shaped source. */
 export function buildRoleMatrix(source = ROLE_PERMISSIONS) {
   const matrix = {};
@@ -125,7 +147,9 @@ export function diffRoleMatrices(fromMatrix, toMatrix) {
 
 /** Resolve role bundle for one role, preferring a stored matrix over code baseline. */
 export function getRoleBundle(role, roleMatrix = null) {
-  if (roleMatrix?.[role]) return new Set(roleMatrix[role]);
+  if (roleHasStoredGrants(roleMatrix, role)) {
+    return new Set(migratePermissionKeys(roleMatrix[role] || []));
+  }
   return new Set(ROLE_PERMISSIONS[role] || []);
 }
 

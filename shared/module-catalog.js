@@ -4,7 +4,8 @@
  * Keep in sync when Dharwin navigation changes.
  */
 
-/** @typedef {{ label: string, path: string }} ModulePage */
+/** @typedef {{ label: string, path: string, screens?: ModuleScreen[] }} ModulePage */
+/** @typedef {{ name: string, type?: string, route?: string, status?: string, documentation?: string }} ModuleScreen */
 /** @typedef {{ label: string, pages: ModulePage[] }} ModuleGroup */
 
 /** @type {ModuleGroup[]} */
