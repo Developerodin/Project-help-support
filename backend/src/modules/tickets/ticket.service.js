@@ -126,6 +126,21 @@ const DETAIL_POPULATE = [
   'comments.commentedBy', 'comments.mentions', 'stageHistory.by', 'activityLog.performedBy',
 ];
 
+/**
+ * ticket.toJSON() can serialize nested populated users with an own `id` key set
+ * to `undefined`, shadowing the Mongoose getter. Re-serialize from the source
+ * documents so comment author ids survive for ownership checks in the client.
+ */
+function restoreNestedPopulatedUsers(ticketDoc, ticketJson) {
+  const comments = ticketJson.comments || [];
+  comments.forEach((commentJson, index) => {
+    const author = ticketDoc.comments[index]?.commentedBy;
+    if (author && typeof author.toJSON === 'function') {
+      commentJson.commentedBy = author.toJSON();
+    }
+  });
+}
+
 const LIST_POPULATE = ['project', 'assignedTo', 'team', 'createdBy'];
 
 /** QA stages that should have a tester assigned for visibility and notifications. */
@@ -179,6 +194,7 @@ export async function getTicket(actor, idOrKey, permissionContext = null) {
   const ticket = await resolveTicketDoc(idOrKey, { populate: DETAIL_POPULATE });
   await assertCanViewTicket(actor, ticket, permissionContext);
   const json = ticket.toJSON();
+  restoreNestedPopulatedUsers(ticket, json);
   return isExternalUser(actor) ? sanitizeExternalTicket(json, { viewerId: actor._id }) : json;
 }
 

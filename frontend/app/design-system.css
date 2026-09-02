@@ -875,24 +875,35 @@ input[type="checkbox"]{ accent-color:var(--sig); width:14px; height:14px; cursor
   margin:0; color:inherit; white-space:pre-wrap; word-break:break-word;
 }
 .bubble-row{
-  display:flex; flex-direction:column; gap:2px; max-width:100%;
+  display:flex; flex-direction:row; align-items:flex-end; gap:6px;
+  max-width:100%;
 }
+.message[data-align="end"] .bubble-row{ flex-direction:row-reverse; }
+.message[data-align="stretch"] .bubble-row{ flex-direction:column; align-items:stretch; }
 .bubble-actions{
-  display:flex; gap:2px; padding:0 2px;
+  display:flex; flex-direction:column; gap:4px;
+  padding:0; flex-shrink:0;
 }
-.message[data-align="end"] .bubble-actions{ justify-content:flex-end; }
-.message[data-align="start"] .bubble-actions{ justify-content:flex-start; }
 .bubble-action-btn{
-  flex:none; width:28px; height:28px;
+  flex:none; width:32px; height:32px;
   display:inline-flex; align-items:center; justify-content:center;
-  border:0; border-radius:var(--r); background:transparent;
-  color:var(--ink-3); cursor:pointer;
+  border:1px solid var(--rule); border-radius:var(--r);
+  background:var(--panel); color:var(--ink-3); cursor:pointer;
+  transition:background 120ms ease, color 120ms ease, border-color 120ms ease;
 }
+.bubble-action-btn svg{ flex:none; display:block; }
 .bubble-action-btn:hover:not(:disabled){
-  background:var(--rule-soft); color:var(--ink);
+  background:var(--rule-soft); color:var(--ink); border-color:var(--ink-3);
+}
+.bubble-action-btn:focus-visible{
+  outline:none; border-color:var(--sig);
+  box-shadow:0 0 0 3px var(--sig-wash);
 }
 .bubble-action-btn:disabled{ opacity:0.35; cursor:default; }
-.bubble-action-btn--danger:hover:not(:disabled){ color:#b42318; }
+.bubble-action-btn--danger:hover:not(:disabled){
+  color:var(--alarm); border-color:color-mix(in srgb, var(--alarm) 40%, var(--rule));
+  background:var(--alarm-wash);
+}
 .bubble-edit{
   display:flex; flex-direction:column; gap:6px; width:100%;
 }

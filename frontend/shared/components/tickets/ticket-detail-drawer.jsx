@@ -131,9 +131,12 @@ function TicketDrawerContent({
   const watching = Boolean(
     ticket.watchers?.some((w) => String(w.id || w._id) === String(user?.id || user?._id)),
   );
-  const canViewTicket = can(user, 'tickets.view', permissionContext);
+  const canViewTicket = can(user, 'tickets.view', permissionContext) || isExternalUser(user);
   const canEditTicket = can(user, 'tickets.edit', permissionContext);
-  const canAssign = canEditTicket;
+  const canManageOwnComments = canEditTicket || isExternalUser(user);
+  const externalViewer = isExternalUser(user);
+  const canAssign = Boolean(canEditTicket && !externalViewer);
+  const canViewTeams = can(user, 'teams.view', permissionContext);
   const canDeleteTicket = can(user, 'tickets.delete', permissionContext);
   const canTransitionTicket = canChangeTicketStage(
     user, ticket, boardPolicy, permissionContext,
@@ -151,6 +154,7 @@ function TicketDrawerContent({
   const assignment = useTicketAssignment({
     ticket,
     canAssign,
+    canViewTeams,
     onAssign,
     eagerLoad: canAssign,
   });
@@ -281,18 +285,18 @@ function TicketDrawerContent({
                   ticket={ticket}
                   user={user}
                   canComment={canViewTicket}
-                  canEditComments={canEditTicket}
-                  canDeleteComments={canEditTicket}
+                  canEditComments={canManageOwnComments}
+                  canDeleteComments={canManageOwnComments}
                   onAdd={canViewTicket
                     ? run((body) => addComment(ticket.ticketId, body), { rethrow: true })
                     : undefined}
                   onUpload={canViewTicket
                     ? run((form) => uploadAttachments(ticket.ticketId, form), { rethrow: true })
                     : undefined}
-                  onEdit={canEditTicket
+                  onEdit={canManageOwnComments
                     ? run((commentId, body) => editComment(ticket.ticketId, commentId, body), { rethrow: true })
                     : undefined}
-                  onDelete={canEditTicket
+                  onDelete={canManageOwnComments
                     ? run((commentId) => deleteComment(ticket.ticketId, commentId), { rethrow: true })
                     : undefined}
                 />
@@ -309,6 +313,7 @@ function TicketDrawerContent({
                   <TicketDetailsTab
                     ticket={ticket}
                     canAssign={canAssign}
+                    canViewTeams={canViewTeams}
                     assignment={assignment}
                     railPresent={showMetadataRail}
                   />
@@ -318,6 +323,7 @@ function TicketDrawerContent({
                       fieldErrors={fieldErrors}
                       onFieldEdit={clearFieldError}
                       canAssign={canAssign}
+                      canViewTeams={canViewTeams}
                       canEditEstimates={canEditEstimates}
                       assignment={assignment}
                       onSave={run((body) => patchTicket(ticket.ticketId, body))}

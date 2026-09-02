@@ -35,19 +35,24 @@ function isImageAttachment(file) {
   return /\.(png|jpe?g|gif|webp|bmp|tiff?|avif|ico)$/i.test(file.name || '');
 }
 
+function normalizePersonId(value) {
+  if (value == null || value === '' || value === 'undefined') return null;
+  return String(value);
+}
+
 function commentAuthorId(comment) {
   const by = comment?.commentedBy;
   if (!by) return null;
-  if (typeof by === 'string') return by;
-  return String(by._id || by.id || '');
+  if (typeof by === 'string') return normalizePersonId(by);
+  // Sanitized API uses `id`; populated docs may still carry `_id`.
+  return normalizePersonId(by.id ?? by._id);
 }
 
 function commentAuthorKey(comment) {
+  const authorId = commentAuthorId(comment);
+  if (authorId) return authorId;
   const by = comment?.commentedBy;
   if (!by) return 'system';
-  if (typeof by === 'string') return by;
-  const id = by._id || by.id;
-  if (id) return String(id);
   if (by.name) return `name:${by.name}`;
   return 'unknown';
 }
@@ -55,7 +60,7 @@ function commentAuthorKey(comment) {
 function isOwnComment(comment, user) {
   if (!user) return false;
   const authorId = commentAuthorId(comment);
-  const userId = String(user._id || user.id || '');
+  const userId = normalizePersonId(user.id ?? user._id);
   return Boolean(authorId && userId && authorId === userId);
 }
 
@@ -77,17 +82,27 @@ function isSystemComment(comment) {
   return Boolean(comment?.system || comment?.kind === 'system' || !comment?.commentedBy);
 }
 
-function bubbleVariant(comment, user) {
-  if (isSystemComment(comment)) return 'muted';
-  if (comment.internal) return 'muted';
-  if (isOwnComment(comment, user)) return 'default';
-  return 'secondary';
+function isExternalCommentAuthor(comment) {
+  const by = comment?.commentedBy;
+  if (!by) return false;
+  if (typeof by.external === 'boolean') return by.external;
+  if (by.role || by.roles?.length) return isExternalUser(by);
+  return false;
 }
 
 function bubbleAlign(comment, user) {
   if (isSystemComment(comment)) return 'stretch';
-  if (isOwnComment(comment, user)) return 'end';
+  if (comment.internal) return 'start';
+  if (isExternalCommentAuthor(comment)) return 'end';
+  // Sanitized external API strips roles; own-comment fallback for external viewers.
+  if (user && isExternalUser(user) && isOwnComment(comment, user)) return 'end';
   return 'start';
+}
+
+function bubbleVariant(comment, user) {
+  if (isSystemComment(comment)) return 'muted';
+  if (comment.internal) return 'muted';
+  return bubbleAlign(comment, user) === 'end' ? 'default' : 'secondary';
 }
 
 function groupComments(comments = []) {
@@ -284,7 +299,7 @@ function CommentBubble({
                 disabled={busy}
                 onClick={startEdit}
               >
-                <Icon name="pencil" size={14} />
+                <Icon name="pencil" size={16} />
               </button>
             )}
             {canDelete && (
@@ -296,7 +311,7 @@ function CommentBubble({
                 disabled={busy}
                 onClick={() => onDeleteRequest({ id: commentId, preview: comment.content })}
               >
-                <Icon name="trash" size={14} />
+                <Icon name="trash" size={16} />
               </button>
             )}
           </div>
@@ -327,7 +342,7 @@ function CommentBubbleGroup({
           comment={comment}
           user={user}
           ticketId={ticketId}
-          showHeader={index === 0}
+          showHeader
           canEditComments={canEditComments}
           canDeleteComments={canDeleteComments}
           onEdit={onEdit}
@@ -574,5 +589,6 @@ export {
   commentAuthorId,
   commentAuthorKey,
   groupComments,
+  isExternalCommentAuthor,
   isOwnComment,
 };

@@ -7,6 +7,30 @@ import { resolveTicketDoc, assertCanViewTicket, assertCanEditTicket } from './ti
 
 const sameId = (a, b) => !!a && !!b && String(a._id ?? a) === String(b._id ?? b);
 
+/** External users may manage only their own public comments; internals use tickets.edit. */
+async function assertCanManageComment(actor, ticket, comment, permissionContext, { allowAdminDelete = false } = {}) {
+  if (isExternalUser(actor)) {
+    await assertCanViewTicket(actor, ticket, permissionContext);
+    if (comment.internal === true) {
+      throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this comment');
+    }
+    if (!sameId(comment.commentedBy, actor._id)) {
+      throw new ApiError(403, 'FORBIDDEN', 'Only the author may manage this comment');
+    }
+    return;
+  }
+
+  await assertCanEditTicket(actor, ticket, permissionContext);
+  const isAuthor = sameId(comment.commentedBy, actor._id);
+  if (allowAdminDelete) {
+    if (!isAuthor && !hasAnyRole(actor, ...ADMIN_ROLES)) {
+      throw new ApiError(403, 'FORBIDDEN', 'Only the author or an admin may delete a comment');
+    }
+  } else if (!isAuthor) {
+    throw new ApiError(403, 'FORBIDDEN', 'Only the author may edit a comment');
+  }
+}
+
 export function findComment(ticket, commentId) {
   const comment = ticket.comments.id(commentId);
   if (!comment) throw new ApiError(404, 'COMMENT_NOT_FOUND', 'Comment not found');
@@ -77,12 +101,8 @@ export async function addComment(actor, idOrKey, { content, mentions = [], clien
 
 export async function editComment(actor, idOrKey, commentId, { content }, permissionContext = null) {
   const ticket = await resolveTicketDoc(idOrKey);
-  await assertCanEditTicket(actor, ticket, permissionContext);
   const comment = findComment(ticket, commentId);
-
-  if (!sameId(comment.commentedBy, actor._id)) {
-    throw new ApiError(403, 'FORBIDDEN', 'Only the author may edit a comment');
-  }
+  await assertCanManageComment(actor, ticket, comment, permissionContext);
 
   const now = new Date();
   await Ticket.updateOne(
@@ -107,13 +127,8 @@ export async function editComment(actor, idOrKey, commentId, { content }, permis
 
 export async function deleteComment(actor, idOrKey, commentId, permissionContext = null) {
   const ticket = await resolveTicketDoc(idOrKey);
-  await assertCanEditTicket(actor, ticket, permissionContext);
   const comment = findComment(ticket, commentId);
-
-  const isAuthor = sameId(comment.commentedBy, actor._id);
-  if (!isAuthor && !hasAnyRole(actor, ...ADMIN_ROLES)) {
-    throw new ApiError(403, 'FORBIDDEN', 'Only the author or an admin may delete a comment');
-  }
+  await assertCanManageComment(actor, ticket, comment, permissionContext, { allowAdminDelete: true });
 
   await Ticket.updateOne(
     { _id: ticket._id },

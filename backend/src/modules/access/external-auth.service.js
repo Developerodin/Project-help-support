@@ -288,10 +288,14 @@ const CLIENT_VISIBLE_ACTIONS = new Set(['created']);
 
 function pickPerson(person) {
   if (!person) return null;
-  // A populated Mongoose/BSON document exposes an `.id` getter that returns the
-  // raw 12-byte ObjectId buffer, not a string — `person.id ?? person._id` would
-  // silently take that branch. `_id` must be checked first.
-  return { id: String(person._id ?? person.id), name: person.name ?? null };
+  if (typeof person.toJSON === 'function') {
+    person = person.toJSON();
+  }
+  const rawId = person._id ?? person.id;
+  if (rawId == null) return { name: person.name ?? null };
+  const id = String(rawId);
+  if (!id || id === 'undefined') return { name: person.name ?? null };
+  return { id, name: person.name ?? null };
 }
 
 function publicAttachment(attachment) {
@@ -307,13 +311,17 @@ function publicAttachment(attachment) {
 }
 
 function publicComment(comment) {
+  const author = comment.commentedBy;
+  const person = pickPerson(author);
   return {
     id: comment.id ?? comment._id,
     content: comment.content,
     createdAt: comment.createdAt,
     editedAt: comment.editedAt ?? null,
     attachments: (comment.attachments ?? []).map(publicAttachment),
-    commentedBy: pickPerson(comment.commentedBy),
+    commentedBy: person
+      ? { ...person, external: isExternalUser(author) }
+      : null,
   };
 }
 

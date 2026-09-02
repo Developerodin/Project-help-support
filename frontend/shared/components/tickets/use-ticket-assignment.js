@@ -15,7 +15,9 @@ function entityRef(entity) {
   return { id: String(id), name: entity.name };
 }
 
-export function useTicketAssignment({ ticket, canAssign, onAssign, eagerLoad = false }) {
+export function useTicketAssignment({
+  ticket, canAssign, canViewTeams = false, onAssign, eagerLoad = false,
+}) {
   const [assigneePickerOpen, setAssigneePickerOpen] = useState(false);
   const [teamPickerOpen, setTeamPickerOpen] = useState(false);
   const [projectTeam, setProjectTeam] = useState(null);
@@ -52,7 +54,7 @@ export function useTicketAssignment({ ticket, canAssign, onAssign, eagerLoad = f
   }, [canAssign, assigneePickerOpen, teamPickerOpen, projectId, eagerLoad]);
 
   useEffect(() => {
-    if (!canAssign || (!eagerLoad && !teamPickerOpen)) return undefined;
+    if (!canAssign || !canViewTeams || (!eagerLoad && !teamPickerOpen)) return undefined;
     let cancelled = false;
     setLoadingTeams(true);
     setTeamsError(null);
@@ -63,7 +65,7 @@ export function useTicketAssignment({ ticket, canAssign, onAssign, eagerLoad = f
       })
       .finally(() => { if (!cancelled) setLoadingTeams(false); });
     return () => { cancelled = true; };
-  }, [canAssign, teamPickerOpen, projectId, eagerLoad]);
+  }, [canAssign, canViewTeams, teamPickerOpen, projectId, eagerLoad]);
 
   const userOptions = useMemo(
     () => teamMembers.map((member) => {

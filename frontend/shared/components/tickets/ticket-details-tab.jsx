@@ -29,6 +29,17 @@ function EmptyValue({ children = 'Not set' }) {
   return <span className="empty">{children}</span>;
 }
 
+function TeamValue({ name, locked = false }) {
+  return (
+    <>
+      {name || <EmptyValue>No team</EmptyValue>}
+      {locked ? (
+        <span className="meta detail-select-hint">Set by project team</span>
+      ) : null}
+    </>
+  );
+}
+
 function AssignmentSelect({
   id,
   label,
@@ -39,7 +50,6 @@ function AssignmentSelect({
   error,
   assigning,
   onChange,
-  disabled = false,
 }) {
   return (
     <>
@@ -48,7 +58,7 @@ function AssignmentSelect({
         className="detail-select"
         aria-label={label}
         value={value}
-        disabled={disabled || assigning || loading}
+        disabled={assigning || loading}
         onChange={onChange}
       >
         <option value="">{emptyLabel}</option>
@@ -65,12 +75,14 @@ function AssignmentSelect({
 export default function TicketDetailsTab({
   ticket,
   canAssign = false,
+  canViewTeams = false,
   assignment,
   railPresent = false,
 }) {
   const elapsed = ticket.createdAt ? daysBetween(ticket.createdAt) : 0;
   const projectName = ticket.project?.name || ticket.project?.key || ticket.projectKey;
   const editable = canAssign && assignment?.submitAssignment;
+  const canEditTeam = editable && canViewTeams && !assignment?.projectTeamLocked;
 
   const assigneeId = assignment?.assigneeValue?.id || '';
   const teamId = assignment?.teamValue?.id || '';
@@ -158,26 +170,23 @@ export default function TicketDetailsTab({
         )}
         {!railPresent && (
           <DetailField label="Team">
-            {editable ? (
-              <>
-                <AssignmentSelect
-                  id="detail-team"
-                  label="Team"
-                  emptyLabel="No team"
-                  value={teamId}
-                  options={assignment.teamOptions}
-                  loading={assignment.loadingTeams}
-                  error={assignment.teamsError}
-                  assigning={assignment.assigningField === 'team'}
-                  onChange={handleTeamChange}
-                  disabled={assignment.projectTeamLocked}
-                />
-                {assignment.projectTeamLocked ? (
-                  <span className="meta detail-select-hint">Set by project team</span>
-                ) : null}
-              </>
+            {canEditTeam ? (
+              <AssignmentSelect
+                id="detail-team"
+                label="Team"
+                emptyLabel="No team"
+                value={teamId}
+                options={assignment.teamOptions}
+                loading={assignment.loadingTeams}
+                error={assignment.teamsError}
+                assigning={assignment.assigningField === 'team'}
+                onChange={handleTeamChange}
+              />
             ) : (
-              ticket.team?.name || <EmptyValue>No team</EmptyValue>
+              <TeamValue
+                name={ticket.team?.name}
+                locked={Boolean(assignment?.projectTeamLocked)}
+              />
             )}
           </DetailField>
         )}

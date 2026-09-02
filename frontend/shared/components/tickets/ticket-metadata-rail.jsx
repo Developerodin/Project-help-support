@@ -42,7 +42,7 @@ function WatcherAvatar({ name }) {
 }
 
 export default function TicketMetadataRail({
-  ticket, onSave, canAssign = false, canEditEstimates = false, assignment, onBlock, onUnblock, blockReason, setBlockReason,
+  ticket, onSave, canAssign = false, canViewTeams = false, canEditEstimates = false, assignment, onBlock, onUnblock, blockReason, setBlockReason,
   fieldErrors = {}, onFieldEdit,
 }) {
   const [localDateErrors, setLocalDateErrors] = useState({});
@@ -131,6 +131,7 @@ export default function TicketMetadataRail({
   const watcherAvatars = allWatchers.slice(0, 2);
   const watcherExtra = Math.max(0, allWatchers.length - 2);
   const canEditAssignment = canAssign && submitAssignment;
+  const canEditTeam = canEditAssignment && canViewTeams && !assignment?.projectTeamLocked;
 
   return (
     <aside
@@ -164,7 +165,7 @@ export default function TicketMetadataRail({
 
         <div className="siderow">
           <span className="lbl">Team</span>
-          {canEditAssignment ? (
+          {canEditTeam ? (
             <TicketRailPicker
               label="Team"
               emptyLabel="No team"
@@ -180,9 +181,14 @@ export default function TicketMetadataRail({
               onSelect={(team) => submitAssignment('team', { team }, 'Team assigned')}
             />
           ) : (
-            ticket.team?.name
-              ? <span className="v">{ticket.team.name}</span>
-              : <span className="v empty">No team</span>
+            <>
+              {ticket.team?.name
+                ? <span className="v">{ticket.team.name}</span>
+                : <span className="v empty">No team</span>}
+              {assignment?.projectTeamLocked ? (
+                <p className="meta" style={{ marginTop: 4 }}>Set by project team</p>
+              ) : null}
+            </>
           )}
         </div>
 
