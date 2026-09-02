@@ -8,6 +8,7 @@ export * from './board-role-policy.js';
 export * from './stages.js';
 export * from './module-catalog.js';
 export * from './ui-qa.js';
+export * from './external-ticket-status.js';
 export * from './ticket-dates.js';
 export * from './ticket-preferences.js';
 export * from './permission-matrix-ui.js';

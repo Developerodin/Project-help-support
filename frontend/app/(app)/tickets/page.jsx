@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { cycleTicketSort, hasTicketPreferenceChanges } from '@pms/shared';
+import { cycleTicketSort, hasTicketPreferenceChanges, defaultTicketPreferencesForUser } from '@pms/shared';
 import { listTickets } from '@/shared/api/tickets.js';
 import { getProject } from '@/shared/api/projects.js';
 import { isAbortError } from '@/shared/api/client.js';
@@ -36,7 +36,7 @@ const SEARCH_DEBOUNCE_MS = 300;
 function TicketListPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { status: authStatus } = useAuth();
+  const { status: authStatus, user } = useAuth();
   const { activeProjectId, loading: projectLoading } = useProject();
   const {
     ready,
@@ -64,9 +64,11 @@ function TicketListPage() {
   const limit = limitFromSearch(searchString, preferences.limit);
   const openTicketId = ticketFromSearch(searchString);
 
+  const roleDefaults = useMemo(() => defaultTicketPreferencesForUser(user), [user]);
+
   const viewFilters = useMemo(
-    () => resolveViewFilters(searchString, ready ? preferences : DEFAULT_TICKET_PREFERENCES),
-    [searchString, ready, preferences],
+    () => resolveViewFilters(searchString, ready ? preferences : roleDefaults),
+    [searchString, ready, preferences, roleDefaults],
   );
 
   /**
@@ -252,7 +254,7 @@ function TicketListPage() {
       // The URL outranks preferences, so a reset that only clears the stored
       // defaults would leave the old view on screen.
       writeSearch(withPageParam(
-        withFilterParams(window.location.search, DEFAULT_TICKET_PREFERENCES.filters), 1,
+        withFilterParams(window.location.search, defaultTicketPreferencesForUser(user).filters), 1,
       ));
       showToast('Filters and sorting reset to default');
     } catch (err) {
@@ -277,7 +279,7 @@ function TicketListPage() {
         ownerOptions={ownerOptions ?? []}
         onReset={handleReset}
         resetBusy={resetBusy}
-        showReset={hasTicketPreferenceChanges({ ...preferences, filters: viewFilters })}
+        showReset={hasTicketPreferenceChanges({ ...preferences, filters: viewFilters }, user)}
       />
       {preferencesHydrating && !initialPageLoading ? (
         <p className="meta">Applying saved ticket preferences…</p>

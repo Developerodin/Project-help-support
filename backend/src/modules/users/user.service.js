@@ -4,6 +4,8 @@ import {
   NOTIFICATION_EVENTS,
   DEFAULT_TICKET_PREFERENCES,
   mergeTicketPreferences,
+  defaultTicketPreferencesForUser,
+  normalizeTicketPreferencesForUser,
   isSuperAdmin,
   hasAnyRole,
   pickPrimaryRole,
@@ -189,7 +191,7 @@ function serialiseTicketPreferences(user) {
   const prefs = mergeTicketPreferences(raw);
   const assignedTo = prefs.filters.assignedTo;
   prefs.filters.assignedTo = assignedTo ? String(assignedTo._id ?? assignedTo) : '';
-  return prefs;
+  return normalizeTicketPreferencesForUser(user, prefs);
 }
 
 export async function getTicketPreferences(actor) {
@@ -225,7 +227,8 @@ export async function updateTicketPreferences(actor, body) {
   if (body.boardMine !== undefined) current.boardMine = Boolean(body.boardMine);
   if (body.limit !== undefined) current.limit = body.limit;
 
-  user.ticketPreferences = normalizeTicketPreferencesForDb(current);
+  const normalized = normalizeTicketPreferencesForUser(user, current);
+  user.ticketPreferences = normalizeTicketPreferencesForDb(normalized);
   user.markModified('ticketPreferences');
   await user.save();
   return user.toJSON();
@@ -235,7 +238,7 @@ export async function resetTicketPreferences(actor) {
   const user = await User.findById(actor._id);
   if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found');
 
-  user.ticketPreferences = normalizeTicketPreferencesForDb(DEFAULT_TICKET_PREFERENCES);
+  user.ticketPreferences = normalizeTicketPreferencesForDb(defaultTicketPreferencesForUser(actor));
   user.markModified('ticketPreferences');
   await user.save();
   return user.toJSON();

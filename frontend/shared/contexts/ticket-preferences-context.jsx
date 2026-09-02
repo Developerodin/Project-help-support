@@ -6,6 +6,8 @@ import {
 import {
   DEFAULT_TICKET_PREFERENCES,
   mergeTicketPreferences,
+  defaultTicketPreferencesForUser,
+  normalizeTicketPreferencesForUser,
 } from '@pms/shared';
 import {
   getTicketPreferences,
@@ -43,7 +45,7 @@ export function TicketPreferencesProvider({ children }) {
     getTicketPreferences()
       .then((stored) => {
         if (hydrateRequestId.current !== requestId) return;
-        setPreferences(mergeTicketPreferences(stored));
+        setPreferences(normalizeTicketPreferencesForUser(userRef.current, stored));
       })
       .catch(() => {
         if (hydrateRequestId.current !== requestId) return;
@@ -121,7 +123,7 @@ export function TicketPreferencesProvider({ children }) {
       await refreshUser(updated);
       return next;
     } catch (err) {
-      const fallback = mergeTicketPreferences(DEFAULT_TICKET_PREFERENCES);
+      const fallback = defaultTicketPreferencesForUser(userRef.current);
       setPreferences(fallback);
       throw err;
     }

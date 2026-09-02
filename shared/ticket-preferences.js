@@ -7,7 +7,12 @@ export const TICKET_SORT_COLUMNS = Object.freeze([
   'estimatedDone',
 ]);
 
+import { isExternalUser } from './permissions.js';
+
 export const TICKET_SCOPES = Object.freeze(['all', 'assigned', 'reported', 'unassigned']);
+
+/** Default stage filter for external ticket lists (not live/closed). */
+export const EXTERNAL_DEFAULT_TICKET_FILTER_STATUS = 'under_review';
 
 export const DEFAULT_TICKET_PREFERENCES = Object.freeze({
   filters: Object.freeze({
@@ -36,6 +41,30 @@ export function mergeTicketPreferences(stored = {}) {
     sort,
     boardMine: stored.boardMine ?? DEFAULT_TICKET_PREFERENCES.boardMine,
     limit: stored.limit ?? DEFAULT_TICKET_PREFERENCES.limit,
+  };
+}
+
+/** Role-aware defaults — external users start filtered to Under Review. */
+export function defaultTicketPreferencesForUser(user) {
+  if (!isExternalUser(user)) return DEFAULT_TICKET_PREFERENCES;
+  return mergeTicketPreferences({
+    filters: { status: EXTERNAL_DEFAULT_TICKET_FILTER_STATUS },
+  });
+}
+
+/** Apply role defaults; only fill an empty stage filter for external users. */
+export function normalizeTicketPreferencesForUser(user, stored = {}) {
+  const roleDefaults = defaultTicketPreferencesForUser(user);
+  const merged = mergeTicketPreferences({
+    ...roleDefaults,
+    ...stored,
+    filters: { ...roleDefaults.filters, ...(stored.filters || {}) },
+    sort: { ...(stored.sort || {}) },
+  });
+  if (!isExternalUser(user) || merged.filters.status) return merged;
+  return {
+    ...merged,
+    filters: { ...merged.filters, status: EXTERNAL_DEFAULT_TICKET_FILTER_STATUS },
   };
 }
 
@@ -69,11 +98,10 @@ export function sortAriaValue(sort, column) {
   return sort.direction === 'asc' ? 'ascending' : 'descending';
 }
 
-export function hasActiveTicketFilters(filters = {}) {
-  const defaults = DEFAULT_TICKET_PREFERENCES.filters;
+export function hasActiveTicketFilters(filters = {}, defaults = DEFAULT_TICKET_PREFERENCES.filters) {
   return (
     Boolean(filters.q)
-    || Boolean(filters.status)
+    || (Boolean(filters.status) && filters.status !== defaults.status)
     || Boolean(filters.priority)
     || (filters.scope && filters.scope !== defaults.scope)
     || Boolean(filters.assignedTo)
@@ -83,10 +111,10 @@ export function hasActiveTicketFilters(filters = {}) {
   );
 }
 
-export function hasTicketPreferenceChanges(preferences = {}) {
+export function hasTicketPreferenceChanges(preferences = {}, user) {
   const current = mergeTicketPreferences(preferences);
-  const defaults = DEFAULT_TICKET_PREFERENCES;
-  return hasActiveTicketFilters(current.filters)
+  const defaults = defaultTicketPreferencesForUser(user);
+  return hasActiveTicketFilters(current.filters, defaults.filters)
     || current.sort.column !== defaults.sort.column
     || current.sort.direction !== defaults.sort.direction
     || current.boardMine !== defaults.boardMine;

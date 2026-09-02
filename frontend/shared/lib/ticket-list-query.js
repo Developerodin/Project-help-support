@@ -2,6 +2,7 @@ import {
   buildTicketListSortBy,
   DEFAULT_TICKET_PREFERENCES,
   mergeTicketPreferences,
+  normalizeTicketPreferencesForUser,
 } from '@pms/shared';
 
 export function buildTicketListQuery({
@@ -39,7 +40,7 @@ export function buildTicketListQuery({
 }
 
 export function preferencesFromUser(user) {
-  return mergeTicketPreferences(user?.ticketPreferences);
+  return normalizeTicketPreferencesForUser(user, user?.ticketPreferences);
 }
 
 export function clampTicketListPage(requestedPage, totalPages) {
