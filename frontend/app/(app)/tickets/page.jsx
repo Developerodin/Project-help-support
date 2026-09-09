@@ -42,6 +42,11 @@ import AppLoader from '@/shared/components/app-loader.jsx';
 
 /** Long enough to swallow a burst of typing, short enough to feel live. */
 const SEARCH_DEBOUNCE_MS = 300;
+const CATEGORY_CARD_DEFS = Object.freeze([
+  { key: 'Bug', label: 'Bug' },
+  { key: 'Improvement', label: 'Improvement' },
+  { key: 'New Feature', label: 'New Feature' },
+]);
 
 function TicketListPage() {
   const pathname = usePathname();
@@ -348,6 +353,15 @@ function TicketListPage() {
   const categoryCounts = listPage.categoryTotals || { Bug: 0, Improvement: 0, 'New Feature': 0 };
   const showingFrom = listPage.totalResults === 0 ? 0 : ((page - 1) * limit) + 1;
   const showingTo = Math.min(page * limit, listPage.totalResults || 0);
+  const categoryCards = CATEGORY_CARD_DEFS.map((card) => {
+    const count = Number(categoryCounts[card.key]) || 0;
+    return {
+      ...card,
+      count,
+      zero: count === 0,
+      ariaLabel: `${card.label}: ${count} tickets in funnel.`,
+    };
+  });
 
   const handleReset = async () => {
     setResetBusy(true);
@@ -378,11 +392,29 @@ function TicketListPage() {
 
   return (
     <>
-      <div className="page-head">
+      <div className="page-head tickets-page-head">
         <div>
           <h1>Tickets</h1>
-          <p className="sub">Every ticket across Web App and Mobile App. Searching for a ticket number jumps straight to it.</p>
         </div>
+        {!initialPageLoading ? (
+          <div
+            className="tickets-category-grid tickets-category-grid--top"
+            role="list"
+            aria-label="Ticket category summary"
+          >
+            {categoryCards.map((card) => (
+              <div
+                key={card.key}
+                role="listitem"
+                className={`tickets-category-card${card.zero ? ' is-zero' : ''}`}
+                aria-label={card.ariaLabel}
+              >
+                <span className="tickets-category-label">{card.label}</span>
+                <span className="tickets-category-count num">{card.count}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       <TicketFilters
@@ -406,25 +438,6 @@ function TicketListPage() {
       ) : null}
       {preferencesHydrating && !initialPageLoading ? (
         <p className="meta">Applying saved ticket preferences…</p>
-      ) : null}
-      {!initialPageLoading ? (
-        <>
-          <div className="stat-grid">
-            <div className="stat-tile">
-              <div className="stat-label">Bug</div>
-              <div className="bigfig num">{categoryCounts.Bug}</div>
-            </div>
-            <div className="stat-tile">
-              <div className="stat-label">Improvement</div>
-              <div className="bigfig num">{categoryCounts.Improvement}</div>
-            </div>
-            <div className="stat-tile">
-              <div className="stat-label">New Feature</div>
-              <div className="bigfig num">{categoryCounts['New Feature']}</div>
-            </div>
-          </div>
-          <p className="meta">Category counts for matching tickets in stages from Pending through Ready QA.</p>
-        </>
       ) : null}
       {initialPageLoading || (loading && listPage.results.length === 0) ? (
         <AppLoader inline label={"Loading tickets…"} />
