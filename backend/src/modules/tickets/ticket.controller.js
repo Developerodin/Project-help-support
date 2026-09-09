@@ -5,6 +5,23 @@ import * as transitionService from './transition.service.js';
 import * as commentService from './comment.service.js';
 import * as attachmentService from './attachment.service.js';
 
+function normalizeEstimateDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+}
+
+export function didEstimateFieldsChange(beforeTicket, afterTicket) {
+  return (
+    normalizeEstimateDate(beforeTicket?.estimatedResolutionAt)
+    !== normalizeEstimateDate(afterTicket?.estimatedResolutionAt)
+  ) || (
+    normalizeEstimateDate(beforeTicket?.expectedReleaseDate)
+    !== normalizeEstimateDate(afterTicket?.expectedReleaseDate)
+  );
+}
+
 export const list = catchAsync(async (req, res) => {
   res.json(await ticketService.listTickets(req.user, req.query, req.permissionContext));
 });
@@ -27,13 +44,19 @@ export const get = catchAsync(async (req, res) => {
 });
 
 export const patch = (config) => catchAsync(async (req, res) => {
+  const estimatePatched = 'estimatedResolutionAt' in req.body || 'expectedReleaseDate' in req.body;
+  const beforeDoc = estimatePatched
+    ? await ticketService.resolveTicketDoc(req.params.id)
+    : null;
+
   const ticket = await ticketService.patchTicket(req.user, req.params.id, req.body, req.permissionContext);
   res.json(ticket);
 
-  const estimatePatched = 'estimatedResolutionAt' in req.body || 'expectedReleaseDate' in req.body;
   if (!estimatePatched) return;
 
   const doc = await ticketService.resolveTicketDoc(ticket.id);
+  if (!didEstimateFieldsChange(beforeDoc, doc)) return;
+
   await dispatchTicketEvent({
     event: { type: 'TICKET_ESTIMATE_SET', requestId: req.id },
     ticket: doc, actor: req.user, config,

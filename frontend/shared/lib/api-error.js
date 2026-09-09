@@ -6,6 +6,14 @@ function readMessage(error) {
   return null;
 }
 
+function fallbackMessage({ code, status, message }) {
+  if (code === 'ABORTED') return message || 'Request aborted';
+  if (code === 'NETWORK_ERROR' || status === 0) {
+    return 'Cannot reach the server. Check that the backend is running and CORS allows this frontend URL.';
+  }
+  return message || (status ? `Request failed (${status})` : 'Request failed');
+}
+
 /** Flatten ApiClientError, Error, API JSON bodies, and partial mocks into one shape. */
 export function normalizeApiError(error) {
   if (!error) return null;
@@ -26,7 +34,7 @@ export function normalizeApiError(error) {
   return {
     status,
     code,
-    message: message || (status ? `Request failed (${status})` : 'Request failed'),
+    message: fallbackMessage({ code, status, message }),
     requestId,
     fields,
   };

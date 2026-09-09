@@ -226,7 +226,7 @@ export function renderTicketEmail(event, ticket, context = {}, config = {}) {
     '',
     link,
     '',
-    'Attachment links in this email are presigned and expire shortly after sending.',
+    'Attachments are available from the ticket page.',
   ].join('\n');
 
   const html = renderEmailLayout({
@@ -236,7 +236,7 @@ export function renderTicketEmail(event, ticket, context = {}, config = {}) {
     bodyHtml,
     cta: { label: copy.cta, href: link },
     brandName: ticketBrandName(context),
-    footerNote: 'Attachment links in this email are presigned and expire shortly after sending.',
+    footerNote: 'Attachments are available from the ticket page.',
   });
 
   return {

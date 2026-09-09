@@ -3,6 +3,7 @@ import { basename, dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EMAIL_BRAND } from '@pms/shared/email';
 import logger from '../logger.js';
+import * as storage from '../s3.js';
 
 // backend/src/platform/email -> repo root -> shared/email/assets
 const DEFAULT_MARK_PATH = resolve(
@@ -20,6 +21,13 @@ const DEFAULT_MARK_PATH = resolve(
  */
 const cache = new Map();
 
+export class BrandLogoRequiredError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'BrandLogoRequiredError';
+  }
+}
+
 function configuredMarkPath(config) {
   const raw = config?.branding?.emailLogoPath;
   if (typeof raw !== 'string' || raw.trim() === '') return DEFAULT_MARK_PATH;
@@ -27,7 +35,11 @@ function configuredMarkPath(config) {
   return isAbsolute(trimmed) ? trimmed : resolve(process.cwd(), trimmed);
 }
 
-function loadMark(config) {
+function optionalString(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : '';
+}
+
+function loadDefaultMark(config) {
   const path = configuredMarkPath(config);
   if (cache.has(path)) return cache.get(path);
 
@@ -47,9 +59,49 @@ function loadMark(config) {
   return loaded;
 }
 
+async function loadCompanyMark(config, logoKey, { requireCompanyMark = false } = {}) {
+  const key = optionalString(logoKey);
+  if (!key || !config?.features?.attachments) {
+    if (requireCompanyMark) {
+      throw new BrandLogoRequiredError('Brand logo is required for external branded ticket emails');
+    }
+    return null;
+  }
+  try {
+    const url = await storage.presignGet(config, key);
+    return {
+      path: url,
+      filename: basename(key) || 'brand-mark.png',
+    };
+  } catch (err) {
+    if (requireCompanyMark) {
+      throw new BrandLogoRequiredError('Brand logo could not be resolved for external branded ticket emails');
+    }
+    logger.warn('Company brand mark unavailable; using default mark', {
+      logoKey: key,
+      error: err.message,
+    });
+    return null;
+  }
+}
+
 /** Nodemailer attachments for a message, or undefined when the mark is absent. */
-export function brandAttachments(config) {
-  const mark = loadMark(config);
+export async function brandAttachments(config, options = {}) {
+  const companyMark = await loadCompanyMark(
+    config,
+    options.logoKey,
+    { requireCompanyMark: options.requireCompanyMark === true },
+  );
+  if (companyMark) {
+    return [{
+      filename: companyMark.filename,
+      path: companyMark.path,
+      cid: EMAIL_BRAND.logoCid,
+      contentDisposition: 'inline',
+    }];
+  }
+
+  const mark = loadDefaultMark(config);
   if (!mark) return undefined;
   return [{
     filename: mark.filename,

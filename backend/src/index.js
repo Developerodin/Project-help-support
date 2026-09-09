@@ -7,6 +7,10 @@ import User from './modules/users/user.model.js';
 import { buildInviteDeliverer, buildResetDeliverer } from './modules/notifications/dispatch.js';
 import logger from './platform/logger.js';
 import { retryPendingAuditOutbox } from './modules/rbac/rbac-audit.js';
+import {
+  replayNotificationOutboxOnBoot,
+  scheduleNotificationOutboxReplay,
+} from './modules/notifications/retry.runtime.js';
 
 const AUDIT_REPLAY_INTERVAL_MS = 5 * 60 * 1000;
 const AUDIT_REPLAY_LIMIT = 50;
@@ -26,7 +30,7 @@ async function replayAuditOutboxOnBoot() {
 }
 
 function scheduleAuditOutboxReplay() {
-  setInterval(async () => {
+  const handle = setInterval(async () => {
     try {
       const result = await retryPendingAuditOutbox({ limit: AUDIT_REPLAY_LIMIT });
       if (result.replayed > 0) {
@@ -38,7 +42,24 @@ function scheduleAuditOutboxReplay() {
         stack: err.stack,
       });
     }
-  }, AUDIT_REPLAY_INTERVAL_MS).unref();
+  }, AUDIT_REPLAY_INTERVAL_MS);
+  handle.unref();
+  return () => clearInterval(handle);
+}
+
+function registerShutdown(stopFns) {
+  const runStop = () => {
+    for (const stop of stopFns) {
+      try {
+        stop();
+      } catch (err) {
+        logger.error('runtime.stop_hook_failed', { error: err.message });
+      }
+    }
+  };
+  process.once('SIGINT', runStop);
+  process.once('SIGTERM', runStop);
+  process.once('beforeExit', runStop);
 }
 
 async function start() {
@@ -49,7 +70,10 @@ async function start() {
 
   await connectDb(config.mongoUrl);
   await replayAuditOutboxOnBoot();
-  scheduleAuditOutboxReplay();
+  await replayNotificationOutboxOnBoot(config);
+  const stopAuditReplay = scheduleAuditOutboxReplay();
+  const stopNotificationReplay = scheduleNotificationOutboxReplay(config);
+  registerShutdown([stopAuditReplay, stopNotificationReplay]);
   await seedAdmin(config);
   // The oldest admin owns the seeded projects; createdBy is required on Project.
   const seedActor = await User.findOne({ role: 'admin' }).sort({ createdAt: 1 });

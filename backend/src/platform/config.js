@@ -21,8 +21,39 @@ const PLACEHOLDERS = new Set([
 
 const MIN_SECRET_LENGTH = 32;
 const VALID_REFRESH_COOKIE_SAMESITE = new Set(['strict', 'lax', 'none']);
+const DEFAULT_EMAIL_RETRY_INTERVAL_MS = 5 * 60 * 1000;
+const DEFAULT_EMAIL_RETRY_GRACE_MS = 5 * 60 * 1000;
+const DEFAULT_EMAIL_RETRY_MAX_ATTEMPTS = 3;
+const DEFAULT_EMAIL_RETRY_BATCH_LIMIT = 100;
 
 const present = (v) => typeof v === 'string' && v.trim().length > 0;
+
+function readBoolean(env, key, defaultValue = false) {
+  if (!present(env[key])) return defaultValue;
+  const raw = env[key].trim().toLowerCase();
+  if (raw === 'true' || raw === '1') return true;
+  if (raw === 'false' || raw === '0') return false;
+  throw new Error(`Config error: ${key} must be true or false.`);
+}
+
+function readPositiveInt(env, key, defaultValue) {
+  if (!present(env[key])) return defaultValue;
+  const value = Number(env[key]);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`Config error: ${key} must be a positive integer.`);
+  }
+  return value;
+}
+
+function readCsvSet(env, key) {
+  if (!present(env[key])) return new Set();
+  return new Set(
+    env[key]
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
 
 function readRefreshCookieSameSite(env) {
   const raw = present(env.REFRESH_COOKIE_SAMESITE)
@@ -97,6 +128,43 @@ function assertProductionSecrets(env, isProduction) {
   }
 }
 
+function readTicketNotificationSink(env, isProduction) {
+  const enabled = readBoolean(env, 'TICKET_NOTIFICATION_TEST_EMAIL_ENABLED', false);
+  if (!enabled) {
+    return { enabled: false, to: '' };
+  }
+
+  const to = present(env.TICKET_NOTIFICATION_TEST_EMAIL)
+    ? env.TICKET_NOTIFICATION_TEST_EMAIL.trim().toLowerCase()
+    : '';
+  if (!to) {
+    throw new Error(
+      'Config error: TICKET_NOTIFICATION_TEST_EMAIL must be set when '
+      + 'TICKET_NOTIFICATION_TEST_EMAIL_ENABLED=true.',
+    );
+  }
+
+  if (!isProduction) return { enabled: true, to };
+
+  const allowInProd = readBoolean(env, 'TICKET_NOTIFICATION_TEST_EMAIL_ALLOW_PRODUCTION', false);
+  if (!allowInProd) {
+    throw new Error(
+      'Config error: ticket notification test sink is disabled in production unless '
+      + 'TICKET_NOTIFICATION_TEST_EMAIL_ALLOW_PRODUCTION=true.',
+    );
+  }
+
+  const allowlist = readCsvSet(env, 'TICKET_NOTIFICATION_TEST_EMAIL_PRODUCTION_ALLOWLIST');
+  if (allowlist.size === 0 || !allowlist.has(to)) {
+    throw new Error(
+      'Config error: production test sink requires TICKET_NOTIFICATION_TEST_EMAIL '
+      + 'to be present in TICKET_NOTIFICATION_TEST_EMAIL_PRODUCTION_ALLOWLIST.',
+    );
+  }
+
+  return { enabled: true, to };
+}
+
 export function loadConfig(env = process.env) {
   env = normalizeEnv(env);
   const missing = REQUIRED.filter((k) => !present(env[k]));
@@ -112,6 +180,7 @@ export function loadConfig(env = process.env) {
   const storage = readGroup(env, 'storage');
   const email = readGroup(env, 'email');
   const seed = readGroup(env, 'seed');
+  const ticketNotificationSink = readTicketNotificationSink(env, isProduction);
 
   const sameSite = readRefreshCookieSameSite(env);
   const cookie = {
@@ -153,6 +222,28 @@ export function loadConfig(env = process.env) {
       username: email.SMTP_USERNAME,
       password: email.SMTP_PASSWORD,
       from: email.EMAIL_FROM,
+      testSinkEnabled: ticketNotificationSink.enabled,
+      testSinkTo: ticketNotificationSink.to,
+      retryIntervalMs: readPositiveInt(
+        env,
+        'EMAIL_RETRY_INTERVAL_MS',
+        DEFAULT_EMAIL_RETRY_INTERVAL_MS,
+      ),
+      retryGraceMs: readPositiveInt(
+        env,
+        'EMAIL_RETRY_GRACE_MS',
+        DEFAULT_EMAIL_RETRY_GRACE_MS,
+      ),
+      retryMaxAttempts: readPositiveInt(
+        env,
+        'EMAIL_RETRY_MAX_ATTEMPTS',
+        DEFAULT_EMAIL_RETRY_MAX_ATTEMPTS,
+      ),
+      retryBatchLimit: readPositiveInt(
+        env,
+        'EMAIL_RETRY_BATCH_LIMIT',
+        DEFAULT_EMAIL_RETRY_BATCH_LIMIT,
+      ),
       tlsRejectUnauthorized: !['false', '0'].includes(
         String(env.SMTP_TLS_REJECT_UNAUTHORIZED ?? 'true').trim().toLowerCase(),
       ),

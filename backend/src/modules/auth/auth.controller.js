@@ -101,7 +101,9 @@ export const acceptInvite = catchAsync(async (req, res) => {
  */
 export const forgotPassword = (deliver) => catchAsync(async (req, res) => {
   const result = await authService.requestPasswordReset(req.body.email);
-  if (result && deliver) await deliver(result);
+  if (result && deliver) {
+    await deliver(result, { throwOnError: false, requestId: req.id });
+  }
   res.status(200).json({ message: 'If that email is registered, a reset link has been sent.' });
 });
 

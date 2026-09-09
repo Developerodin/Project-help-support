@@ -9,6 +9,7 @@ import morgan from 'morgan';
 import { requestId } from './platform/requestId.js';
 import { ApiError, errorConverter, errorHandler } from './platform/errors.js';
 import { isDbReady } from './platform/db.js';
+import { buildOriginMatcher } from './platform/origin-policy.js';
 import authRoutes from './modules/auth/auth.route.js';
 import teamRoutes from './modules/teams/team.route.js';
 import clientRoutes from './modules/clients/client.route.js';
@@ -21,6 +22,7 @@ import rbacRoutes from './modules/rbac/rbac.route.js';
 
 export function createApp(config, { deliverReset, deliverInvite } = {}) {
   const app = express();
+  const originAllowed = buildOriginMatcher(config);
 
   // FIRST. Every response — including 401 and 404 — must carry a request id,
   // which is only true if this precedes auth, validation and routing.
@@ -29,7 +31,9 @@ export function createApp(config, { deliverReset, deliverInvite } = {}) {
   app.set('trust proxy', true);
   app.use(helmet());
   app.use(cors({
-    origin: config.corsOrigins,
+    origin(origin, callback) {
+      callback(null, originAllowed(origin));
+    },
     credentials: true,
     exposedHeaders: ['Location'],
   }));

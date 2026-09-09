@@ -1,4 +1,5 @@
 import { ApiError } from './errors.js';
+import { buildOriginMatcher } from './origin-policy.js';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -15,21 +16,21 @@ const blocked = (message = 'Cross-origin request blocked') => new ApiError(
  * neither of which carries ambient cookies from a victim's browser.
  */
 export function sameOrigin(config) {
-  const allowed = new Set(config.corsOrigins);
+  const originAllowed = buildOriginMatcher(config);
 
   return function check(req, _res, next) {
     if (SAFE_METHODS.has(req.method)) return next();
 
     const origin = req.headers?.origin;
     if (origin) {
-      return allowed.has(origin) ? next() : next(blocked());
+      return originAllowed(origin) ? next() : next(blocked());
     }
 
     const referer = req.headers?.referer;
     if (referer) {
       try {
         const { origin: refOrigin } = new URL(referer);
-        return allowed.has(refOrigin) ? next() : next(blocked());
+        return originAllowed(refOrigin) ? next() : next(blocked());
       } catch {
         return next(blocked('Malformed Referer header'));
       }

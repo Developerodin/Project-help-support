@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   PEOPLE_ASSIGNABLE_ROLES,
@@ -30,11 +30,17 @@ import { normalizeApiError } from '@/shared/lib/api-error.js';
 import { getDefaultRedirect } from '@/shared/lib/route-permissions.js';
 import { filterEffectivelyActiveAssignments } from '@/shared/lib/rbac-preview/matrix-utils.js';
 import { commitAccessMutation } from '@/shared/lib/rbac-preview/people-access-mutations.js';
+import { windowedPageNumbers } from '@/shared/lib/ticket-list-query.js';
+import { useDebouncedValue } from '@/shared/lib/use-debounced-value.js';
 import { showToast } from '@/shared/lib/toast.js';
 import { capRoles } from '@/shared/lib/profile-utils.js';
 import '../../rbac-access.css';
 
 const SCRUBBED_EMAIL = /^deleted\+[a-f0-9]{24}@internal$/i;
+const PEOPLE_PAGE_SIZES = Object.freeze([25, 50, 100]);
+const PEOPLE_FILTER_STATUSES = Object.freeze(['invited', 'active', 'inactive', 'deleted']);
+const PEOPLE_FILTER_ROLES = Object.freeze([...PEOPLE_ASSIGNABLE_ROLES, ROLE_IDS.SUPER_ADMIN]);
+const SEARCH_DEBOUNCE_MS = 300;
 
 /** Soft-deleted, including legacy hard-delete scrub rows (deleted+...@internal). */
 function accountDeleted(user) {
@@ -137,6 +143,18 @@ export default function UsersPage() {
   const canImpersonate = hasAnyRole(currentUser, ...IMPERSONATION_INITIATOR_ROLES);
   const assignableRoles = PEOPLE_ASSIGNABLE_ROLES;
   const [users, setUsers] = useState([]);
+  const [listPage, setListPage] = useState({
+    totalResults: 0,
+    totalPages: 1,
+    page: 1,
+    limit: PEOPLE_PAGE_SIZES[0],
+  });
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(PEOPLE_PAGE_SIZES[0]);
+  const [roleFilter, setRoleFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [loadingUsers, setLoadingUsers] = useState(false);
   const [draft, setDraft] = useState({ email: '', roles: [ROLE_IDS.UNASSIGNED] });
   const [error, setError] = useState(null);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -162,12 +180,48 @@ export default function UsersPage() {
   const [revokeBusyId, setRevokeBusyId] = useState(null);
   const [revokeTarget, setRevokeTarget] = useState(null);
   const [revokeReason, setRevokeReason] = useState('');
+  const debouncedSearchInput = useDebouncedValue(searchInput, SEARCH_DEBOUNCE_MS);
 
-  const reload = useCallback(() => {
-    listUsers({}).then((page) => setUsers(page.results)).catch(setError);
-  }, []);
+  const reload = useCallback(async () => {
+    setLoadingUsers(true);
+    try {
+      const params = { page, limit, includeSuperAdmins: true };
+      if (roleFilter) params.role = roleFilter;
+      if (statusFilter) params.status = statusFilter;
+      if (debouncedSearchInput.trim()) params.q = debouncedSearchInput.trim();
+
+      const nextPage = await listUsers(params);
+      const totalPages = Math.max(1, Number(nextPage?.totalPages) || 1);
+      if (page > totalPages) {
+        setPage(totalPages);
+        return;
+      }
+
+      setUsers(nextPage?.results || []);
+      setListPage({
+        totalResults: Number(nextPage?.totalResults) || 0,
+        totalPages,
+        page: Number(nextPage?.page) || page,
+        limit: Number(nextPage?.limit) || limit,
+      });
+      setError(null);
+    } catch (err) {
+      setUsers([]);
+      setError(err);
+    } finally {
+      setLoadingUsers(false);
+    }
+  }, [debouncedSearchInput, limit, page, roleFilter, statusFilter]);
 
   useEffect(() => { reload(); }, [reload]);
+
+  const pageNumbers = useMemo(
+    () => windowedPageNumbers(page, listPage.totalPages),
+    [listPage.totalPages, page],
+  );
+  const showingFrom = listPage.totalResults === 0 ? 0 : ((page - 1) * limit) + 1;
+  const showingTo = Math.min(page * limit, listPage.totalResults || 0);
+  const listFiltersActive = Boolean(searchInput.trim() || roleFilter || statusFilter);
 
   function setRowActionBusy(key, value) {
     setRowBusy((prev) => {
@@ -484,6 +538,14 @@ export default function UsersPage() {
     }
   }
 
+  function clearListFilters() {
+    setSearchInput('');
+    setRoleFilter('');
+    setStatusFilter('');
+    setLimit(PEOPLE_PAGE_SIZES[0]);
+    setPage(1);
+  }
+
   return (
     <>
       <div className="page-head">
@@ -514,6 +576,78 @@ export default function UsersPage() {
         onCancel={closeInvite}
       />
 
+      <div className="toolbar" role="region" aria-label="People filters">
+        <input
+          type="search"
+          className="filterin"
+          placeholder="Search name or email"
+          value={searchInput}
+          onChange={(event) => {
+            setSearchInput(event.target.value);
+            setPage(1);
+          }}
+          aria-label="Search people by name or email"
+        />
+        <select
+          value={roleFilter}
+          onChange={(event) => {
+            setRoleFilter(event.target.value);
+            setPage(1);
+          }}
+          aria-label="Filter by role"
+        >
+          <option value="">Any role</option>
+          {PEOPLE_FILTER_ROLES.map((role) => (
+            <option key={role} value={role}>{ROLE_LABELS[role] || role}</option>
+          ))}
+        </select>
+        <select
+          value={statusFilter}
+          onChange={(event) => {
+            setStatusFilter(event.target.value);
+            setPage(1);
+          }}
+          aria-label="Filter by status"
+        >
+          <option value="">Any status</option>
+          {PEOPLE_FILTER_STATUSES.map((status) => (
+            <option key={status} value={status}>{status}</option>
+          ))}
+        </select>
+        <span className="spacer" />
+        <label className="pagesize">
+          <span className="pagesize__label">Rows</span>
+          <select
+            value={limit}
+            disabled={loadingUsers}
+            onChange={(event) => {
+              setLimit(Number(event.target.value) || PEOPLE_PAGE_SIZES[0]);
+              setPage(1);
+            }}
+            aria-label="Rows per page"
+          >
+            {PEOPLE_PAGE_SIZES.map((size) => (
+              <option key={size} value={size}>{size} / page</option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={clearListFilters}
+          disabled={!listFiltersActive && page === 1 && limit === PEOPLE_PAGE_SIZES[0]}
+        >
+          Reset
+        </button>
+      </div>
+      <p className="resultline" role="status" aria-live="polite">
+        {loadingUsers
+          ? 'Loading people…'
+          : listPage.totalResults === 0
+            ? 'No people found'
+            : `${listPage.totalResults} people · showing ${showingFrom}-${showingTo}`}
+      </p>
+
       <div className="tablewrap">
         <table>
           <thead>
@@ -526,7 +660,17 @@ export default function UsersPage() {
             </tr>
           </thead>
           <tbody>
-            {users.map((user) => {
+            {users.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="meta">
+                  {loadingUsers
+                    ? 'Loading people…'
+                    : listFiltersActive
+                      ? 'No users match these filters.'
+                      : 'No users found.'}
+                </td>
+              </tr>
+            ) : users.map((user) => {
               const deactivateKey = `${user.id}:deactivate`;
               const reactivateKey = `${user.id}:reactivate`;
               const resendKey = `${user.id}:resend`;
@@ -644,6 +788,55 @@ export default function UsersPage() {
           </tbody>
         </table>
       </div>
+
+      <nav className="pager" aria-label="People pagination">
+        <div className="pager__meta">
+          <span className="of">{listPage.totalResults} people</span>
+          <span className="of">Showing {showingFrom}-{showingTo}</span>
+          {(listPage.totalPages || 1) > 1 ? <span className="of">Page {page} of {listPage.totalPages}</span> : null}
+        </div>
+        <div className="pager__controls">
+          <button
+            type="button"
+            className="pagebtn"
+            aria-label="Previous page"
+            disabled={page <= 1 || loadingUsers}
+            onClick={() => setPage(page - 1)}
+          >
+            Prev
+          </button>
+
+          <div className="pager__pages" role="group" aria-label="Page numbers">
+            {pageNumbers.map((item, index) => (
+              typeof item === 'number' ? (
+                <button
+                  key={item}
+                  type="button"
+                  className="pagebtn"
+                  aria-label={`Page ${item}`}
+                  aria-current={item === page ? 'page' : undefined}
+                  disabled={loadingUsers}
+                  onClick={() => setPage(item)}
+                >
+                  {item}
+                </button>
+              ) : (
+                <span key={`gap-${index}-${item}`} className="of pager__gap" aria-hidden="true">{item}</span>
+              )
+            ))}
+          </div>
+
+          <button
+            type="button"
+            className="pagebtn"
+            aria-label="Next page"
+            disabled={page >= (listPage.totalPages || 1) || loadingUsers}
+            onClick={() => setPage(page + 1)}
+          >
+            Next
+          </button>
+        </div>
+      </nav>
 
       <ConfirmDialog
         open={Boolean(confirmDeactivate)}

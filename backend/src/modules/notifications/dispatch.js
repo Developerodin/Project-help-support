@@ -4,9 +4,8 @@ import { getTransport } from '../../platform/mailer.js';
 import Ticket from '../tickets/ticket.model.js';
 import { getNotificationRecipients } from './recipients.js';
 import { createInAppNotifications } from './notification.service.js';
-import { sendTicketEmail } from './email.service.js';
+import { sendTicketEmail, sendTransactionalEmail } from './email.service.js';
 import { renderInviteEmail, renderPasswordResetEmail } from '../../platform/email/templates/index.js';
-import { brandAttachments } from '../../platform/email/logo.js';
 
 // Template spec and add-a-template checklist: docs/email/DESIGN.md
 
@@ -16,7 +15,7 @@ const EMAIL_TICKET_POPULATE = [
   {
     path: 'project',
     select: 'client brand',
-    populate: { path: 'client', select: 'name status' },
+    populate: { path: 'client', select: 'name status logoKey' },
   },
 ];
 
@@ -37,12 +36,29 @@ function optionalString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : '';
 }
 
-function ticketBrandName(ticket) {
+function ticketBranding(ticket, config) {
   const project = ticket?.project && typeof ticket.project === 'object' ? ticket.project : null;
   const client = project?.client && typeof project.client === 'object' ? project.client : null;
   const base = optionalString(client?.name) || optionalString(project?.brand);
-  if (!base) return '';
-  return /\bpms\b/i.test(base) ? base : `${base} PMS`;
+  if (!base) return null;
+  const branding = {
+    brandName: /\bpms\b/i.test(base) ? base : `${base} PMS`,
+  };
+  const logoKey = optionalString(client?.logoKey);
+  if (config?.features?.attachments && logoKey) {
+    branding.brandLogoKey = logoKey;
+  }
+  return branding;
+}
+
+function hasBrandingContext(ticket, config) {
+  const project = ticket?.project && typeof ticket.project === 'object' ? ticket.project : null;
+  if (!project) return false;
+  if (!config?.features?.attachments) return true;
+
+  if (!project.client) return true;
+  if (typeof project.client !== 'object') return false;
+  return Object.prototype.hasOwnProperty.call(project.client, 'logoKey');
 }
 
 /** Fields consumed by @pms/shared/email renderTicketEmail — see docs/email/DESIGN.md */
@@ -66,10 +82,9 @@ function buildEmailContext(event, ticket, actor) {
   return context;
 }
 
-async function resolveTicketForEmail(ticket) {
+async function resolveTicketForEmail(ticket, config) {
   const hasNames = ticket.createdBy && typeof ticket.createdBy === 'object' && ticket.createdBy.name;
-  const hasCompany = Boolean(ticketBrandName(ticket));
-  if (hasNames && hasCompany) return ticket;
+  if (hasNames && hasBrandingContext(ticket, config)) return ticket;
   const id = ticket._id ?? ticket.id;
   return Ticket.findById(id).populate(EMAIL_TICKET_POPULATE);
 }
@@ -93,9 +108,9 @@ async function fanOut(eventKey, ticket, actor, context, config, deps, { hideFrom
     : recipients;
   if (visible.length === 0) return;
 
-  const emailTicket = await resolveTicketForEmail(ticket);
-  const brandName = ticketBrandName(emailTicket);
-  const emailContext = brandName ? { ...context, brandName } : context;
+  const emailTicket = await resolveTicketForEmail(ticket, config);
+  const branding = ticketBranding(emailTicket, config);
+  const emailContext = branding ? { ...context, ...branding } : context;
 
   await createInAppNotifications(eventKey, ticket, visible, config);
 
@@ -105,12 +120,25 @@ async function fanOut(eventKey, ticket, actor, context, config, deps, { hideFrom
   const internalRecipients = visible.filter((r) => !isExternalUser(r.user));
   const externalRecipients = visible.filter((r) => isExternalUser(r.user));
 
+  let testSinkUsed = false;
   if (internalRecipients.length) {
-    await sendTicketEmail(eventKey, emailTicket, internalRecipients, emailContext, config, deps);
+    await sendTicketEmail(eventKey, emailTicket, internalRecipients, emailContext, config, {
+      ...deps,
+      allowTestSink: true,
+    });
+    testSinkUsed = true;
   }
   if (externalRecipients.length) {
     await sendTicketEmail(
-      eventKey, emailTicket, externalRecipients, stripExternalContext(emailContext), config, deps,
+      eventKey,
+      emailTicket,
+      externalRecipients,
+      stripExternalContext(emailContext),
+      config,
+      {
+        ...deps,
+        allowTestSink: !testSinkUsed,
+      },
     );
   }
 }
@@ -157,55 +185,68 @@ export async function dispatchTicketEvent({ event, ticket, actor, config, deps =
   }
 }
 
-async function sendPlain(config, deps, message) {
-  if (!config.features.email) {
-    logger.warn('Email is not configured; message not sent', { subject: message.subject });
-    return;
+async function sendPlain(config, deps, message, options = {}) {
+  const result = await sendTransactionalEmail(
+    options.kind,
+    message,
+    config,
+    { transport: deps.transport ?? getTransport(config) },
+    {
+      throwOnError: options.throwOnError === true,
+      requestId: options.requestId,
+    },
+  );
+
+  if (!result.sent) {
+    logger.warn('Transactional email queued for retry', {
+      kind: options.kind,
+      to: message.to,
+      logId: result.logId,
+      error: result.error,
+      requestId: options.requestId,
+    });
   }
 
-  const transport = deps.transport ?? getTransport(config);
-  try {
-    await transport.sendMail({
-      from: config.email.from,
-      attachments: brandAttachments(config),
-      ...message,
-    });
-  } catch (err) {
-    // Never fails the request that triggered it — an invite that did not send is
-    // resendable; a 500 on user creation is not recoverable by the admin.
-    logger.error('Transactional email failed', { error: err.message, to: message.to });
-  }
+  return result;
 }
 
 /** Invite and reset mail, on the same pooled transport as everything else. */
 export function buildInviteDeliverer(config, deps = {}) {
-  return async ({ user, inviteToken }) => {
+  return async ({ user, inviteToken }, options = {}) => {
     const link = `${config.frontendBaseUrl}/invite/accept?token=${inviteToken}`;
     const { subject, text, html } = renderInviteEmail({
       link,
       recipientEmail: user.email,
     });
-    await sendPlain(config, deps, {
+    return sendPlain(config, deps, {
       to: user.email,
       subject,
       text,
       html,
+    }, {
+      kind: 'invite',
+      throwOnError: options.throwOnError === true,
+      requestId: options.requestId,
     });
   };
 }
 
 export function buildResetDeliverer(config, deps = {}) {
-  return async ({ user, resetToken }) => {
+  return async ({ user, resetToken }, options = {}) => {
     const link = `${config.frontendBaseUrl}/reset-password?token=${resetToken}`;
     const { subject, text, html } = renderPasswordResetEmail({
       link,
       recipientName: user.name,
     });
-    await sendPlain(config, deps, {
+    return sendPlain(config, deps, {
       to: user.email,
       subject,
       text,
       html,
+    }, {
+      kind: 'password_reset',
+      throwOnError: options.throwOnError === true,
+      requestId: options.requestId,
     });
   };
 }

@@ -24,6 +24,17 @@ const emailLogSchema = new mongoose.Schema(
     error: { type: String },
     sentAt: { type: Date },
     requestId: { type: String },
+    /**
+     * Immutable render payload captured at enqueue time for retry stability.
+     * Legacy rows may not have this and are re-rendered from ticket state.
+     */
+    renderSnapshot: {
+      context: { type: mongoose.Schema.Types.Mixed },
+      text: { type: String },
+      html: { type: String },
+      brandLogoKey: { type: String },
+      requireBrandLogo: { type: Boolean },
+    },
   },
   { timestamps: true },
 );
