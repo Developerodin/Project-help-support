@@ -62,6 +62,11 @@ export function percentile(values, p) {
   return sorted[Math.max(0, rank - 1)];
 }
 
+export function average(values) {
+  if (!values.length) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
 /**
  * A stage's duration is the gap between entering it and entering the NEXT one.
  *
@@ -259,7 +264,112 @@ export async function trend(actor, query = {}) {
   };
 }
 
-const DRILL_FIELDS = { module: 'module', severity: 'severity', assignee: 'assignedTo' };
+const clampWindowDays = (value) => {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return 30;
+  return Math.max(7, Math.min(90, parsed));
+};
+
+const toHours = (ms) => Number((ms / HOUR_MS).toFixed(2));
+
+const durationStats = (values) => {
+  const medianMs = median(values);
+  const p90Ms = percentile(values, 0.9);
+  const averageMs = average(values);
+
+  return {
+    samples: values.length,
+    medianHours: medianMs === null ? null : toHours(medianMs),
+    p90Hours: p90Ms === null ? null : toHours(p90Ms),
+    averageHours: averageMs === null ? null : toHours(averageMs),
+  };
+};
+
+export async function delivery(actor, query = {}) {
+  const groupBy = query.groupBy === 'week' ? 'week' : 'day';
+  const bucketOf = groupBy === 'week' ? weekKey : dayKey;
+  const windowDays = clampWindowDays(query.windowDays);
+  const filter = await buildTicketFilter(actor, query);
+
+  const tickets = await Ticket.find(filter)
+    .select('createdAt closedAt status blocked estimatedResolutionAt stageHistory')
+    .lean();
+
+  const leadSamples = [];
+  const cycleSamples = [];
+  const nowMs = Date.now();
+  const cutoffMs = nowMs - (windowDays * DAY_MS);
+
+  let openTickets = 0;
+  let blockedOpen = 0;
+  let atRiskOpen = 0;
+
+  const throughput = new Map();
+  const touch = (bucket) => {
+    if (!throughput.has(bucket)) throughput.set(bucket, { bucket, live: 0, closed: 0 });
+    return throughput.get(bucket);
+  };
+
+  for (const ticket of tickets) {
+    const createdMs = new Date(ticket.createdAt).getTime();
+    const closedMs = ticket.closedAt ? new Date(ticket.closedAt).getTime() : null;
+    const history = ticket.stageHistory || [];
+
+    if (ticket.status !== 'closed') {
+      openTickets += 1;
+      if (ticket.blocked) blockedOpen += 1;
+
+      if (ticket.estimatedResolutionAt) {
+        const estimateMs = new Date(ticket.estimatedResolutionAt).getTime();
+        if (estimateMs < nowMs) atRiskOpen += 1;
+      }
+    }
+
+    if (closedMs !== null) {
+      const leadMs = closedMs - createdMs;
+      if (leadMs >= 0) leadSamples.push(leadMs);
+      if (closedMs >= cutoffMs) touch(bucketOf(ticket.closedAt)).closed += 1;
+    }
+
+    const started = history.find((entry) => entry.to === 'in_progress');
+    const wentLive = history.find((entry) => entry.to === 'live');
+    if (started && wentLive) {
+      const cycleMs = new Date(wentLive.at).getTime() - new Date(started.at).getTime();
+      if (cycleMs >= 0) cycleSamples.push(cycleMs);
+    }
+
+    if (wentLive) {
+      const liveMs = new Date(wentLive.at).getTime();
+      if (liveMs >= cutoffMs) touch(bucketOf(wentLive.at)).live += 1;
+    }
+  }
+
+  return {
+    groupBy,
+    windowDays,
+    summary: {
+      openTickets,
+      blockedOpen,
+      atRiskOpen,
+      blockedRate: openTickets === 0 ? null : blockedOpen / openTickets,
+      atRiskRate: openTickets === 0 ? null : atRiskOpen / openTickets,
+    },
+    leadTime: durationStats(leadSamples),
+    cycleTime: durationStats(cycleSamples),
+    throughput: [...throughput.values()].sort((a, b) => a.bucket.localeCompare(b.bucket)),
+  };
+}
+
+const DRILL_FIELDS = {
+  severity: 'severity',
+  module: 'module',
+  assignee: 'assignedTo',
+  team: 'team',
+  priority: 'priority',
+  category: 'category',
+  environment: 'environment',
+  label: 'labels',
+};
 
 export async function drill(actor, query = {}) {
   const dimension = DRILL_FIELDS[query.dimension] ? query.dimension : 'severity';
@@ -268,14 +378,43 @@ export async function drill(actor, query = {}) {
 
   let cursor = Ticket.find(filter).select(field);
   if (dimension === 'assignee') cursor = cursor.populate('assignedTo', 'name');
+  if (dimension === 'team') cursor = cursor.populate('team', 'name');
 
   const tickets = await cursor.lean();
   const counts = new Map();
 
   for (const ticket of tickets) {
-    const raw = dimension === 'assignee' ? ticket.assignedTo?.name : ticket[field];
-    // A named empty bucket, so "no module set" is visible rather than missing.
-    const key = raw || (dimension === 'assignee' ? 'Unassigned' : 'Unspecified');
+    if (dimension === 'assignee') {
+      const key = ticket.assignedTo?.name || 'Unassigned';
+      counts.set(key, (counts.get(key) || 0) + 1);
+      continue;
+    }
+
+    if (dimension === 'team') {
+      const key = ticket.team?.name || 'No Team';
+      counts.set(key, (counts.get(key) || 0) + 1);
+      continue;
+    }
+
+    if (dimension === 'label') {
+      const labels = Array.isArray(ticket.labels)
+        ? ticket.labels.map((label) => String(label).trim()).filter(Boolean)
+        : [];
+
+      if (!labels.length) {
+        counts.set('No Label', (counts.get('No Label') || 0) + 1);
+        continue;
+      }
+
+      for (const label of labels) {
+        counts.set(label, (counts.get(label) || 0) + 1);
+      }
+      continue;
+    }
+
+    const raw = ticket[field];
+    // A named empty bucket, so missing fields are visible rather than absent.
+    const key = raw || 'Unspecified';
     counts.set(key, (counts.get(key) || 0) + 1);
   }
 

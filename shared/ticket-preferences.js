@@ -19,6 +19,8 @@ export const DEFAULT_TICKET_PREFERENCES = Object.freeze({
     q: '',
     status: '',
     priority: '',
+    category: '',
+    severity: '',
     scope: 'all',
     assignedTo: '',
     blocked: false,
@@ -73,9 +75,13 @@ const SORT_FIELD_MAP = Object.freeze({
   title: 'title',
   status: 'status',
   owner: 'assignedTo',
-  inStage: 'updatedAt',
+  inStage: 'currentStageEnteredAt',
   estimatedDone: 'estimatedResolutionAt',
 });
+
+const FIELD_TO_SORT_COLUMN = Object.freeze(
+  Object.fromEntries(Object.entries(SORT_FIELD_MAP).map(([column, field]) => [field, column])),
+);
 
 export function buildTicketListSortBy(sort) {
   if (!sort?.column || !sort?.direction) return undefined;
@@ -84,12 +90,19 @@ export function buildTicketListSortBy(sort) {
   return `${field}:${sort.direction}`;
 }
 
+export function parseTicketListSortBy(sortBy) {
+  if (!sortBy) return null;
+  const [field, direction] = String(sortBy).split(':');
+  const column = FIELD_TO_SORT_COLUMN[field?.trim()];
+  if (!column || (direction !== 'asc' && direction !== 'desc')) return null;
+  return { column, direction };
+}
+
 export function cycleTicketSort(current, column) {
   if (current?.column !== column) {
     return { column, direction: 'desc' };
   }
   if (current.direction === 'desc') return { column, direction: 'asc' };
-  if (current.direction === 'asc') return { column: null, direction: null };
   return { column, direction: 'desc' };
 }
 
@@ -103,6 +116,8 @@ export function hasActiveTicketFilters(filters = {}, defaults = DEFAULT_TICKET_P
     Boolean(filters.q)
     || (Boolean(filters.status) && filters.status !== defaults.status)
     || Boolean(filters.priority)
+    || Boolean(filters.category)
+    || Boolean(filters.severity)
     || (filters.scope && filters.scope !== defaults.scope)
     || Boolean(filters.assignedTo)
     || Boolean(filters.blocked)
@@ -117,5 +132,6 @@ export function hasTicketPreferenceChanges(preferences = {}, user) {
   return hasActiveTicketFilters(current.filters, defaults.filters)
     || current.sort.column !== defaults.sort.column
     || current.sort.direction !== defaults.sort.direction
-    || current.boardMine !== defaults.boardMine;
+    || current.boardMine !== defaults.boardMine
+    || current.limit !== defaults.limit;
 }

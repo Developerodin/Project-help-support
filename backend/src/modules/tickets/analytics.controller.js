@@ -18,6 +18,10 @@ export const trend = catchAsync(async (req, res) => {
   res.json(await analytics.trend(req.user, req.query));
 });
 
+export const delivery = catchAsync(async (req, res) => {
+  res.json(await analytics.delivery(req.user, req.query));
+});
+
 export const timeInStage = catchAsync(async (req, res) => {
   res.json(await analytics.timeInStage(req.user, req.query));
 });

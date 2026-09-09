@@ -8,7 +8,7 @@ import {
   ESTIMATE_DATE_EDITOR_ROLES,
   can,
   hasAnyRole,
-  isExternalUser,
+  isPureExternalActor,
   hasActiveScopedConstraints,
   canInScope,
 } from '@pms/shared';
@@ -36,7 +36,7 @@ const EXTERNAL_ACCESS_ASSIGNMENT_PERMISSIONS = new Set(['tickets.view', 'tickets
 async function assertHasTicketPermission(actor, permission, permissionContext = null) {
   const ctx = await resolvePermissionContext(actor, permissionContext);
   // External visibility and filing are governed by AccessAssignment scope, not RBAC.
-  if (isExternalUser(actor) && EXTERNAL_ACCESS_ASSIGNMENT_PERMISSIONS.has(permission)) return ctx;
+  if (isPureExternalActor(actor) && EXTERNAL_ACCESS_ASSIGNMENT_PERMISSIONS.has(permission)) return ctx;
   if (!can(actor, permission, ctx)) {
     throw new ApiError(403, 'FORBIDDEN', `Requires permission: ${permission}`);
   }
@@ -52,7 +52,7 @@ export async function createTicket(actor, body, permissionContext = null) {
   }
 
   await assertExternalCanCreateTicket(actor, project._id);
-  if (!isExternalUser(actor)) {
+  if (!isPureExternalActor(actor)) {
     await assertScopedPermissionWhenConstrained(
       actor,
       'tickets.create',
@@ -114,6 +114,7 @@ export async function createTicket(actor, body, permissionContext = null) {
     createdBy: actor._id,
     // The landing entry, so time-in-stage has a start for `pending` without
     // special-casing "the first stage has no history row".
+    currentStageEnteredAt: now,
     stageHistory: [{ to: 'pending', by: actor._id, at: now }],
     activityLog: [{ action: 'created', performedBy: actor._id, at: now, changes: [] }],
   });
@@ -195,7 +196,7 @@ export async function getTicket(actor, idOrKey, permissionContext = null) {
   await assertCanViewTicket(actor, ticket, permissionContext);
   const json = ticket.toJSON();
   restoreNestedPopulatedUsers(ticket, json);
-  return isExternalUser(actor) ? sanitizeExternalTicket(json, { viewerId: actor._id }) : json;
+  return isPureExternalActor(actor) ? sanitizeExternalTicket(json, { viewerId: actor._id }) : json;
 }
 
 function scopeFilter(scope, actorId) {
@@ -242,7 +243,7 @@ function hasGlobalTicketView(actor, permissionContext = null) {
 }
 
 async function applyTicketVisibility(filter, actor, permissionContext = null) {
-  if (isExternalUser(actor)) {
+  if (isPureExternalActor(actor)) {
     const externalFilter = await buildExternalTicketFilter(actor);
     if (Object.keys(filter).length === 0) return externalFilter;
     return { $and: [filter, externalFilter] };
@@ -317,6 +318,7 @@ export async function buildTicketFilter(actor, query = {}, permissionContext = n
   if (query.project) filter.project = query.project;
   if (query.status) filter.status = query.status;
   if (query.priority) filter.priority = query.priority;
+  if (query.category) filter.category = query.category;
   if (query.severity) filter.severity = query.severity;
   if (query.label) filter.labels = query.label;
   if (query.module) filter.module = query.module;
@@ -400,23 +402,10 @@ function normalizeFilterForAggregate(filter) {
   return normalized;
 }
 
-async function paginateTickets(model, filter, options = {}) {
-  const sortBy = options.sortBy;
-  const ticketIdSort = sortBy?.startsWith('ticketId:');
-  if (!ticketIdSort) {
-    return paginate(model, filter, options);
-  }
-
+function aggregateSortStages(sortBy) {
   const direction = sortBy.endsWith(':asc') ? 1 : -1;
-  const page = Math.max(1, Number(options.page) || 1);
-  const limit = Math.min(100, Math.max(1, Number(options.limit) || 20));
-  const skip = (page - 1) * limit;
-  const matchFilter = normalizeFilterForAggregate(filter);
-
-  const [totalResults, idRows] = await Promise.all([
-    model.countDocuments(filter).exec(),
-    model.aggregate([
-      { $match: matchFilter },
+  if (sortBy.startsWith('ticketId:')) {
+    return [
       {
         $addFields: {
           ticketSeq: {
@@ -429,6 +418,58 @@ async function paginateTickets(model, filter, options = {}) {
         },
       },
       { $sort: { ticketSeq: direction, createdAt: -1 } },
+    ];
+  }
+  if (sortBy.startsWith('assignedTo:')) {
+    return [
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'assignedTo',
+          foreignField: '_id',
+          as: '_ownerDoc',
+        },
+      },
+      {
+        $addFields: {
+          _ownerName: { $ifNull: [{ $arrayElemAt: ['$_ownerDoc.name', 0] }, ''] },
+        },
+      },
+      { $sort: { _ownerName: direction, createdAt: -1 } },
+    ];
+  }
+  if (sortBy.startsWith('currentStageEnteredAt:')) {
+    return [
+      {
+        $addFields: {
+          effectiveStageEnteredAt: {
+            $ifNull: ['$currentStageEnteredAt', '$updatedAt'],
+          },
+        },
+      },
+      { $sort: { effectiveStageEnteredAt: direction, createdAt: -1 } },
+    ];
+  }
+  return null;
+}
+
+async function paginateTickets(model, filter, options = {}) {
+  const sortBy = options.sortBy;
+  const sortStages = sortBy ? aggregateSortStages(sortBy) : null;
+  if (!sortStages) {
+    return paginate(model, filter, options);
+  }
+
+  const page = Math.max(1, Number(options.page) || 1);
+  const limit = Math.min(100, Math.max(1, Number(options.limit) || 20));
+  const skip = (page - 1) * limit;
+  const matchFilter = normalizeFilterForAggregate(filter);
+
+  const [totalResults, idRows] = await Promise.all([
+    model.countDocuments(filter).exec(),
+    model.aggregate([
+      { $match: matchFilter },
+      ...sortStages,
       { $skip: skip },
       { $limit: limit },
       { $project: { _id: 1 } },
@@ -479,7 +520,7 @@ export async function listTickets(actor, query = {}, permissionContext = null) {
     ...page,
     results: page.results.map((t) => {
       const json = t.toJSON();
-      return isExternalUser(actor) ? sanitizeExternalTicket(json, { viewerId: actor._id }) : json;
+      return isPureExternalActor(actor) ? sanitizeExternalTicket(json, { viewerId: actor._id }) : json;
     }),
   };
 }
@@ -522,7 +563,7 @@ async function isActorOnTicketTeam(actorId, ticket) {
 }
 
 async function assertTicketInActorScope(actor, ticket, permission, permissionContext = null) {
-  if (isExternalUser(actor)) {
+  if (isPureExternalActor(actor)) {
     if (!(await canExternalViewTicket(actor, ticket))) {
       throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this ticket');
     }
@@ -562,7 +603,7 @@ export async function assertCanViewTicket(actor, ticket, permissionContext = nul
 export async function assertCanEditTicket(actor, ticket, permissionContext = null) {
   await assertHasTicketPermission(actor, 'tickets.edit', permissionContext);
 
-  if (isExternalUser(actor)) {
+  if (isPureExternalActor(actor)) {
     await assertTicketInActorScope(actor, ticket, 'tickets.edit', permissionContext);
     return;
   }
@@ -813,7 +854,7 @@ export async function clearBlocked(actor, idOrKey, { revision }, permissionConte
 export async function assertCanDeleteTicket(actor, ticket, permissionContext = null) {
   await assertHasTicketPermission(actor, 'tickets.delete', permissionContext);
   await assertTicketInActorScope(actor, ticket, 'tickets.delete', permissionContext);
-  if (!isExternalUser(actor)) {
+  if (!isPureExternalActor(actor)) {
     await assertScopedPermissionWhenConstrained(
       actor,
       'tickets.delete',
@@ -830,7 +871,7 @@ export async function deleteTicket(idOrKey, actor = null, permissionContext = nu
   const ticket = await resolveTicketDoc(idOrKey);
   await assertHasTicketPermission(actor, 'tickets.delete', permissionContext);
   await assertTicketInActorScope(actor, ticket, 'tickets.delete', permissionContext);
-  if (!isExternalUser(actor)) {
+  if (!isPureExternalActor(actor)) {
     await assertScopedPermissionWhenConstrained(
       actor,
       'tickets.delete',

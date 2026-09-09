@@ -13,6 +13,7 @@ export const listTicketsSchema = {
     project: objectId,
     status: Joi.string().valid(...STAGE_KEYS),
     priority: Joi.string().valid(...PRIORITIES),
+    category: Joi.string().valid(...CATEGORIES),
     severity: Joi.string().valid(...SEVERITIES),
     label: Joi.string().valid(...LABELS),
     module: Joi.string().trim().max(80),

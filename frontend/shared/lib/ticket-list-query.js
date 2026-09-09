@@ -3,6 +3,7 @@ import {
   DEFAULT_TICKET_PREFERENCES,
   mergeTicketPreferences,
   normalizeTicketPreferencesForUser,
+  parseTicketListSortBy,
 } from '@pms/shared';
 
 export function buildTicketListQuery({
@@ -26,6 +27,8 @@ export function buildTicketListQuery({
   if (q) query.q = q;
   if (filters.status) query.status = filters.status;
   if (filters.priority) query.priority = filters.priority;
+  if (filters.category) query.category = filters.category;
+  if (filters.severity) query.severity = filters.severity;
   const scope = scopeOverride ?? filters.scope;
   if (scope && scope !== 'all') query.scope = scope;
   if (filters.assignedTo) query.assignedTo = filters.assignedTo;
@@ -72,6 +75,9 @@ export const TICKET_PAGE_SIZES = Object.freeze([25, 50, 100]);
 
 export const TICKET_PAGE_PARAM = 'page';
 export const TICKET_LIMIT_PARAM = 'limit';
+export const TICKET_SORT_PARAM = 'sortBy';
+export const TICKET_PROJECT_PARAM = 'project';
+export const BOARD_MINE_PARAM = 'mine';
 
 export function pageFromSearch(search) {
   const raw = Number.parseInt(new URLSearchParams(search).get(TICKET_PAGE_PARAM), 10);
@@ -84,11 +90,55 @@ export function limitFromSearch(search, fallback) {
   return TICKET_PAGE_SIZES.includes(raw) ? raw : safeFallback;
 }
 
+export function sortFromSearch(search, fallback) {
+  const raw = new URLSearchParams(search).get(TICKET_SORT_PARAM);
+  const parsed = parseTicketListSortBy(raw);
+  if (parsed) return parsed;
+  return mergeTicketPreferences({ sort: fallback }).sort;
+}
+
+export function projectFromSearch(search) {
+  return new URLSearchParams(search).get(TICKET_PROJECT_PARAM) || null;
+}
+
+export function boardMineFromSearch(search) {
+  return new URLSearchParams(search).get(BOARD_MINE_PARAM) === '1';
+}
+
+/** URL project wins when present; otherwise fall back to the active project scope. */
+export function resolveViewProject(search, activeProjectId) {
+  if (new URLSearchParams(search).has(TICKET_PROJECT_PARAM)) {
+    return projectFromSearch(search);
+  }
+  return activeProjectId;
+}
+
+/** Page numbers (and ellipsis markers) for a windowed pager. */
+export function windowedPageNumbers(current, total, window = 5) {
+  const pages = Math.max(1, Number(total) || 1);
+  const at = Math.min(Math.max(1, Number(current) || 1), pages);
+  if (pages <= 1) return [1];
+
+  const nums = new Set([1, pages, at]);
+  const half = Math.floor(window / 2);
+  for (let page = at - half; page <= at + half; page += 1) {
+    if (page >= 1 && page <= pages) nums.add(page);
+  }
+
+  const sorted = [...nums].sort((a, b) => a - b);
+  const out = [];
+  for (let i = 0; i < sorted.length; i += 1) {
+    if (i > 0 && sorted[i] - sorted[i - 1] > 1) out.push('…');
+    out.push(sorted[i]);
+  }
+  return out;
+}
+
 /**
  * The filter keys the URL carries. Flags ride as '1' so the URL only ever
  * names a filter that is actually on.
  */
-const URL_FILTER_KEYS = Object.freeze(['q', 'status', 'priority', 'scope', 'assignedTo']);
+const URL_FILTER_KEYS = Object.freeze(['q', 'status', 'priority', 'category', 'severity', 'scope', 'assignedTo']);
 const URL_FLAG_KEYS = Object.freeze(['blocked', 'overdue', 'reopened']);
 
 export function hasFilterParams(search) {
@@ -137,11 +187,58 @@ export function resolveViewFilters(search, preferences) {
   return mergeTicketPreferences(preferences).filters;
 }
 
+/** URL sort wins when present; otherwise fall back to saved preferences. */
+export function resolveViewSort(search, preferences) {
+  if (new URLSearchParams(search).has(TICKET_SORT_PARAM)) {
+    return sortFromSearch(search, DEFAULT_TICKET_PREFERENCES.sort);
+  }
+  return mergeTicketPreferences(preferences).sort;
+}
+
 /** Page 1 is the default view, so it stays out of the URL. */
 export function withPageParam(search, page) {
   const params = new URLSearchParams(search);
   if (page > 1) params.set(TICKET_PAGE_PARAM, String(page));
   else params.delete(TICKET_PAGE_PARAM);
+  const rest = params.toString();
+  return rest ? `?${rest}` : '';
+}
+
+/** Default limit stays out of the URL. */
+export function withLimitParam(search, limit) {
+  const params = new URLSearchParams(search);
+  const safeLimit = TICKET_PAGE_SIZES.includes(limit) ? limit : DEFAULT_TICKET_PREFERENCES.limit;
+  if (safeLimit !== DEFAULT_TICKET_PREFERENCES.limit) params.set(TICKET_LIMIT_PARAM, String(safeLimit));
+  else params.delete(TICKET_LIMIT_PARAM);
+  const rest = params.toString();
+  return rest ? `?${rest}` : '';
+}
+
+/** Default sort stays out of the URL. */
+export function withSortParam(search, sort) {
+  const params = new URLSearchParams(search);
+  const sortBy = buildTicketListSortBy(sort);
+  const defaultSortBy = buildTicketListSortBy(DEFAULT_TICKET_PREFERENCES.sort);
+  if (sortBy && sortBy !== defaultSortBy) params.set(TICKET_SORT_PARAM, sortBy);
+  else params.delete(TICKET_SORT_PARAM);
+  const rest = params.toString();
+  return rest ? `?${rest}` : '';
+}
+
+/** All projects is the default scope, so it stays out of the URL. */
+export function withProjectParam(search, projectId) {
+  const params = new URLSearchParams(search);
+  if (projectId) params.set(TICKET_PROJECT_PARAM, projectId);
+  else params.delete(TICKET_PROJECT_PARAM);
+  const rest = params.toString();
+  return rest ? `?${rest}` : '';
+}
+
+/** Default board scope is everyone, so mine=1 is the only value written. */
+export function withBoardMineParam(search, boardMine) {
+  const params = new URLSearchParams(search);
+  if (boardMine) params.set(BOARD_MINE_PARAM, '1');
+  else params.delete(BOARD_MINE_PARAM);
   const rest = params.toString();
   return rest ? `?${rest}` : '';
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { todayDateKey, validateTicketEstimateDates } from '@pms/shared';
 import Icon, { initials, isOverdue } from '../icons.jsx';
 import TicketRailPicker from './ticket-rail-picker.jsx';
@@ -50,6 +50,9 @@ export default function TicketMetadataRail({
     estimatedResolutionAt: dateValue(ticket.estimatedResolutionAt),
     expectedReleaseDate: dateValue(ticket.expectedReleaseDate),
   });
+  const [saveFeedback, setSaveFeedback] = useState({ state: 'idle', message: '' });
+  const saveFeedbackTimerRef = useRef(null);
+  const saveInFlightRef = useRef(false);
 
   const {
     assigneePickerOpen,
@@ -70,6 +73,13 @@ export default function TicketMetadataRail({
 
   const set = (key) => (event) => {
     onFieldEdit?.(key);
+    if (saveFeedback.state !== 'idle') {
+      setSaveFeedback({ state: 'idle', message: '' });
+      if (saveFeedbackTimerRef.current) {
+        window.clearTimeout(saveFeedbackTimerRef.current);
+        saveFeedbackTimerRef.current = null;
+      }
+    }
     setLocalDateErrors((prev) => {
       if (!prev[key] && !prev.expectedReleaseDate) return prev;
       const next = { ...prev };
@@ -80,32 +90,52 @@ export default function TicketMetadataRail({
     setDraft((prev) => ({ ...prev, [key]: event.target.value }));
   };
 
+  useEffect(() => () => {
+    if (saveFeedbackTimerRef.current) {
+      window.clearTimeout(saveFeedbackTimerRef.current);
+    }
+  }, []);
+
   const mergedFieldErrors = { ...fieldErrors, ...localDateErrors };
+  const savingDates = saveFeedback.state === 'saving';
 
   const today = todayDateKey();
   const estIso = draft.estimatedResolutionAt || dateValue(ticket.estimatedResolutionAt);
   const releaseIso = draft.expectedReleaseDate || dateValue(ticket.expectedReleaseDate);
-  const resolutionChanged = draft.estimatedResolutionAt !== dateValue(ticket.estimatedResolutionAt);
-  const releaseChanged = draft.expectedReleaseDate !== dateValue(ticket.expectedReleaseDate);
   const releaseMin = estIso && estIso >= today ? estIso : today;
 
-  const saveDates = () => {
-    if (!resolutionChanged && !releaseChanged) return;
+  const saveDates = async (override = {}) => {
+    if (saveInFlightRef.current) return;
+    const nextDraft = { ...draft, ...override };
+    if (Object.keys(override).length) {
+      setDraft((prev) => ({ ...prev, ...override }));
+    }
+    if (saveFeedbackTimerRef.current) {
+      window.clearTimeout(saveFeedbackTimerRef.current);
+      saveFeedbackTimerRef.current = null;
+    }
+
+    const nextResolution = nextDraft.estimatedResolutionAt;
+    const nextRelease = nextDraft.expectedReleaseDate;
+    const nextResolutionChanged = nextResolution !== dateValue(ticket.estimatedResolutionAt);
+    const nextReleaseChanged = nextRelease !== dateValue(ticket.expectedReleaseDate);
+
+    if (!nextResolutionChanged && !nextReleaseChanged) return;
 
     const changedFields = [];
     const body = { revision: ticket.revision };
-    if (resolutionChanged) {
+    if (nextResolutionChanged) {
       changedFields.push('estimatedResolutionAt');
-      body.estimatedResolutionAt = draft.estimatedResolutionAt || null;
+      body.estimatedResolutionAt = nextResolution || null;
     }
-    if (releaseChanged) {
+    if (nextReleaseChanged) {
       changedFields.push('expectedReleaseDate');
-      body.expectedReleaseDate = draft.expectedReleaseDate || null;
+      body.expectedReleaseDate = nextRelease || null;
     }
 
     const dateErrors = validateTicketEstimateDates(
-      draft.estimatedResolutionAt || null,
-      draft.expectedReleaseDate || null,
+      nextResolution || null,
+      nextRelease || null,
       { changedFields },
     );
     if (dateErrors) {
@@ -113,8 +143,24 @@ export default function TicketMetadataRail({
       return;
     }
 
+    saveInFlightRef.current = true;
+    setSaveFeedback({ state: 'saving', message: 'Saving estimate dates…' });
     setLocalDateErrors({});
-    onSave(body);
+    try {
+      await onSave(body);
+      setSaveFeedback({ state: 'saved', message: 'Estimate dates saved.' });
+      saveFeedbackTimerRef.current = window.setTimeout(() => {
+        setSaveFeedback({ state: 'idle', message: '' });
+        saveFeedbackTimerRef.current = null;
+      }, 2500);
+    } catch (err) {
+      setSaveFeedback({
+        state: 'error',
+        message: err?.message || 'Could not save estimate dates. Try again.',
+      });
+    } finally {
+      saveInFlightRef.current = false;
+    }
   };
 
   const estInvalid = 'estimatedResolutionAt' in mergedFieldErrors;
@@ -137,6 +183,7 @@ export default function TicketMetadataRail({
     <aside
       className="metadata-rail sidecol"
       aria-label="Ticket metadata"
+      aria-busy={savingDates}
     >
       <h2 className="sr">Metadata</h2>
 
@@ -217,7 +264,8 @@ export default function TicketMetadataRail({
                     min={today}
                     max={releaseIso || undefined}
                     onChange={set('estimatedResolutionAt')}
-                    onBlur={saveDates}
+                    onBlur={(event) => { void saveDates({ estimatedResolutionAt: event.target.value }); }}
+                    disabled={savingDates}
                     aria-invalid={estInvalid}
                     aria-describedby={mergedFieldErrors.estimatedResolutionAt ? 'estimatedResolutionAt-hint' : undefined}
                   />
@@ -251,7 +299,8 @@ export default function TicketMetadataRail({
                     min={today}
                     max={releaseIso || undefined}
                     onChange={set('estimatedResolutionAt')}
-                    onBlur={saveDates}
+                    onBlur={(event) => { void saveDates({ estimatedResolutionAt: event.target.value }); }}
+                    disabled={savingDates}
                     aria-invalid={estInvalid}
                     aria-describedby={mergedFieldErrors.estimatedResolutionAt ? 'estimatedResolutionAt-hint' : undefined}
                   />
@@ -305,7 +354,8 @@ export default function TicketMetadataRail({
                   value={draft.expectedReleaseDate}
                   min={releaseMin}
                   onChange={set('expectedReleaseDate')}
-                  onBlur={saveDates}
+                  onBlur={(event) => { void saveDates({ expectedReleaseDate: event.target.value }); }}
+                  disabled={savingDates}
                   aria-invalid={releaseInvalid}
                   aria-describedby={mergedFieldErrors.expectedReleaseDate ? 'expectedReleaseDate-hint' : undefined}
                 />
@@ -317,7 +367,8 @@ export default function TicketMetadataRail({
                     value={draft.expectedReleaseDate}
                     min={releaseMin}
                     onChange={set('expectedReleaseDate')}
-                    onBlur={saveDates}
+                    onBlur={(event) => { void saveDates({ expectedReleaseDate: event.target.value }); }}
+                    disabled={savingDates}
                     aria-invalid={releaseInvalid}
                     aria-describedby={mergedFieldErrors.expectedReleaseDate ? 'expectedReleaseDate-hint' : undefined}
                   />
@@ -336,6 +387,17 @@ export default function TicketMetadataRail({
             </p>
           ) : null}
         </div>
+
+        {saveFeedback.state !== 'idle' ? (
+          <p
+            className={saveFeedback.state === 'error' ? 'field-hint invalid' : 'meta'}
+            role={saveFeedback.state === 'error' ? 'alert' : 'status'}
+            aria-live={saveFeedback.state === 'error' ? 'assertive' : 'polite'}
+            aria-atomic="true"
+          >
+            {saveFeedback.message}
+          </p>
+        ) : null}
 
         <div className="siderow">
           <span className="lbl">In current stage</span>

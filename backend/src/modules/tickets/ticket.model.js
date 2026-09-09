@@ -124,6 +124,8 @@ const ticketSchema = new mongoose.Schema(
     priority: { type: String, enum: PRIORITIES },
 
     status: { type: String, enum: STAGE_KEYS, default: 'pending', index: true },
+    /** Denormalized from the latest stageHistory.at for list display/sort without loading history. */
+    currentStageEnteredAt: { type: Date, index: true },
 
     team: { type: objectId, ref: 'Team', index: true },
     assignedTo: { type: objectId, ref: 'User', index: true },

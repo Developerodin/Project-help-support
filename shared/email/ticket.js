@@ -176,6 +176,12 @@ function plainFacts(rows) {
     .map(([label, value]) => `${label}: ${value}`);
 }
 
+function ticketBrandName(context = {}) {
+  if (typeof context.brandName !== 'string') return EMAIL_BRAND.shortName;
+  const name = context.brandName.trim();
+  return name || EMAIL_BRAND.shortName;
+}
+
 export function renderTicketEmail(event, ticket, context = {}, config = {}) {
   const link = `${config.frontendBaseUrl}/tickets?ticket=${encodeURIComponent(ticket.ticketId)}`;
   const copy = EVENT_COPY[event] ?? FALLBACK_COPY;
@@ -229,6 +235,7 @@ export function renderTicketEmail(event, ticket, context = {}, config = {}) {
     title: ticket.title,
     bodyHtml,
     cta: { label: copy.cta, href: link },
+    brandName: ticketBrandName(context),
     footerNote: 'Attachment links in this email are presigned and expire shortly after sending.',
   });
 

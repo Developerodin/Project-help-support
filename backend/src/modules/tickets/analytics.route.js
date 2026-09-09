@@ -23,10 +23,26 @@ const overviewSchema = { query: Joi.object(baseFilters) };
 const trendSchema = {
   query: Joi.object({ ...baseFilters, groupBy: Joi.string().valid('day', 'week') }),
 };
+const deliverySchema = {
+  query: Joi.object({
+    ...baseFilters,
+    groupBy: Joi.string().valid('day', 'week'),
+    windowDays: Joi.number().integer().min(7).max(90),
+  }),
+};
 const drillSchema = {
   query: Joi.object({
     ...baseFilters,
-    dimension: Joi.string().valid('module', 'severity', 'assignee').required(),
+    dimension: Joi.string().valid(
+      'severity',
+      'module',
+      'assignee',
+      'team',
+      'priority',
+      'category',
+      'environment',
+      'label',
+    ).required(),
   }),
 };
 
@@ -40,6 +56,7 @@ export default function analyticsRoutes(config) {
 
   router.get('/overview', validate(overviewSchema), controller.overview);
   router.get('/trend', validate(trendSchema), controller.trend);
+  router.get('/delivery', validate(deliverySchema), controller.delivery);
   router.get('/time-in-stage', validate(overviewSchema), controller.timeInStage);
   router.get('/drill', validate(drillSchema), controller.drill);
 

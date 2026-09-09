@@ -100,6 +100,8 @@ const userSchema = new mongoose.Schema(
         q: { type: String, trim: true, default: DEFAULT_TICKET_PREFERENCES.filters.q },
         status: { type: String, trim: true, default: DEFAULT_TICKET_PREFERENCES.filters.status },
         priority: { type: String, trim: true, default: DEFAULT_TICKET_PREFERENCES.filters.priority },
+        category: { type: String, trim: true, default: DEFAULT_TICKET_PREFERENCES.filters.category },
+        severity: { type: String, trim: true, default: DEFAULT_TICKET_PREFERENCES.filters.severity },
         scope: {
           type: String,
           enum: ['all', 'assigned', 'reported', 'unassigned'],

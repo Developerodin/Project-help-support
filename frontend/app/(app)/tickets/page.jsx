@@ -2,9 +2,10 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { cycleTicketSort, hasTicketPreferenceChanges, defaultTicketPreferencesForUser } from '@pms/shared';
+import { cycleTicketSort, hasActiveTicketFilters, hasTicketPreferenceChanges, defaultTicketPreferencesForUser } from '@pms/shared';
 import { listTickets } from '@/shared/api/tickets.js';
 import { getProject } from '@/shared/api/projects.js';
+import { listUsers } from '@/shared/api/users.js';
 import { isAbortError } from '@/shared/api/client.js';
 import { AUTHENTICATED, useAuth } from '@/shared/contexts/auth-context.jsx';
 import { useProject } from '@/shared/contexts/project-context.jsx';
@@ -16,10 +17,19 @@ import {
   hasFilterParams,
   limitFromSearch,
   pageFromSearch,
+  filtersFromSearch,
   resolveViewFilters,
+  resolveViewProject,
+  resolveViewSort,
+  projectFromSearch,
   staleProjectFilters,
+  TICKET_PAGE_SIZES,
+  windowedPageNumbers,
   withFilterParams,
+  withLimitParam,
   withPageParam,
+  withProjectParam,
+  withSortParam,
   DEFAULT_TICKET_PREFERENCES,
 } from '@/shared/lib/ticket-list-query.js';
 import { useDebouncedValue } from '@/shared/lib/use-debounced-value.js';
@@ -37,12 +47,13 @@ function TicketListPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { status: authStatus, user } = useAuth();
-  const { activeProjectId, loading: projectLoading } = useProject();
+  const { activeProjectId, loading: projectLoading, setActiveProjectId } = useProject();
   const {
     ready,
     preferences,
     setFilters,
     setSort,
+    patchPreferences,
     reset,
   } = useTicketPreferences();
 
@@ -71,6 +82,23 @@ function TicketListPage() {
     [searchString, ready, preferences, roleDefaults],
   );
 
+  const viewSort = useMemo(
+    () => resolveViewSort(searchString, ready ? preferences : roleDefaults),
+    [searchString, ready, preferences, roleDefaults],
+  );
+
+  const viewProjectId = useMemo(
+    () => resolveViewProject(searchString, activeProjectId),
+    [searchString, activeProjectId],
+  );
+
+  const [searchInput, setSearchInput] = useState(viewFilters.q || '');
+  useEffect(() => {
+    setSearchInput(viewFilters.q || '');
+  }, [viewFilters.q]);
+
+  const debouncedSearchInput = useDebouncedValue(searchInput, SEARCH_DEBOUNCE_MS);
+
   /**
    * One mechanism for every URL write on this page. The native history API is
    * what Next syncs useSearchParams from, so mixing it with router.replace
@@ -90,10 +118,39 @@ function TicketListPage() {
 
   /** URL first so the view updates now; preferences follow as the new default. */
   const applyFilters = useCallback((nextFilters) => {
-    // A narrowed result set almost never has the page you were on.
     writeSearch(withPageParam(withFilterParams(window.location.search, nextFilters), 1));
     setFilters(nextFilters);
   }, [writeSearch, setFilters]);
+
+  useEffect(() => {
+    const currentQ = filtersFromSearch(window.location.search).q || '';
+    if (debouncedSearchInput === currentQ) return;
+    const nextFilters = { ...filtersFromSearch(window.location.search), q: debouncedSearchInput };
+    writeSearch(withPageParam(withFilterParams(window.location.search, nextFilters), 1));
+    setFilters(nextFilters);
+  }, [debouncedSearchInput, writeSearch, setFilters]);
+
+  const normalizedProjectUrl = useRef(false);
+  useEffect(() => {
+    if (!ready || normalizedProjectUrl.current || projectLoading) return;
+    normalizedProjectUrl.current = true;
+    if (new URLSearchParams(window.location.search).has('project')) return;
+    const next = withProjectParam(window.location.search, activeProjectId);
+    if (next !== window.location.search) writeSearch(next);
+  }, [ready, activeProjectId, projectLoading, writeSearch]);
+
+  const projectChangedFromUrl = useRef(false);
+  const syncedProjectFromUrl = useRef(false);
+
+  useEffect(() => {
+    if (projectLoading || syncedProjectFromUrl.current) return;
+    syncedProjectFromUrl.current = true;
+    if (!new URLSearchParams(window.location.search).has('project')) return;
+    const fromUrl = projectFromSearch(window.location.search);
+    if (fromUrl === activeProjectId) return;
+    projectChangedFromUrl.current = true;
+    setActiveProjectId(fromUrl);
+  }, [projectLoading, activeProjectId, setActiveProjectId]);
 
   const normalizedUrl = useRef(false);
   useEffect(() => {
@@ -114,8 +171,20 @@ function TicketListPage() {
       return undefined;
     }
     if (!activeProjectId) {
-      setOwnerOptions([]);
-      return undefined;
+      let cancelled = false;
+      setOwnerOptions(null);
+      listUsers({ status: 'active', limit: 100 })
+        .then((page) => {
+          if (cancelled) return;
+          setOwnerOptions(page.results.map((person) => ({
+            id: String(person.id),
+            name: person.name || 'Unknown',
+          })));
+        })
+        .catch(() => {
+          if (!cancelled) setOwnerOptions(null);
+        });
+      return () => { cancelled = true; };
     }
 
     let cancelled = false;
@@ -143,40 +212,38 @@ function TicketListPage() {
 
   useEffect(() => {
     if (!ready) return;
-    // A project-scoped filter value outlives the project it came from, and the
-    // <select> silently renders "Any owner" for a value it has no option for.
-    // Clear it rather than filter by something the user cannot see.
+    // All-projects owner options are capped; do not clear a filter the list may
+    // simply have truncated.
+    if (!activeProjectId) return;
     const patch = staleProjectFilters(viewFilters, { ownerIds });
     if (patch) applyFilters({ ...viewFilters, ...patch });
-  }, [ready, viewFilters, ownerIds, applyFilters]);
+  }, [ready, activeProjectId, viewFilters, ownerIds, applyFilters]);
 
   const lastProjectId = useRef(undefined);
   useEffect(() => {
     if (projectLoading) return;
-    // First resolved value is the page loading, not the user switching project.
-    // Resetting here unconditionally is what threw away ?page= on every mount.
     if (lastProjectId.current === undefined) {
       lastProjectId.current = activeProjectId;
       return;
     }
     if (lastProjectId.current === activeProjectId) return;
     lastProjectId.current = activeProjectId;
-    setPage(1);
-  }, [projectLoading, activeProjectId, setPage]);
-
-  // The input stays instant; only the request trails the typing.
-  const debouncedSearchTerm = useDebouncedValue(viewFilters.q, SEARCH_DEBOUNCE_MS);
+    const preservePage = projectChangedFromUrl.current;
+    projectChangedFromUrl.current = false;
+    const nextPage = preservePage ? pageFromSearch(window.location.search) : 1;
+    writeSearch(withPageParam(withProjectParam(window.location.search, activeProjectId), nextPage));
+  }, [projectLoading, activeProjectId, writeSearch]);
 
   // Keyed by value, not by object identity. Every keystroke hands us a fresh
   // preferences object, so an identity-keyed memo would produce a new query
   // object each time and refetch — debounced term or not.
   const queryKey = useMemo(() => JSON.stringify(buildTicketListQuery({
-    preferences: { ...preferences, filters: viewFilters },
-    projectId: activeProjectId,
+    preferences: { ...preferences, filters: viewFilters, sort: viewSort },
+    projectId: viewProjectId,
     page,
     limitOverride: limit,
-    qOverride: debouncedSearchTerm,
-  })), [preferences, viewFilters, activeProjectId, page, limit, debouncedSearchTerm]);
+    qOverride: debouncedSearchInput,
+  })), [preferences, viewFilters, viewSort, viewProjectId, page, limit, debouncedSearchInput]);
 
   const queryFilters = useMemo(() => JSON.parse(queryKey), [queryKey]);
 
@@ -243,9 +310,35 @@ function TicketListPage() {
   };
 
   const handleSort = (column) => {
-    setPage(1);
-    setSort(cycleTicketSort(preferences.sort, column));
+    const nextSort = cycleTicketSort(viewSort, column);
+    writeSearch(withPageParam(
+      withSortParam(window.location.search, nextSort),
+      1,
+    ));
+    setSort(nextSort);
   };
+
+  const handleLimitChange = (event) => {
+    const nextLimit = Number.parseInt(event.target.value, 10);
+    if (!TICKET_PAGE_SIZES.includes(nextLimit)) return;
+    writeSearch(withPageParam(
+      withLimitParam(window.location.search, nextLimit),
+      1,
+    ));
+    patchPreferences({ limit: nextLimit });
+  };
+
+  const pageNumbers = useMemo(
+    () => windowedPageNumbers(page, listPage.totalPages || 1),
+    [page, listPage.totalPages],
+  );
+
+  const tableBusy = loading && listPage.results.length > 0;
+  const showEmptyState = !loading && listPage.results.length === 0;
+  const filtersActive = hasActiveTicketFilters(viewFilters, roleDefaults.filters);
+  const ticketInList = openTicketId
+    && listPage.results.some((ticket) => ticket.ticketId === openTicketId);
+  const showDeepLinkBanner = Boolean(openTicketId && !loading && !ticketInList);
 
   const handleReset = async () => {
     setResetBusy(true);
@@ -254,7 +347,17 @@ function TicketListPage() {
       // The URL outranks preferences, so a reset that only clears the stored
       // defaults would leave the old view on screen.
       writeSearch(withPageParam(
-        withFilterParams(window.location.search, defaultTicketPreferencesForUser(user).filters), 1,
+        withProjectParam(
+          withLimitParam(
+            withSortParam(
+              withFilterParams(window.location.search, defaultTicketPreferencesForUser(user).filters),
+              defaultTicketPreferencesForUser(user).sort,
+            ),
+            defaultTicketPreferencesForUser(user).limit,
+          ),
+          activeProjectId,
+        ),
+        1,
       ));
       showToast('Filters and sorting reset to default');
     } catch (err) {
@@ -276,44 +379,106 @@ function TicketListPage() {
       <TicketFilters
         filters={viewFilters}
         onChange={applyFilters}
+        searchValue={searchInput}
+        onSearchChange={setSearchInput}
         ownerOptions={ownerOptions ?? []}
+        ownerScopeHint={!activeProjectId && ownerOptions?.length ? 'Any owner (all projects)' : null}
         onReset={handleReset}
         resetBusy={resetBusy}
-        showReset={hasTicketPreferenceChanges({ ...preferences, filters: viewFilters }, user)}
+        showReset={hasTicketPreferenceChanges(
+          { ...preferences, filters: viewFilters, sort: viewSort, limit },
+          user,
+        )}
       />
+      {showDeepLinkBanner ? (
+        <p className="meta" role="status">
+          {openTicketId} is not in the current list — it may be filtered out or on another page. The detail drawer still opens below.
+        </p>
+      ) : null}
       {preferencesHydrating && !initialPageLoading ? (
         <p className="meta">Applying saved ticket preferences…</p>
       ) : null}
       {initialPageLoading || (loading && listPage.results.length === 0) ? (
         <AppLoader inline label={"Loading tickets…"} />
+      ) : showEmptyState ? (
+        <div className="empty-state">
+          <h3>{filtersActive ? 'No ticket matches those filters' : 'No tickets yet'}</h3>
+          <p>
+            {filtersActive
+              ? 'Try clearing filters or widening the search.'
+              : 'Tickets filed for this project will show up here.'}
+          </p>
+          {filtersActive ? (
+            <button type="button" className="btn btn-sm" onClick={handleReset} disabled={resetBusy}>
+              Reset filters
+            </button>
+          ) : null}
+        </div>
       ) : (
         <TicketTable
           tickets={listPage.results}
           onOpen={open}
-          sort={preferences.sort}
+          sort={viewSort}
           onSort={handleSort}
+          busy={tableBusy}
         />
       )}
 
-      <div className="pager">
-        <span className="of">
+      <nav className="pager" aria-label="Ticket list pagination">
+        <span className="of" aria-live="polite" aria-atomic="true">
           {listPage.totalResults} tickets
           {(listPage.totalPages || 1) > 1 && ` · page ${page} of ${listPage.totalPages}`}
         </span>
+        <label className="pagesize">
+          <span className="sr-only">Rows per page</span>
+          <select
+            aria-label="Rows per page"
+            value={limit}
+            disabled={loading}
+            onChange={handleLimitChange}
+          >
+            {TICKET_PAGE_SIZES.map((size) => (
+              <option key={size} value={size}>{size} / page</option>
+            ))}
+          </select>
+        </label>
         <span className="spacer" />
         <button
-          type="button" className="pagebtn" disabled={page <= 1 || loading}
+          type="button"
+          className="pagebtn"
+          aria-label="Previous page"
+          disabled={page <= 1 || loading}
           onClick={() => setPage(page - 1)}
         >
           Prev
         </button>
+        {pageNumbers.map((item, index) => (
+          typeof item === 'number' ? (
+            <button
+              key={item}
+              type="button"
+              className="pagebtn"
+              aria-label={`Page ${item}`}
+              aria-current={item === page ? 'page' : undefined}
+              disabled={loading}
+              onClick={() => setPage(item)}
+            >
+              {item}
+            </button>
+          ) : (
+            <span key={`gap-${index}-${item}`} className="of" aria-hidden="true">{item}</span>
+          )
+        ))}
         <button
-          type="button" className="pagebtn" disabled={page >= (listPage.totalPages || 1) || loading}
+          type="button"
+          className="pagebtn"
+          aria-label="Next page"
+          disabled={page >= (listPage.totalPages || 1) || loading}
           onClick={() => setPage(page + 1)}
         >
           Next
         </button>
-      </div>
+      </nav>
 
       {openTicketId && (
         <TicketDetailDrawer ticketId={openTicketId} onClose={close} onChanged={reload} />

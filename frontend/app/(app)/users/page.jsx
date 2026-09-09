@@ -2,8 +2,17 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { PEOPLE_ASSIGNABLE_ROLES, ROLE_IDS, IMPERSONATION_INITIATOR_ROLES, getUserRoles, hasAnyRole, isSuperAdmin } from '@pms/shared';
-import { listUsers, inviteUser, patchUser, resendInvite, deleteUser } from '@/shared/api/users.js';
+import {
+  PEOPLE_ASSIGNABLE_ROLES,
+  ROLE_IDS,
+  ROLE_LABELS,
+  EXTERNAL_ROLES,
+  IMPERSONATION_INITIATOR_ROLES,
+  getUserRoles,
+  hasAnyRole,
+  isSuperAdmin,
+} from '@pms/shared';
+import { listUsers, inviteUser, patchUser, resendInvite, deleteUser, reactivateUser } from '@/shared/api/users.js';
 import { listClients } from '@/shared/api/clients.js';
 import { listProjects } from '@/shared/api/projects.js';
 import {
@@ -25,12 +34,56 @@ import { showToast } from '@/shared/lib/toast.js';
 import { capRoles } from '@/shared/lib/profile-utils.js';
 import '../../rbac-access.css';
 
+const SCRUBBED_EMAIL = /^deleted\+[a-f0-9]{24}@internal$/i;
+
 /** Soft-deleted, including legacy hard-delete scrub rows (deleted+...@internal). */
 function accountDeleted(user) {
   if (!user) return false;
   if (user.status === 'deleted') return true;
   const email = typeof user.email === 'string' ? user.email : '';
-  return /^deleted\+[a-f0-9]{24}@internal$/i.test(email);
+  return SCRUBBED_EMAIL.test(email);
+}
+
+function canReactivateDeleted(user) {
+  if (!accountDeleted(user)) return false;
+  const email = typeof user.email === 'string' ? user.email : '';
+  return !SCRUBBED_EMAIL.test(email);
+}
+
+function isExternalRoleSet(roles) {
+  return roles.some((role) => EXTERNAL_ROLES.includes(role));
+}
+
+function rolesCrossAccessBoundary(fromRoles, toRoles) {
+  const addedRoles = toRoles.filter((role) => !fromRoles.includes(role));
+  const fromExternal = isExternalRoleSet(fromRoles);
+  const addedExternal = addedRoles.some((role) => EXTERNAL_ROLES.includes(role));
+  const addedInternal = addedRoles.some((role) => !EXTERNAL_ROLES.includes(role));
+  if (!fromExternal && addedExternal) return true;
+  if (fromExternal && addedInternal) return true;
+  return false;
+}
+
+function formatRoleLabels(roles) {
+  return roles.map((role) => ROLE_LABELS[role] || role).join(', ');
+}
+
+/** Backend rejects mixed internal/external roles — keep only the newly chosen side. */
+function normalizeCrossBoundaryRoles(fromRoles, toRoles) {
+  const addedRoles = toRoles.filter((role) => !fromRoles.includes(role));
+  const fromExternal = isExternalRoleSet(fromRoles);
+  const addedExternal = addedRoles.some((role) => EXTERNAL_ROLES.includes(role));
+  const addedInternal = addedRoles.some((role) => !EXTERNAL_ROLES.includes(role));
+
+  if (!fromExternal && addedExternal) {
+    const externalOnly = toRoles.filter((role) => EXTERNAL_ROLES.includes(role));
+    return externalOnly.length ? externalOnly : [ROLE_IDS.CLIENT];
+  }
+  if (fromExternal && addedInternal) {
+    const internalOnly = toRoles.filter((role) => !EXTERNAL_ROLES.includes(role));
+    return internalOnly.length ? internalOnly : [ROLE_IDS.UNASSIGNED];
+  }
+  return toRoles;
 }
 
 function ActionButton({
@@ -90,8 +143,10 @@ export default function UsersPage() {
   const [inviteBusy, setInviteBusy] = useState(false);
   const [confirmDeactivate, setConfirmDeactivate] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [confirmRoleChange, setConfirmRoleChange] = useState(null);
   const [deactivateBusy, setDeactivateBusy] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [roleChangeBusy, setRoleChangeBusy] = useState(false);
   const [rowBusy, setRowBusy] = useState({});
   const [rowFeedback, setRowFeedback] = useState({});
   const [clients, setClients] = useState([]);
@@ -171,6 +226,69 @@ export default function UsersPage() {
       reload();
     } catch (err) {
       const message = normalizeApiError(err)?.message || 'Request failed';
+      setRowActionFeedback(actionKey, { error: message });
+      showToast(message);
+    } finally {
+      setRowActionBusy(actionKey, false);
+    }
+  }
+
+  function requestRoleChange(user, newRoles) {
+    const oldRoles = getUserRoles(user);
+    if (rolesCrossAccessBoundary(oldRoles, newRoles)) {
+      const targetRoles = normalizeCrossBoundaryRoles(oldRoles, newRoles);
+      setConfirmRoleChange({
+        user,
+        oldRoles,
+        newRoles: targetRoles,
+        toExternal: isExternalRoleSet(targetRoles),
+      });
+      return;
+    }
+    patchRow(user.id, { roles: newRoles }, `${user.id}:role`);
+  }
+
+  async function confirmRoleChangeUser() {
+    if (!confirmRoleChange) return;
+    const { user, newRoles } = confirmRoleChange;
+    setRoleChangeBusy(true);
+    setError(null);
+    const actionKey = `${user.id}:role`;
+    setRowActionBusy(actionKey, true);
+    setRowActionFeedback(actionKey, null);
+    try {
+      await patchUser(user.id, { roles: newRoles });
+      showToast(`Roles updated for ${user.name || user.email}`);
+      setConfirmRoleChange(null);
+      reload();
+    } catch (err) {
+      const message = normalizeApiError(err)?.message || 'Could not update roles';
+      setRowActionFeedback(actionKey, { error: message });
+      showToast(message);
+    } finally {
+      setRoleChangeBusy(false);
+      setRowActionBusy(actionKey, false);
+    }
+  }
+
+  async function handleReactivateDeleted(user) {
+    const actionKey = `${user.id}:reactivate-deleted`;
+    setRowActionBusy(actionKey, true);
+    setRowActionFeedback(actionKey, null);
+    setError(null);
+    try {
+      const result = await reactivateUser(user.id);
+      const label = user.name || user.email;
+      if (result?.reactivation?.requiresPassword) {
+        showToast(`Reactivation link sent to ${user.email}`);
+        flashRowFeedback(actionKey, { success: 'Link sent' });
+      } else {
+        showToast(`${label} reactivated`);
+        flashRowFeedback(actionKey, { success: 'Reactivated' });
+      }
+      reload();
+    } catch (err) {
+      const message = normalizeApiError(err)?.message || 'Could not reactivate';
       setRowActionFeedback(actionKey, { error: message });
       showToast(message);
     } finally {
@@ -433,7 +551,7 @@ export default function UsersPage() {
                       options={assignableRoles}
                       ariaLabel={`Roles for ${user.name || user.email}`}
                       busy={Boolean(rowBusy[`${user.id}:role`])}
-                      onChange={(roles) => patchRow(user.id, { roles }, `${user.id}:role`)}
+                      onChange={(roles) => requestRoleChange(user, roles)}
                       disabled={accountDeleted(user)}
                     />
                   </td>
@@ -464,6 +582,16 @@ export default function UsersPage() {
                             reactivateKey,
                             `${user.name} reactivated`,
                           )}
+                        />
+                      )}
+                      {canReactivateDeleted(user) && (
+                        <ActionButton
+                          label="Reactivate"
+                          busyLabel="Reactivating…"
+                          busy={Boolean(rowBusy[`${user.id}:reactivate-deleted`])}
+                          success={rowFeedback[`${user.id}:reactivate-deleted`]?.success}
+                          error={rowFeedback[`${user.id}:reactivate-deleted`]?.error}
+                          onClick={() => handleReactivateDeleted(user)}
                         />
                       )}
                       {user.status === 'invited' && (
@@ -550,6 +678,30 @@ export default function UsersPage() {
         onConfirm={confirmDeleteUser}
         onCancel={() => {
           if (!deleteBusy) setConfirmDelete(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={Boolean(confirmRoleChange)}
+        title={
+          confirmRoleChange?.toExternal
+            ? 'Reduce access level?'
+            : 'Grant elevated access?'
+        }
+        message={
+          confirmRoleChange
+            ? (confirmRoleChange.toExternal
+              ? `Changing ${confirmRoleChange.user.name || confirmRoleChange.user.email} from ${formatRoleLabels(confirmRoleChange.oldRoles)} to ${formatRoleLabels(confirmRoleChange.newRoles)} may reduce their access level. They may lose access to internal tools and data. Continue?`
+              : `Are you sure you want to change ${confirmRoleChange.user.name || confirmRoleChange.user.email} from ${formatRoleLabels(confirmRoleChange.oldRoles)} to ${formatRoleLabels(confirmRoleChange.newRoles)}? This will give this user much more access and control over the system.`)
+            : ''
+        }
+        confirmLabel="Change role"
+        cancelLabel="Cancel"
+        danger={Boolean(confirmRoleChange?.toExternal)}
+        busy={roleChangeBusy}
+        onConfirm={confirmRoleChangeUser}
+        onCancel={() => {
+          if (!roleChangeBusy) setConfirmRoleChange(null);
         }}
       />
 

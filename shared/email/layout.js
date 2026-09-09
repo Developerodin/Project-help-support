@@ -61,8 +61,12 @@ export function renderEmailLayout({
   bodyHtml,
   cta = null,
   footerNote = '',
+  brandName = EMAIL_BRAND.shortName,
 }) {
   const safeTitle = escapeHtml(title);
+  const safeBrandName = escapeHtml(
+    typeof brandName === 'string' && brandName.trim() ? brandName.trim() : EMAIL_BRAND.shortName,
+  );
 
   return '<!DOCTYPE html>'
     + '<html lang="en">'
@@ -89,7 +93,7 @@ export function renderEmailLayout({
     + '<tr><td style="padding:0 0 14px;font-family:' + F + ';">'
     + brandMark()
     + '<span style="font-size:15px;font-weight:700;color:' + C.ink + ';letter-spacing:-0.01em;vertical-align:middle;">'
-    + escapeHtml(EMAIL_BRAND.shortName) + '</span>'
+    + safeBrandName + '</span>'
     + '</td></tr>'
 
     + '<tr><td class="dh-card" style="background:' + C.paper + ';border:1px solid ' + C.rule + ';border-radius:6px;padding:30px 28px;">'
@@ -108,7 +112,7 @@ export function renderEmailLayout({
 
     + '<tr><td style="padding:18px 4px 0;font-family:' + F + ';font-size:12px;line-height:1.6;color:' + C.inkMuted + ';">'
     + (footerNote ? '<p style="margin:0 0 8px;">' + escapeHtml(footerNote) + '</p>' : '')
-    + '<p style="margin:0;">Automated message from ' + escapeHtml(EMAIL_BRAND.fullName)
+    + '<p style="margin:0;">Automated message from ' + safeBrandName
     + '. Replies to this address are not monitored.</p>'
     + '</td></tr>'
 

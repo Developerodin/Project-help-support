@@ -59,3 +59,16 @@ export const ticketPreferencesReset = catchAsync(async (req, res) => {
 export const remove = catchAsync(async (req, res) => {
   res.json(await userService.deleteUser(req.user, req.params.id));
 });
+
+export const reactivate = (deliverInvite) => catchAsync(async (req, res) => {
+  const result = await userService.reactivateUser(req.user, req.params.id);
+  let sent = false;
+  if (result.inviteToken && deliverInvite) {
+    await deliverInvite({ user: result.user, inviteToken: result.inviteToken });
+    sent = true;
+  }
+  res.json({
+    ...result.user,
+    reactivation: { requiresPassword: result.requiresPassword, sent },
+  });
+});

@@ -4,8 +4,11 @@ import { STAGES, stageIndex, stageLabel, sortAriaValue } from '@pms/shared';
 import { initials, isOverdue } from '../icons.jsx';
 
 function stageAgeDays(ticket) {
-  const last = ticket.stageHistory?.[ticket.stageHistory.length - 1]?.at || ticket.updatedAt || ticket.createdAt;
-  return Math.max(0, Math.floor((Date.now() - new Date(last).getTime()) / 86400000));
+  const entered = ticket.currentStageEnteredAt
+    || ticket.stageHistory?.[ticket.stageHistory.length - 1]?.at
+    || ticket.updatedAt
+    || ticket.createdAt;
+  return Math.max(0, Math.floor((Date.now() - new Date(entered).getTime()) / 86400000));
 }
 
 function Rail({ ticket }) {
@@ -37,9 +40,13 @@ const SORTABLE_COLUMNS = [
 
 function SortHeader({ column, sort, onSort }) {
   const ariaSort = sortAriaValue(sort, column.key);
+  const active = sort?.column === column.key && sort?.direction;
+  const sortLabel = active
+    ? `Sort by ${column.label}, ${sort.direction === 'asc' ? 'ascending' : 'descending'}`
+    : `Sort by ${column.label}`;
   return (
     <th scope="col" className="sortable" aria-sort={ariaSort}>
-      <button type="button" onClick={() => onSort(column.key)}>
+      <button type="button" onClick={() => onSort(column.key)} aria-label={sortLabel}>
         <span>{column.label}</span>
         <span className="arrow" aria-hidden="true">↓</span>
       </button>
@@ -47,18 +54,9 @@ function SortHeader({ column, sort, onSort }) {
   );
 }
 
-export default function TicketTable({ tickets, onOpen, sort, onSort }) {
-  if (tickets.length === 0) {
-    return (
-      <div className="empty-state">
-        <h3>No ticket matches those filters</h3>
-        <p>Clear the stage or scope filter first — those usually do the narrowing.</p>
-      </div>
-    );
-  }
-
+export default function TicketTable({ tickets, onOpen, sort, onSort, busy = false }) {
   return (
-    <div className="tablewrap">
+    <div className="tablewrap" data-busy={busy ? 'true' : undefined} aria-busy={busy || undefined}>
       <table>
         <thead>
           <tr>

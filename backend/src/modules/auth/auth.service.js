@@ -114,7 +114,7 @@ export async function createInvite(_actor, { email, role, roles }) {
       throw new ApiError(
         400,
         'USER_DELETED',
-        'This user was deleted. Restore is not available; use a different email.',
+        'This user was deleted. Reactivate them from the People list before inviting again.',
       );
     }
     if (existing.status === 'inactive') {

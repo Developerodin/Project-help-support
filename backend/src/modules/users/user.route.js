@@ -30,6 +30,8 @@ export default function userRoutes(config, deliverInvite) {
   router.delete('/:id', requireRole(...ADMIN_ROLES), validate(userIdSchema), controller.remove);
   router.post('/:id/resend-invite', requireRole(...ADMIN_ROLES), resendInviteLimiter,
     validate(userIdSchema), controller.resendInvite(deliverInvite));
+  router.post('/:id/reactivate', requireRole(...ADMIN_ROLES), resendInviteLimiter,
+    validate(userIdSchema), controller.reactivate(deliverInvite));
 
   return router;
 }

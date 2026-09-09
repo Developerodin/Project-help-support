@@ -1,9 +1,10 @@
 import {
   canTransition, stageIndex, stageLabel,
   GUARD_ESTIMATES_FROM_INDEX, GUARD_OWNERSHIP_FROM_INDEX,
-  validateTicketEstimateDates, isExternalUser, REOPEN_TARGET,
+  validateTicketEstimateDates, REOPEN_TARGET,
   userHasEffectivePermission,
   EXTERNAL_ACCEPTANCE_PERMISSION,
+  isPureExternalActor,
 } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { assertActiveUsers } from '../teams/team.service.js';
@@ -70,7 +71,7 @@ export function checkGuards(to, ticket) {
 
 /** Layer 2: external visibility gate, then scoped/internal transition rules. */
 async function assertMayTransition(actor, ticket, to, permissionContext = null) {
-  if (isExternalUser(actor)) {
+  if (isPureExternalActor(actor)) {
     if (!(await canExternalViewTicket(actor, ticket))) {
       throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this ticket');
     }
@@ -173,7 +174,7 @@ export async function transitionTicket(actor, idOrKey, {
   const evidence = resolveEvidence(ticket, attachmentIds);
 
   const now = new Date();
-  const set = { status: to, revision: revision + 1 };
+  const set = { status: to, revision: revision + 1, currentStageEnteredAt: now };
   const unset = {};
   const inc = {};
   const activityChanges = [{ field: 'status', from, to }];
@@ -246,7 +247,7 @@ export async function transitionTicket(actor, idOrKey, {
   // knows nothing about recipients. Phase 4's notification module consumes it.
   const json = written.toJSON();
   return {
-    ticket: isExternalUser(actor) ? sanitizeExternalTicket(json, { viewerId: actor._id }) : json,
+    ticket: isPureExternalActor(actor) ? sanitizeExternalTicket(json, { viewerId: actor._id }) : json,
     event: { type, from, to, actorId: String(actor._id), note, reason, at: now },
     detail: () => getTicket(actor, String(written._id)),
   };

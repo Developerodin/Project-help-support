@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import {
   LANES,
   laneOf,
@@ -15,10 +16,14 @@ import {
   getBoardReadOnlyNotice,
 } from '@pms/shared';
 import { listTickets, transitionTicket, getTicket } from '@/shared/api/tickets.js';
+import { isAbortError } from '@/shared/api/client.js';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import { useProject } from '@/shared/contexts/project-context.jsx';
 import { useTicketPreferences } from '@/shared/contexts/ticket-preferences-context.jsx';
-import { buildTicketListQuery } from '@/shared/lib/ticket-list-query.js';
+import { buildTicketListQuery, boardMineFromSearch, withBoardMineParam } from '@/shared/lib/ticket-list-query.js';
+import { normalizeApiError } from '@/shared/lib/api-error.js';
+import { showToast } from '@/shared/lib/toast.js';
+import AppLoader from '@/shared/components/app-loader.jsx';
 import { useBoardPolicy } from '@/shared/hooks/use-board-policy.js';
 import { usePermissionContext } from '@/shared/hooks/use-permission-context.js';
 import { ticketFromSearch, withTicketParam, withoutTicketParam } from '@/shared/lib/deep-link.js';
@@ -30,6 +35,7 @@ import RemarkDialog from '@/shared/components/remark-dialog.jsx';
 import Icon from '@/shared/components/icons.jsx';
 
 function BoardPage() {
+  const pathname = usePathname();
   const { user } = useAuth();
   const { policy: boardPolicy } = useBoardPolicy();
   const { permissionContext } = usePermissionContext();
@@ -37,13 +43,39 @@ function BoardPage() {
   const {
     ready,
     preferences,
-    boardMine,
+    boardMine: savedBoardMine,
     setBoardMine,
   } = useTicketPreferences();
   const [tickets, setTickets] = useState([]);
+  const [boardTruncated, setBoardTruncated] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(null);
   const [openTicketId, setOpenTicketId] = useState(null);
   const [error, setError] = useState(null);
   const [readOnlyNoticeDismissed, setReadOnlyNoticeDismissed] = useState(false);
+  const loadController = useRef(null);
+  const normalizedBoardMineUrl = useRef(false);
+
+  const writeSearch = useCallback((nextSearch) => {
+    window.history.replaceState(null, '', `${pathname}${nextSearch}`);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!ready || normalizedBoardMineUrl.current) return;
+    normalizedBoardMineUrl.current = true;
+    if (new URLSearchParams(window.location.search).has('mine')) {
+      const fromUrl = boardMineFromSearch(window.location.search);
+      if (fromUrl !== savedBoardMine) setBoardMine(fromUrl);
+      return;
+    }
+    const next = withBoardMineParam(window.location.search, savedBoardMine);
+    if (next !== window.location.search) writeSearch(next);
+  }, [ready, savedBoardMine, setBoardMine, writeSearch]);
+
+  const handleBoardMineChange = (nextBoardMine) => {
+    writeSearch(withBoardMineParam(window.location.search, nextBoardMine));
+    setBoardMine(nextBoardMine);
+  };
   // Mirrors ticket-drawer-footer.jsx's pending {to, kind} pattern: 'reason'
   // for a close, 'note' for a reopen. One dialog, one state shape, for both.
   const [pendingAction, setPendingAction] = useState(null);
@@ -59,23 +91,54 @@ function BoardPage() {
 
   const reload = useCallback(() => {
     if (!ready) return undefined;
+    loadController.current?.abort();
+    const controller = new AbortController();
+    loadController.current = controller;
+    setLoading(true);
+    setLoadError(null);
+
+    const BOARD_PAGE_CAP = 10;
+    const BOARD_LIMIT = 100;
     const loadAll = async () => {
       const all = [];
+      let truncated = false;
       const baseQuery = buildTicketListQuery({
         preferences,
         projectId: activeProjectId,
-        scopeOverride: boardMine ? 'assigned' : preferences.filters.scope,
+        scopeOverride: savedBoardMine ? 'assigned' : preferences.filters.scope,
       });
-      for (let p = 1; p <= 10; p += 1) {
+      for (let p = 1; p <= BOARD_PAGE_CAP; p += 1) {
         // eslint-disable-next-line no-await-in-loop -- page N+1 needs N's totalPages
-        const res = await listTickets({ ...baseQuery, page: p, limit: 100 });
+        const res = await listTickets(
+          { ...baseQuery, page: p, limit: BOARD_LIMIT },
+          { signal: controller.signal },
+        );
         all.push(...res.results);
-        if (p >= (res.totalPages || 1)) break;
+        const totalPages = res.totalPages || 1;
+        if (p >= totalPages) break;
+        if (p === BOARD_PAGE_CAP && totalPages > BOARD_PAGE_CAP) truncated = true;
       }
+      if (controller.signal.aborted) return null;
+      setBoardTruncated(truncated);
       return all;
     };
-    return loadAll().then(setTickets);
-  }, [ready, preferences, boardMine, activeProjectId]);
+
+    return loadAll()
+      .then((all) => {
+        if (all) setTickets(all);
+      })
+      .catch((err) => {
+        if (isAbortError(err) || controller.signal.aborted) return;
+        const message = normalizeApiError(err)?.message || 'Could not load board tickets';
+        setLoadError(message);
+        showToast(message);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+  }, [ready, preferences, savedBoardMine, activeProjectId]);
+
+  useEffect(() => () => loadController.current?.abort(), []);
 
   useEffect(() => {
     if (ready) reload();
@@ -202,10 +265,24 @@ function BoardPage() {
 
       <div className="toolbar">
         <div className="seg" role="group" aria-label="Whose tickets">
-          <button type="button" aria-pressed={!boardMine} onClick={() => setBoardMine(false)}>Everyone</button>
-          <button type="button" aria-pressed={boardMine} onClick={() => setBoardMine(true)}>Mine</button>
+          <button
+            type="button"
+            aria-pressed={!savedBoardMine}
+            disabled={loading}
+            onClick={() => handleBoardMineChange(false)}
+          >
+            Everyone
+          </button>
+          <button
+            type="button"
+            aria-pressed={savedBoardMine}
+            disabled={loading}
+            onClick={() => handleBoardMineChange(true)}
+          >
+            Mine
+          </button>
         </div>
-        <span className="resultline num">{tickets.length} tickets</span>
+        <span className="resultline num" aria-live="polite">{tickets.length} tickets</span>
         <span className="spacer" />
         <Link href="/tickets" className="btn"><Icon name="list" size={13} /> Table view</Link>
       </div>
@@ -216,7 +293,20 @@ function BoardPage() {
         onDismiss={error ? () => setError(null) : undefined}
       />
 
-      <div className={`board-wrap${showReadOnlyOverlay ? ' board-wrap--locked' : ''}`}>
+      {loadError ? (
+        <p className="meta" role="alert">{loadError}</p>
+      ) : null}
+
+      {boardTruncated ? (
+        <p className="meta" role="status">
+          Showing the first 1,000 tickets. Use table view with filters to reach the rest.
+        </p>
+      ) : null}
+
+      {loading && tickets.length === 0 ? (
+        <AppLoader inline label="Loading board…" />
+      ) : (
+        <div className={`board-wrap${showReadOnlyOverlay ? ' board-wrap--locked' : ''}${loading && tickets.length === 0 ? ' board-wrap--busy' : ''}`} aria-busy={loading || undefined}>
         {showReadOnlyOverlay && (
           <div
             className="board-lock-overlay"
@@ -264,6 +354,7 @@ function BoardPage() {
           ))}
         </div>
       </div>
+      )}
 
       {openTicketId && (
         <TicketDetailDrawer ticketId={openTicketId} onClose={close} onChanged={reload} />

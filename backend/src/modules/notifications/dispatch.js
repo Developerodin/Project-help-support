@@ -10,7 +10,15 @@ import { brandAttachments } from '../../platform/email/logo.js';
 
 // Template spec and add-a-template checklist: docs/email/DESIGN.md
 
-const EMAIL_TICKET_POPULATE = ['assignedTo', 'createdBy'];
+const EMAIL_TICKET_POPULATE = [
+  'assignedTo',
+  'createdBy',
+  {
+    path: 'project',
+    select: 'client brand',
+    populate: { path: 'client', select: 'name status' },
+  },
+];
 
 function findCommentOnTicket(ticket, commentId) {
   if (!commentId || !ticket?.comments?.length) return null;
@@ -23,6 +31,18 @@ function findCommentOnTicket(ticket, commentId) {
 function nameOfRef(ref) {
   if (ref && typeof ref === 'object' && typeof ref.name === 'string') return ref.name;
   return '';
+}
+
+function optionalString(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : '';
+}
+
+function ticketBrandName(ticket) {
+  const project = ticket?.project && typeof ticket.project === 'object' ? ticket.project : null;
+  const client = project?.client && typeof project.client === 'object' ? project.client : null;
+  const base = optionalString(client?.name) || optionalString(project?.brand);
+  if (!base) return '';
+  return /\bpms\b/i.test(base) ? base : `${base} PMS`;
 }
 
 /** Fields consumed by @pms/shared/email renderTicketEmail — see docs/email/DESIGN.md */
@@ -48,7 +68,8 @@ function buildEmailContext(event, ticket, actor) {
 
 async function resolveTicketForEmail(ticket) {
   const hasNames = ticket.createdBy && typeof ticket.createdBy === 'object' && ticket.createdBy.name;
-  if (hasNames) return ticket;
+  const hasCompany = Boolean(ticketBrandName(ticket));
+  if (hasNames && hasCompany) return ticket;
   const id = ticket._id ?? ticket.id;
   return Ticket.findById(id).populate(EMAIL_TICKET_POPULATE);
 }
@@ -73,6 +94,8 @@ async function fanOut(eventKey, ticket, actor, context, config, deps, { hideFrom
   if (visible.length === 0) return;
 
   const emailTicket = await resolveTicketForEmail(ticket);
+  const brandName = ticketBrandName(emailTicket);
+  const emailContext = brandName ? { ...context, brandName } : context;
 
   await createInAppNotifications(eventKey, ticket, visible, config);
 
@@ -83,11 +106,11 @@ async function fanOut(eventKey, ticket, actor, context, config, deps, { hideFrom
   const externalRecipients = visible.filter((r) => isExternalUser(r.user));
 
   if (internalRecipients.length) {
-    await sendTicketEmail(eventKey, emailTicket, internalRecipients, context, config, deps);
+    await sendTicketEmail(eventKey, emailTicket, internalRecipients, emailContext, config, deps);
   }
   if (externalRecipients.length) {
     await sendTicketEmail(
-      eventKey, emailTicket, externalRecipients, stripExternalContext(context), config, deps,
+      eventKey, emailTicket, externalRecipients, stripExternalContext(emailContext), config, deps,
     );
   }
 }

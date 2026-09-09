@@ -326,7 +326,7 @@ function TicketDrawerContent({
                       canViewTeams={canViewTeams}
                       canEditEstimates={canEditEstimates}
                       assignment={assignment}
-                      onSave={run((body) => patchTicket(ticket.ticketId, body))}
+                      onSave={run((body) => patchTicket(ticket.ticketId, body), { rethrow: true })}
                       onBlock={async () => {
                         if (!blockReason.trim()) return;
                         await run(() => setBlocked(ticket.ticketId, {
@@ -468,6 +468,7 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
   const { permissionContext } = usePermissionContext();
   const { activeProjectId, setActiveProjectId } = useProject();
   const activeProjectIdRef = useRef(activeProjectId);
+  const loadSeqRef = useRef(0);
   const drawerRef = useRef(null);
   const openerRef = useRef(null);
   const [ticket, setTicket] = useState(null);
@@ -476,7 +477,17 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
   activeProjectIdRef.current = activeProjectId;
 
   const load = useCallback(async () => {
-    setTicket(await getTicket(ticketId));
+    const seq = ++loadSeqRef.current;
+    try {
+      const next = await getTicket(ticketId);
+      if (seq !== loadSeqRef.current) return null;
+      setTicket(next);
+      setError(null);
+      return next;
+    } catch (err) {
+      if (seq !== loadSeqRef.current) return null;
+      throw err;
+    }
   }, [ticketId]);
 
   useEffect(() => {

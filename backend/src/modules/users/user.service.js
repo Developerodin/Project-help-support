@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import {
   ROLE_IDS,
   ROLES,
@@ -12,7 +13,10 @@ import {
 } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
-import { revokeAllRefreshTokens } from '../auth/token.service.js';
+import { revokeAllRefreshTokens, hashToken } from '../auth/token.service.js';
+
+/** Keep in sync with auth.service.js INVITE_TTL_HOURS. */
+const INVITE_TTL_HOURS = 72;
 import User from './user.model.js';
 import {
   NOT_SUPER_ADMIN_FILTER,
@@ -67,12 +71,27 @@ export async function migrateLegacyUserRoles() {
   return { migrated, skipped };
 }
 
+const LEGACY_SCRUBBED_EMAIL = /^deleted\+[a-f0-9]{24}@internal$/i;
+/** Password placeholder written on delete before we started preserving hashes. */
+export const REVOKED_DELETED_PASSWORD = 'revoked-deleted-user-password';
+
+function newRawToken() {
+  return randomBytes(32).toString('hex');
+}
+
 /** Legacy hard-delete scrub: inactive row with synthetic email — treat as deleted. */
 export function isAccountDeleted(user) {
   if (!user) return false;
   if (user.status === 'deleted') return true;
   const email = typeof user.email === 'string' ? user.email : '';
-  return /^deleted\+[a-f0-9]{24}@internal$/i.test(email);
+  return LEGACY_SCRUBBED_EMAIL.test(email);
+}
+
+/** Deleted users with a real email can be restored; scrubbed legacy rows cannot. */
+export function canReactivateDeleted(user) {
+  if (!isAccountDeleted(user)) return false;
+  const email = typeof user.email === 'string' ? user.email : '';
+  return !LEGACY_SCRUBBED_EMAIL.test(email);
 }
 
 function normaliseRolesInput(body) {
@@ -289,8 +308,49 @@ export async function deleteUser(actor, id) {
   user.inviteTokenExpiresAt = undefined;
   user.refreshTokens = [];
   user.consumedRefreshTokens = [];
-  user.password = 'revoked-deleted-user-password';
   await user.save();
 
   return { status: 'deleted' };
+}
+
+/**
+ * Restores a soft-deleted user. Preserved password → active immediately; revoked
+ * password (legacy deletes) → invited with a setup link reusing accept-invite.
+ */
+export async function reactivateUser(actor, id) {
+  if (String(actor._id) === String(id)) {
+    throw new ApiError(400, 'CANNOT_MODIFY_SELF', 'You cannot reactivate your own account');
+  }
+
+  const user = await User.findById(id).select('+password +inviteTokenHash +inviteTokenExpiresAt');
+  if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found');
+  assertVisibleToActor(actor, user);
+
+  if (!isAccountDeleted(user)) {
+    throw new ApiError(400, 'USER_NOT_DELETED', 'Only deleted users can be reactivated');
+  }
+  if (!canReactivateDeleted(user)) {
+    throw new ApiError(
+      400,
+      'USER_NOT_REACTIVATABLE',
+      'This deleted account cannot be restored because its email was scrubbed',
+    );
+  }
+
+  const needsPasswordSetup = await user.isPasswordMatch(REVOKED_DELETED_PASSWORD);
+
+  if (needsPasswordSetup) {
+    const inviteToken = newRawToken();
+    user.status = 'invited';
+    user.inviteTokenHash = hashToken(inviteToken);
+    user.inviteTokenExpiresAt = new Date(Date.now() + INVITE_TTL_HOURS * 3600000);
+    await user.save();
+    return { user: user.toJSON(), inviteToken, requiresPassword: true };
+  }
+
+  user.status = 'active';
+  user.inviteTokenHash = undefined;
+  user.inviteTokenExpiresAt = undefined;
+  await user.save();
+  return { user: user.toJSON(), requiresPassword: false };
 }

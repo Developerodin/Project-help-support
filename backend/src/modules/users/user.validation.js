@@ -1,7 +1,7 @@
 import Joi from 'joi';
 import {
   ROLES, NOTIFICATION_EVENTS, ROLE_IDS, PEOPLE_ASSIGNABLE_ROLES, INTERNAL_ROLES, EXTERNAL_ROLES,
-  TICKET_SORT_COLUMNS, TICKET_SCOPES, PRIORITIES, STAGE_KEYS,
+  TICKET_SORT_COLUMNS, TICKET_SCOPES, PRIORITIES, CATEGORIES, SEVERITIES, STAGE_KEYS,
 } from '@pms/shared';
 
 const objectId = Joi.string().hex().length(24);
@@ -76,6 +76,8 @@ const ticketFilterPrefs = Joi.object({
   q: Joi.string().trim().max(200).allow(''),
   status: Joi.string().valid('', ...STAGE_KEYS),
   priority: Joi.string().valid('', ...PRIORITIES),
+  category: Joi.string().valid('', ...CATEGORIES),
+  severity: Joi.string().valid('', ...SEVERITIES),
   scope: Joi.string().valid(...TICKET_SCOPES),
   assignedTo: objectId.allow('', null),
   blocked: Joi.boolean(),
