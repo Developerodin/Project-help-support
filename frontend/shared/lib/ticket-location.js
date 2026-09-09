@@ -3,7 +3,20 @@
 
 /** @param {ModuleGroup[]} modules */
 export function pagesForModule(modules, moduleLabel) {
-  return modules.find((m) => m.label === moduleLabel)?.pages ?? [];
+  const pages = modules.find((m) => m.label === moduleLabel)?.pages ?? [];
+  const out = [];
+  const seenLabels = new Set();
+
+  for (const page of pages) {
+    const label = String(page?.label ?? '').trim();
+    if (!label) continue;
+    const dedupeKey = label.toLowerCase();
+    if (seenLabels.has(dedupeKey)) continue;
+    seenLabels.add(dedupeKey);
+    out.push({ ...page, label });
+  }
+
+  return out;
 }
 
 /** @param {ModuleGroup[]} modules @param {string} moduleLabel */

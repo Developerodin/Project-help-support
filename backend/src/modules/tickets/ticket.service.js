@@ -3,6 +3,8 @@ import {
   resolveTicketEstimateDates,
   validateTicketEstimateDates,
   ticketDateKey,
+  CATEGORIES,
+  STAGE_KEYS,
   ROLE_IDS,
   ADMIN_ROLES,
   ESTIMATE_DATE_EDITOR_ROLES,
@@ -32,6 +34,17 @@ import {
 import Ticket from './ticket.model.js';
 
 const EXTERNAL_ACCESS_ASSIGNMENT_PERMISSIONS = new Set(['tickets.view', 'tickets.create']);
+const STAGE_SORT_BRANCHES = STAGE_KEYS.map((key, index) => ({
+  case: { $eq: ['$status', key] },
+  then: index,
+}));
+const CATEGORY_CARD_STAGE_WINDOW = Object.freeze([
+  'pending',
+  'under_review',
+  'in_progress',
+  'ready_local',
+  'ready_qa',
+]);
 
 async function assertHasTicketPermission(actor, permission, permissionContext = null) {
   const ctx = await resolvePermissionContext(actor, permissionContext);
@@ -450,6 +463,21 @@ function aggregateSortStages(sortBy) {
       { $sort: { effectiveStageEnteredAt: direction, createdAt: -1 } },
     ];
   }
+  if (sortBy.startsWith('status:')) {
+    return [
+      {
+        $addFields: {
+          stageOrder: {
+            $switch: {
+              branches: STAGE_SORT_BRANCHES,
+              default: STAGE_KEYS.length,
+            },
+          },
+        },
+      },
+      { $sort: { stageOrder: direction, createdAt: -1 } },
+    ];
+  }
   return null;
 }
 
@@ -503,21 +531,50 @@ async function paginateTickets(model, filter, options = {}) {
   };
 }
 
+function categoryTotalsFromRows(rows = []) {
+  const totals = Object.fromEntries(CATEGORIES.map((category) => [category, 0]));
+  for (const row of rows) {
+    const key = row?._id;
+    const count = Number(row?.count) || 0;
+    if (!Object.prototype.hasOwnProperty.call(totals, key)) continue;
+    totals[key] += count;
+  }
+  return totals;
+}
+
 export async function listTickets(actor, query = {}, permissionContext = null) {
   const ctx = await resolvePermissionContext(actor, permissionContext);
   await assertHasTicketPermission(actor, 'tickets.view', ctx);
-  const page = await paginateTickets(Ticket, await buildTicketFilter(actor, query, ctx), {
-    page: query.page,
-    limit: query.limit,
-    sortBy: query.sortBy || 'createdAt:desc',
-    populate: LIST_POPULATE,
-    // The list never needs the embedded arrays; excluding them keeps a 50-row
-    // page from carrying every comment on every ticket.
-    select: '-comments -activityLog -stageHistory',
-  });
+  const listFilter = await buildTicketFilter(actor, query, ctx);
+  const summaryQuery = { ...query };
+  delete summaryQuery.status;
+  const allStageFilter = await buildTicketFilter(actor, summaryQuery, ctx);
+
+  const [page, categoryRows] = await Promise.all([
+    paginateTickets(Ticket, listFilter, {
+      page: query.page,
+      limit: query.limit,
+      sortBy: query.sortBy || 'createdAt:desc',
+      populate: LIST_POPULATE,
+      // The list never needs the embedded arrays; excluding them keeps a 50-row
+      // page from carrying every comment on every ticket.
+      select: '-comments -activityLog -stageHistory',
+    }),
+    Ticket.aggregate([
+      {
+        $match: normalizeFilterForAggregate({
+          ...allStageFilter,
+          // Cards report only active funnel work from intake through QA handoff.
+          status: { $in: CATEGORY_CARD_STAGE_WINDOW },
+        }),
+      },
+      { $group: { _id: '$category', count: { $sum: 1 } } },
+    ]),
+  ]);
 
   return {
     ...page,
+    categoryTotals: categoryTotalsFromRows(categoryRows),
     results: page.results.map((t) => {
       const json = t.toJSON();
       return isPureExternalActor(actor) ? sanitizeExternalTicket(json, { viewerId: actor._id }) : json;

@@ -351,7 +351,9 @@ export default function NewTicketPage() {
                   ) : pages.length === 0 ? (
                     <option value="">No pages</option>
                   ) : (
-                    pages.map((p) => <option key={p.path || p.label} value={p.label}>{p.label}</option>)
+                    pages.map((p, index) => (
+                      <option key={`${p.label}:${p.path || index}`} value={p.label}>{p.label}</option>
+                    ))
                   )}
                 </select>
                 {!hasModules ? null : !draft.module ? (

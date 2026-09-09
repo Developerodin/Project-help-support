@@ -103,6 +103,7 @@ export function cycleTicketSort(current, column) {
     return { column, direction: 'desc' };
   }
   if (current.direction === 'desc') return { column, direction: 'asc' };
+  if (current.direction === 'asc') return { column: '', direction: '' };
   return { column, direction: 'desc' };
 }
 

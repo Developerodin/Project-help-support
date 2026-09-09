@@ -57,7 +57,13 @@ function TicketListPage() {
     reset,
   } = useTicketPreferences();
 
-  const [listPage, setListPage] = useState({ results: [], totalResults: 0, page: 1, totalPages: 1 });
+  const [listPage, setListPage] = useState({
+    results: [],
+    totalResults: 0,
+    page: 1,
+    totalPages: 1,
+    categoryTotals: { Bug: 0, Improvement: 0, 'New Feature': 0 },
+  });
   const [loading, setLoading] = useState(false);
   // null means "not resolved yet" — see the owner-filter effect below. It is
   // NOT the same as [], and collapsing the two is what let an invisible owner
@@ -339,6 +345,9 @@ function TicketListPage() {
   const ticketInList = openTicketId
     && listPage.results.some((ticket) => ticket.ticketId === openTicketId);
   const showDeepLinkBanner = Boolean(openTicketId && !loading && !ticketInList);
+  const categoryCounts = listPage.categoryTotals || { Bug: 0, Improvement: 0, 'New Feature': 0 };
+  const showingFrom = listPage.totalResults === 0 ? 0 : ((page - 1) * limit) + 1;
+  const showingTo = Math.min(page * limit, listPage.totalResults || 0);
 
   const handleReset = async () => {
     setResetBusy(true);
@@ -398,6 +407,25 @@ function TicketListPage() {
       {preferencesHydrating && !initialPageLoading ? (
         <p className="meta">Applying saved ticket preferences…</p>
       ) : null}
+      {!initialPageLoading ? (
+        <>
+          <div className="stat-grid">
+            <div className="stat-tile">
+              <div className="stat-label">Bug</div>
+              <div className="bigfig num">{categoryCounts.Bug}</div>
+            </div>
+            <div className="stat-tile">
+              <div className="stat-label">Improvement</div>
+              <div className="bigfig num">{categoryCounts.Improvement}</div>
+            </div>
+            <div className="stat-tile">
+              <div className="stat-label">New Feature</div>
+              <div className="bigfig num">{categoryCounts['New Feature']}</div>
+            </div>
+          </div>
+          <p className="meta">Category counts for matching tickets in stages from Pending through Ready QA.</p>
+        </>
+      ) : null}
       {initialPageLoading || (loading && listPage.results.length === 0) ? (
         <AppLoader inline label={"Loading tickets…"} />
       ) : showEmptyState ? (
@@ -425,59 +453,67 @@ function TicketListPage() {
       )}
 
       <nav className="pager" aria-label="Ticket list pagination">
-        <span className="of" aria-live="polite" aria-atomic="true">
-          {listPage.totalResults} tickets
-          {(listPage.totalPages || 1) > 1 && ` · page ${page} of ${listPage.totalPages}`}
-        </span>
-        <label className="pagesize">
-          <span className="sr-only">Rows per page</span>
-          <select
-            aria-label="Rows per page"
-            value={limit}
-            disabled={loading}
-            onChange={handleLimitChange}
-          >
-            {TICKET_PAGE_SIZES.map((size) => (
-              <option key={size} value={size}>{size} / page</option>
-            ))}
-          </select>
-        </label>
-        <span className="spacer" />
-        <button
-          type="button"
-          className="pagebtn"
-          aria-label="Previous page"
-          disabled={page <= 1 || loading}
-          onClick={() => setPage(page - 1)}
-        >
-          Prev
-        </button>
-        {pageNumbers.map((item, index) => (
-          typeof item === 'number' ? (
-            <button
-              key={item}
-              type="button"
-              className="pagebtn"
-              aria-label={`Page ${item}`}
-              aria-current={item === page ? 'page' : undefined}
+        <div className="pager__meta" aria-live="polite" aria-atomic="true">
+          <span className="of">{listPage.totalResults} tickets</span>
+          <span className="of">Showing {showingFrom}-{showingTo}</span>
+          {(listPage.totalPages || 1) > 1 ? <span className="of">Page {page} of {listPage.totalPages}</span> : null}
+        </div>
+
+        <div className="pager__controls">
+          <label className="pagesize">
+            <span className="pagesize__label">Rows</span>
+            <select
+              aria-label="Rows per page"
+              value={limit}
               disabled={loading}
-              onClick={() => setPage(item)}
+              onChange={handleLimitChange}
             >
-              {item}
-            </button>
-          ) : (
-            <span key={`gap-${index}-${item}`} className="of" aria-hidden="true">{item}</span>
-          )
-        ))}
-        <button
-          type="button"
-          className="pagebtn"
-          aria-label="Next page"
-          disabled={page >= (listPage.totalPages || 1) || loading}
-          onClick={() => setPage(page + 1)}
-        >
-          Next
-        </button>
+              {TICKET_PAGE_SIZES.map((size) => (
+                <option key={size} value={size}>{size} / page</option>
+              ))}
+            </select>
+          </label>
+
+          <button
+            type="button"
+            className="pagebtn"
+            aria-label="Previous page"
+            disabled={page <= 1 || loading}
+            onClick={() => setPage(page - 1)}
+          >
+            Prev
+          </button>
+
+          <div className="pager__pages" role="group" aria-label="Page numbers">
+            {pageNumbers.map((item, index) => (
+              typeof item === 'number' ? (
+                <button
+                  key={item}
+                  type="button"
+                  className="pagebtn"
+                  aria-label={`Page ${item}`}
+                  aria-current={item === page ? 'page' : undefined}
+                  disabled={loading}
+                  onClick={() => setPage(item)}
+                >
+                  {item}
+                </button>
+              ) : (
+                <span key={`gap-${index}-${item}`} className="of pager__gap" aria-hidden="true">{item}</span>
+              )
+            ))}
+          </div>
+
+          <button
+            type="button"
+            className="pagebtn"
+            aria-label="Next page"
+            disabled={page >= (listPage.totalPages || 1) || loading}
+            onClick={() => setPage(page + 1)}
+          >
+            Next
+          </button>
+        </div>
       </nav>
 
       {openTicketId && (
