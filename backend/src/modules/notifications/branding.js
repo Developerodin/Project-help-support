@@ -5,14 +5,26 @@ function optionalString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : '';
 }
 
+/**
+ * A brand name is admin-entered free text that ends up inside a Subject line
+ * and a From display name, and a header ends at the first CR/LF: a client
+ * named "Acme\r\nBcc: someone@else" would otherwise add a recipient to every
+ * email that client's people receive. Stripped once here, at the point the
+ * name is built, so no downstream consumer has to remember.
+ */
+function headerSafe(value) {
+  return value.replace(/[\u0000-\u001F\u007F]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 /** "Acme" -> "Acme PMS". A name that already says PMS is left alone. */
 function brandNameFor(base) {
   return /\bpms\b/i.test(base) ? base : `${base} PMS`;
 }
 
 function brandingFor(base, logoKey, config) {
-  if (!base) return null;
-  const branding = { brandName: brandNameFor(base) };
+  const name = headerSafe(base);
+  if (!name) return null;
+  const branding = { brandName: brandNameFor(name) };
   const key = optionalString(logoKey);
   if (config?.features?.attachments && key) branding.brandLogoKey = key;
   return branding;
@@ -62,7 +74,10 @@ export async function userBranding(userId, config) {
  */
 export function brandedFrom(config, brandName) {
   const configured = optionalString(config?.email?.from);
-  const brand = optionalString(brandName);
+  // headerSafe again rather than trusting the caller: this function is
+  // exported, and it is the last place the name is still separable from the
+  // header it is about to become.
+  const brand = headerSafe(optionalString(brandName));
   if (!brand || !configured) return configured;
   const address = configured.match(/<([^>]+)>\s*$/)?.[1].trim() || configured;
   // A " or \ in the display name would escape out of the quoted string and
