@@ -6,12 +6,12 @@ import { useAuth } from '@/shared/contexts/auth-context.jsx';
 
 /**
  * Real messages carry the mark as an attachment and reference it as
- * cid:prowplus-icon. A browser cannot resolve a cid, and a srcDoc iframe cannot
+ * cid:brand-mark. A browser cannot resolve a cid, and a srcDoc iframe cannot
  * resolve a relative path either, so point it at the served copy absolutely.
  */
 function previewHtml(html) {
   const origin = typeof window === 'undefined' ? '' : window.location.origin;
-  return html.replaceAll('cid:prowplus-icon', `${origin}/prowplus-icon.png`);
+  return html.replaceAll('cid:brand-mark', `${origin}/prowplus-icon.png`);
 }
 
 // The two widths that decide whether an email holds up: a desktop reading pane

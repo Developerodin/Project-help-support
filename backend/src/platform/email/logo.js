@@ -63,7 +63,13 @@ async function loadCompanyMark(config, logoKey, { requireCompanyMark = false } =
   const key = optionalString(logoKey);
   if (!key || !config?.features?.attachments) {
     if (requireCompanyMark) {
-      throw new BrandLogoRequiredError('Brand logo is required for external branded ticket emails');
+      // Naming which of the two it is matters at 3am: an unconfigured bucket
+      // fails EVERY external email at once, an unset logoKey fails one client's.
+      throw new BrandLogoRequiredError(
+        config?.features?.attachments
+          ? 'Brand logo is required for external branded ticket emails: this client has no logo uploaded'
+          : 'Brand logo is required for external branded ticket emails: object storage is not configured, so no client logo can be resolved',
+      );
     }
     return null;
   }

@@ -9,7 +9,13 @@ export const EMAIL_BRAND = Object.freeze({
    * Gmail and Outlook block remote images and data: URIs by default; a cid
    * attachment is the only form that renders on first open, every time.
    */
-  logoCid: 'prowplus-icon',
+  // Vendor-neutral on purpose: the mark is a client's logo more often than
+  // ours, and the id is readable in the raw MIME the recipient keeps forever.
+  // ponytail: changing this orphans the cid baked into already-queued
+  // renderSnapshot rows — they retry with a broken image until the outbox
+  // drains. Snapshot the cid alongside the html if that ever costs more than a
+  // retry window.
+  logoCid: 'brand-mark',
   colors: Object.freeze({
     canvas: '#eae8e3',
     paper: '#f8f7f4',

@@ -12,6 +12,8 @@ const transactionalEmailLogSchema = new mongoose.Schema(
     to: { type: [String], default: [] },
     cc: { type: [String], default: [] },
     from: { type: String, default: '' },
+    /** Client logo the body was rendered against, so a retry re-sends the same mark. */
+    brandLogoKey: { type: String, default: null },
     subject: { type: String, required: true },
     text: { type: String, required: true },
     html: { type: String, required: true },

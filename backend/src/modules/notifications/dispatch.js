@@ -6,6 +6,7 @@ import { getNotificationRecipients } from './recipients.js';
 import { createInAppNotifications } from './notification.service.js';
 import { sendTicketEmail, sendTransactionalEmail } from './email.service.js';
 import { renderInviteEmail, renderPasswordResetEmail } from '../../platform/email/templates/index.js';
+import { ticketBranding, userBranding } from './branding.js';
 
 // Template spec and add-a-template checklist: docs/email/DESIGN.md
 
@@ -30,25 +31,6 @@ function findCommentOnTicket(ticket, commentId) {
 function nameOfRef(ref) {
   if (ref && typeof ref === 'object' && typeof ref.name === 'string') return ref.name;
   return '';
-}
-
-function optionalString(value) {
-  return typeof value === 'string' && value.trim() ? value.trim() : '';
-}
-
-function ticketBranding(ticket, config) {
-  const project = ticket?.project && typeof ticket.project === 'object' ? ticket.project : null;
-  const client = project?.client && typeof project.client === 'object' ? project.client : null;
-  const base = optionalString(client?.name) || optionalString(project?.brand);
-  if (!base) return null;
-  const branding = {
-    brandName: /\bpms\b/i.test(base) ? base : `${base} PMS`,
-  };
-  const logoKey = optionalString(client?.logoKey);
-  if (config?.features?.attachments && logoKey) {
-    branding.brandLogoKey = logoKey;
-  }
-  return branding;
 }
 
 function hasBrandingContext(ticket, config) {
@@ -210,19 +192,33 @@ async function sendPlain(config, deps, message, options = {}) {
   return result;
 }
 
+/**
+ * A client must not read the vendor's name on their own mail, so both of these
+ * resolve the recipient's company first. It can legitimately come back null —
+ * an internal colleague has no client, and a first invite has none yet because
+ * the client scope is granted through that very invite — and the neutral mark
+ * is the honest answer in both cases.
+ */
+async function recipientBranding(user, config) {
+  return (await userBranding(user?.id ?? user?._id, config)) ?? {};
+}
+
 /** Invite and reset mail, on the same pooled transport as everything else. */
 export function buildInviteDeliverer(config, deps = {}) {
   return async ({ user, inviteToken }, options = {}) => {
     const link = `${config.frontendBaseUrl}/invite/accept?token=${inviteToken}`;
+    const branding = await recipientBranding(user, config);
     const { subject, text, html } = renderInviteEmail({
       link,
       recipientEmail: user.email,
+      brandName: branding.brandName,
     });
     return sendPlain(config, deps, {
       to: user.email,
       subject,
       text,
       html,
+      ...branding,
     }, {
       kind: 'invite',
       throwOnError: options.throwOnError === true,
@@ -234,15 +230,18 @@ export function buildInviteDeliverer(config, deps = {}) {
 export function buildResetDeliverer(config, deps = {}) {
   return async ({ user, resetToken }, options = {}) => {
     const link = `${config.frontendBaseUrl}/reset-password?token=${resetToken}`;
+    const branding = await recipientBranding(user, config);
     const { subject, text, html } = renderPasswordResetEmail({
       link,
       recipientName: user.name,
+      brandName: branding.brandName,
     });
     return sendPlain(config, deps, {
       to: user.email,
       subject,
       text,
       html,
+      ...branding,
     }, {
       kind: 'password_reset',
       throwOnError: options.throwOnError === true,
