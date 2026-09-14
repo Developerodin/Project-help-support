@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createTeam } from '@/shared/api/teams.js';
 import { listProjects } from '@/shared/api/projects.js';
-import { listUsers } from '@/shared/api/users.js';
 import TeamForm from '@/shared/components/teams/team-form.jsx';
 import { showToast } from '@/shared/lib/toast.js';
 
@@ -13,8 +12,6 @@ export default function NewTeamPage() {
   const [projects, setProjects] = useState([]);
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [projectsError, setProjectsError] = useState(false);
-  const [users, setUsers] = useState([]);
-  const [usersLoading, setUsersLoading] = useState(true);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -23,13 +20,6 @@ export default function NewTeamPage() {
       .then((p) => setProjects(p.results.filter((proj) => proj.status === 'active')))
       .catch(() => setProjectsError(true))
       .finally(() => setProjectsLoading(false));
-  }, []);
-
-  useEffect(() => {
-    listUsers({ status: 'active' })
-      .then((p) => setUsers(p.results))
-      .catch(() => {})
-      .finally(() => setUsersLoading(false));
   }, []);
 
   async function handleSubmit(payload) {
@@ -54,8 +44,6 @@ export default function NewTeamPage() {
       projects={projects}
       projectsLoading={projectsLoading}
       projectsError={projectsError}
-      users={users}
-      usersLoading={usersLoading}
       busy={busy}
       error={error}
       onSubmit={handleSubmit}

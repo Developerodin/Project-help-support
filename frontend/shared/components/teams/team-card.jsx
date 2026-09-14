@@ -7,7 +7,6 @@ import MemberPicker from '@/shared/components/teams/member-picker.jsx';
 
 export default function TeamCard({
   team,
-  users,
   canEdit = false,
   canDelete = false,
   onAddMembers,
@@ -16,10 +15,9 @@ export default function TeamCard({
   addBusy = false,
   removingMemberId = null,
 }) {
-  const memberIds = useMemo(() => new Set(team.members.map((m) => m.id)), [team.members]);
-  const available = useMemo(
-    () => users.filter((u) => !memberIds.has(u.id)),
-    [users, memberIds],
+  const excludeMemberIds = useMemo(
+    () => team.members.map((m) => m.id),
+    [team.members],
   );
 
   return (
@@ -124,13 +122,11 @@ export default function TeamCard({
       {canEdit ? (
         <div className="team-panel__add">
           <MemberPicker
-            available={available}
+            serverSearch
+            excludeMemberIds={excludeMemberIds}
             busy={addBusy}
             onConfirm={(ids) => onAddMembers?.(team.id, ids)}
           />
-          {available.length === 0 && team.members.length > 0 && (
-            <p className="field-hint">Everyone active is already on this team.</p>
-          )}
         </div>
       ) : null}
     </section>

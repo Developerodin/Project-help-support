@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import { canAccessRoute, getDefaultRedirect } from '@/shared/lib/route-permissions.js';
 import { usePermissionContext } from '@/shared/hooks/use-permission-context.js';
+import { permissionContextForUi } from '@/shared/lib/permission-context-ui.js';
 import AppLoader from '@/shared/components/app-loader.jsx';
 
 /**
@@ -16,7 +17,7 @@ export default function RouteGuard({ children }) {
   const { permissionContext, loading: permissionLoading } = usePermissionContext();
   const pathname = usePathname();
   const router = useRouter();
-  const ctx = permissionContext.loadFailed ? null : permissionContext;
+  const ctx = permissionContextForUi(permissionContext);
 
   const allowed = Boolean(user) && canAccessRoute(pathname, user, ctx);
 

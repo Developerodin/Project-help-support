@@ -81,8 +81,6 @@ export default function TeamForm({
   projects = [],
   projectsLoading = false,
   projectsError = false,
-  users = [],
-  usersLoading = false,
   busy = false,
   error = null,
   memberBusy = null,
@@ -109,11 +107,7 @@ export default function TeamForm({
   const [validationItems, setValidationItems] = useState([]);
 
   const members = isEdit ? (team?.members ?? []) : picked;
-  const memberIds = useMemo(() => new Set(members.map((m) => m.id)), [members]);
-  const available = useMemo(
-    () => users.filter((u) => !memberIds.has(u.id)),
-    [users, memberIds],
-  );
+  const excludeMemberIds = useMemo(() => members.map((m) => m.id), [members]);
 
   const validation = useMemo(() => validateNewTeamDraft(draft), [draft]);
   const invalid = (field) => showValidation && validation.errors.some((e) => e.field === field);
@@ -135,9 +129,14 @@ export default function TeamForm({
     focusFirstInvalid(validateNewTeamDraft(draft));
   }
 
-  function handleAdd(ids) {
-    if (isEdit) return onAddMembers(ids);
-    setPicked((prev) => [...prev, ...users.filter((u) => ids.includes(u.id))]);
+  function handleAdd(ids, pickedUsers = []) {
+    if (isEdit) return onAddMembers(ids, pickedUsers);
+    const byId = new Map(pickedUsers.map((u) => [u.id, u]));
+    const next = ids.map((id) => byId.get(id) || { id, name: 'Unknown' });
+    setPicked((prev) => {
+      const have = new Set(prev.map((m) => m.id));
+      return [...prev, ...next.filter((u) => !have.has(u.id))];
+    });
     return undefined;
   }
 
@@ -300,20 +299,12 @@ export default function TeamForm({
                 <MemberPicker
                   variant="action"
                   triggerLabel="Add members"
-                  available={available}
-                  loading={usersLoading}
+                  serverSearch
+                  excludeMemberIds={excludeMemberIds}
                   busy={memberBusy === 'add'}
                   onConfirm={handleAdd}
                 />
               </div>
-
-              {!usersLoading && available.length === 0 ? (
-                <p className="field-hint">
-                  {users.length === 0
-                    ? 'People could not be loaded. Reload the page to try again.'
-                    : 'Everyone active is already on this team.'}
-                </p>
-              ) : null}
 
               {memberNotice ? (
                 <p className="member-notice" role="alert">

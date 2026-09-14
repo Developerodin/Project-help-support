@@ -53,6 +53,10 @@ export async function addComment(actor, idOrKey, { content, mentions = [], clien
   const ticket = await resolveTicketDoc(idOrKey);
   await assertCanViewTicket(actor, ticket, permissionContext);
 
+  if (!isExternalUser(actor)) {
+    await assertCanEditTicket(actor, ticket, permissionContext);
+  }
+
   if (isExternalUser(actor) && internal === true) {
     throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this ticket');
   }

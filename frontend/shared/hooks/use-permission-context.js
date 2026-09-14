@@ -11,6 +11,7 @@ export function usePermissionContext() {
   const [permissionContext, setPermissionContext] = useState({
     roleMatrix: null,
     userOverrides: {},
+    scopedAssignments: [],
     loadFailed: false,
   });
   const [loading, setLoading] = useState(true);
@@ -23,7 +24,8 @@ export function usePermissionContext() {
         if (!cancelled && data?.effective) {
           setPermissionContext({
             roleMatrix: data.effective,
-            userOverrides: {},
+            userOverrides: data.userOverrides ?? {},
+            scopedAssignments: data.scopedAssignments ?? [],
             loadFailed: false,
           });
         }
@@ -32,6 +34,7 @@ export function usePermissionContext() {
           setPermissionContext({
             roleMatrix: null,
             userOverrides: {},
+            scopedAssignments: [],
             loadFailed: true,
           });
         }

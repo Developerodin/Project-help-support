@@ -194,8 +194,11 @@ export async function getBoardPermissionsEffective(actor) {
 
 export async function getRoleMatrixEffective(actor) {
   if (!actor) throw new ApiError(401, 'UNAUTHENTICATED', 'Authentication required');
+  const ctx = await loadPermissionContextForUser(actor._id);
   return {
-    effective: await getEffectiveRoleMatrixRecord(),
+    effective: ctx.roleMatrix ?? await getEffectiveRoleMatrixRecord(),
+    scopedAssignments: ctx.scopedAssignments,
+    userOverrides: ctx.userOverrides,
   };
 }
 

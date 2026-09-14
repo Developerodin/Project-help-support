@@ -5,28 +5,38 @@ import {
   ROLE_IDS,
   canAccessProjectsModule,
   canManageProjectsModule,
+  anyScopedAssignmentGrants,
 } from '@pms/shared';
+import { permissionContextForUi } from '@/shared/lib/permission-context-ui.js';
 
-/** Ticket routes: matrix grant or external AccessAssignment scope (backend enforces scope). */
-function ticketRouteAccess(user, permissionContext) {
-  return can(user, 'tickets.view', permissionContext) || isExternalUser(user);
+/** Ticket routes: matrix grant, scoped assignment, or external AccessAssignment (backend enforces row scope). */
+function ticketRouteAccess(user, ctx) {
+  if (isExternalUser(user)) return true;
+  if (ctx?.loadFailed) return false;
+  const matrixCtx = ctx ?? undefined;
+  if (can(user, 'tickets.view', matrixCtx)) return true;
+  return ctx ? anyScopedAssignmentGrants('tickets.view', ctx) : false;
 }
 
-/** UI & QA routes: matrix grant or external AccessAssignment scope (backend enforces scope). */
-function uiQaRouteAccess(user, permissionContext) {
-  return can(user, 'ui_qa.view', permissionContext) || isExternalUser(user);
+/** UI & QA routes: matrix grant, scoped assignment, or external scope (backend enforces). */
+function uiQaRouteAccess(user, ctx) {
+  if (isExternalUser(user)) return true;
+  if (ctx?.loadFailed) return false;
+  const matrixCtx = ctx ?? undefined;
+  if (can(user, 'ui_qa.view', matrixCtx)) return true;
+  return ctx ? anyScopedAssignmentGrants('ui_qa.view', ctx) : false;
 }
 
 function internalTeamAccess(permission) {
-  return (user) => !isExternalUser(user) && can(user, permission);
+  return (user, ctx) => !ctx?.loadFailed && !isExternalUser(user) && can(user, permission, ctx ?? undefined);
 }
 
-function internalProjectsView(user) {
-  return !isExternalUser(user) && canAccessProjectsModule(user);
+function internalProjectsView(user, ctx) {
+  return !ctx?.loadFailed && !isExternalUser(user) && canAccessProjectsModule(user, ctx ?? undefined);
 }
 
-function internalProjectsManage(user) {
-  return !isExternalUser(user) && canManageProjectsModule(user);
+function internalProjectsManage(user, ctx) {
+  return !ctx?.loadFailed && !isExternalUser(user) && canManageProjectsModule(user, ctx ?? undefined);
 }
 
 /**
@@ -40,13 +50,13 @@ const ROUTE_RULES = [
   { match: /^\/projects\/new\/?$/, access: internalProjectsManage },
   { match: /^\/projects\/[^/]+\/edit\/?$/, access: internalProjectsManage },
   { match: /^\/projects(\/|$)/, access: internalProjectsView },
-  { match: /^\/users(\/|$)/, access: (user) => can(user, 'users.view') },
-  { match: /^\/audit-log(\/|$)/, access: (user) => can(user, 'audit.view') },
-  { match: /^\/settings\/rbac-preview(\/|$)/, access: (user) => can(user, 'users.manage') },
-  { match: /^\/admin(\/|$)/, access: (user) => can(user, 'users.manage') },
+  { match: /^\/users(\/|$)/, access: (user, ctx) => !ctx?.loadFailed && can(user, 'users.view', ctx ?? undefined) },
+  { match: /^\/audit-log(\/|$)/, access: (user, ctx) => !ctx?.loadFailed && can(user, 'audit.view', ctx ?? undefined) },
+  { match: /^\/settings\/rbac-preview(\/|$)/, access: (user, ctx) => !ctx?.loadFailed && can(user, 'users.manage', ctx ?? undefined) },
+  { match: /^\/admin(\/|$)/, access: (user, ctx) => !ctx?.loadFailed && can(user, 'users.manage', ctx ?? undefined) },
   {
     match: /^\/tickets\/analytics(\/|$)/,
-    access: (user) => hasAnyRole(
+    access: (user, ctx) => !ctx?.loadFailed && hasAnyRole(
       user,
       ROLE_IDS.SUPER_ADMIN,
       ROLE_IDS.ADMIN,
@@ -54,8 +64,8 @@ const ROUTE_RULES = [
       ROLE_IDS.TESTER,
     ),
   },
-  { match: /^\/tickets\/new\/?$/, access: (user, ctx) => can(user, 'tickets.create', ctx) || isExternalUser(user) },
-  { match: /^\/tickets\/[^/]+\/edit\/?$/, access: (user, ctx) => can(user, 'tickets.edit', ctx) || isExternalUser(user) },
+  { match: /^\/tickets\/new\/?$/, access: (user, ctx) => !ctx?.loadFailed && (can(user, 'tickets.create', ctx ?? undefined) || isExternalUser(user)) },
+  { match: /^\/tickets\/[^/]+\/edit\/?$/, access: (user, ctx) => !ctx?.loadFailed && (can(user, 'tickets.edit', ctx ?? undefined) || isExternalUser(user)) },
   { match: /^\/tickets(\/|$)/, access: ticketRouteAccess },
   { match: /^\/ui-qa(\/|$)/, access: uiQaRouteAccess },
 ];
@@ -76,9 +86,10 @@ export const REDIRECT_CANDIDATES = [
 
 export function canAccessRoute(pathname, user, permissionContext = null) {
   if (!user) return false;
+  const ctx = permissionContextForUi(permissionContext);
   const path = pathname.split('?')[0];
   for (const rule of ROUTE_RULES) {
-    if (rule.match.test(path)) return rule.access(user, permissionContext);
+    if (rule.match.test(path)) return rule.access(user, ctx);
   }
   return true;
 }

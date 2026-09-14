@@ -228,17 +228,35 @@ export async function sendTicketEmail(event, ticket, recipients, context, config
 
   let sent = 0;
   let failed = 0;
-  for (const [index, row] of rows.entries()) {
-    const rowTo = optionalString(row.to?.[0]).toLowerCase();
-    const testBcc = index === 0 && sinkTo && sinkTo !== rowTo ? sinkTo : null;
+  for (const row of rows) {
     const ok = await attempt(
       { ...row.toObject(), text, html },
       transport,
       config,
       attachments,
-      testBcc,
+      null,
     );
     if (ok) sent += 1; else failed += 1;
+  }
+
+  if (sinkTo && deps.allowTestSink !== false && !config.isProduction && sent > 0) {
+    try {
+      await transport.sendMail({
+        from,
+        to: sinkTo,
+        subject: `[notification-test-sink] ${subject}`,
+        text,
+        html,
+        attachments,
+      });
+    } catch (err) {
+      logger.warn('Ticket notification test sink copy failed', {
+        event,
+        ticket: ticket?.ticketId,
+        eventId,
+        error: err.message,
+      });
+    }
   }
 
   return { skipped: false, eventId, sent, failed };

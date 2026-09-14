@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePermissionContext } from '@/shared/hooks/use-permission-context.js';
+import { permissionContextForUi } from '@/shared/lib/permission-context-ui.js';
 import { getUiQaEntity } from '@/shared/api/ui-qa.js';
 import { normalizeApiError } from '@/shared/lib/api-error.js';
 import FormError from '@/shared/components/form-error.jsx';
@@ -131,7 +132,7 @@ export default function UiQaDetailDrawer({
             data={detail.data}
             counts={detail.counts}
             user={user}
-            permissionContext={permissionContext.loadFailed ? null : permissionContext}
+            permissionContext={permissionContextForUi(permissionContext)}
             onUpdated={handleUpdated}
             onClose={onClose}
           />

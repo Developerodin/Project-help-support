@@ -4,25 +4,25 @@ export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
 export const ATTACHMENT_ACCEPT =
   'image/png,image/jpeg,image/gif,image/webp,image/bmp,image/tiff,image/avif,image/x-icon,' +
-  'application/pdf,application/msword,application/vnd.ms-excel,application/vnd.ms-powerpoint,' +
+  'application/pdf,' +
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document,' +
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,' +
   'application/vnd.openxmlformats-officedocument.presentationml.presentation,' +
   'application/vnd.oasis.opendocument.text,application/vnd.oasis.opendocument.spreadsheet,' +
   'application/vnd.oasis.opendocument.presentation,application/rtf,' +
-  'video/mp4,video/webm,application/zip,application/gzip,application/x-7z-compressed,' +
+  'video/mp4,video/webm,' +
   '.txt,.log,.csv,.json,.md,.xml,.yaml,.yml,' +
-  '.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.rtf,.7z,.bmp,.tiff,.tif,.avif,.ico';
+  '.docx,.xlsx,.pptx,.odt,.ods,.odp,.rtf,.bmp,.tiff,.tif,.avif,.ico';
 
 export const ATTACHMENT_HINT =
-  'Images (PNG, JPEG, GIF, WebP, BMP, TIFF, AVIF, ICO), documents (PDF, Office, OpenDocument, RTF, MD, XML, YAML, TXT, CSV, JSON), ' +
-  'video (MP4, WebM), archives (ZIP, GZ, 7Z) · up to 10 files · 25 MB each';
+  'Images (PNG, JPEG, GIF, WebP, BMP, TIFF, AVIF, ICO), documents (PDF, modern Office, OpenDocument, RTF, MD, XML, YAML, TXT, CSV, JSON), ' +
+  'video (MP4, WebM) · up to 10 files · 25 MB each';
 
 const ALLOWED_EXT = new Set([
   'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tiff', 'tif', 'avif', 'ico',
-  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'rtf',
+  'pdf', 'docx', 'xlsx', 'pptx', 'odt', 'ods', 'odp', 'rtf',
   'txt', 'log', 'csv', 'json', 'md', 'xml', 'yaml', 'yml',
-  'mp4', 'webm', 'zip', 'gz', '7z',
+  'mp4', 'webm',
 ]);
 
 const BLOCKED_EXT = new Set([

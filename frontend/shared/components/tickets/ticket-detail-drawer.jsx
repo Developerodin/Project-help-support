@@ -35,6 +35,7 @@ import ConfirmDialog from '../confirm-dialog.jsx';
 import { useTicketAssignment } from './use-ticket-assignment.js';
 import { useBoardPolicy } from '@/shared/hooks/use-board-policy.js';
 import { usePermissionContext } from '@/shared/hooks/use-permission-context.js';
+import { permissionContextForUi } from '@/shared/lib/permission-context-ui.js';
 import AppLoader from '../app-loader.jsx';
 
 function nestedDialogOpen(drawerNode) {
@@ -572,7 +573,7 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
             onChanged={onChanged}
             load={load}
             boardPolicy={boardPolicy}
-            permissionContext={permissionContext.loadFailed ? null : permissionContext}
+            permissionContext={permissionContextForUi(permissionContext)}
           />
         )}
       </aside>

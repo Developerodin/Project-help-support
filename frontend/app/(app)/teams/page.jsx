@@ -21,7 +21,7 @@ export default function TeamsPage() {
   const canDelete = can(user, 'teams.delete');
 
   const [teams, setTeams] = useState([]);
-  const [users, setUsers] = useState([]);
+  const [activeUserTotal, setActiveUserTotal] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [addBusyTeamId, setAddBusyTeamId] = useState(null);
@@ -44,7 +44,9 @@ export default function TeamsPage() {
   useEffect(() => {
     if (!user) return;
     reload();
-    listUsers({ status: 'active' }).then((p) => setUsers(p.results)).catch(() => {});
+    listUsers({ status: 'active', limit: 1 })
+      .then((p) => setActiveUserTotal(p.totalResults ?? null))
+      .catch(() => setActiveUserTotal(null));
   }, [user, reload]);
 
   const metrics = useMemo(() => {
@@ -54,9 +56,11 @@ export default function TeamsPage() {
       people: onATeam.size,
       openTickets: teams.reduce((sum, t) => sum + (t.stats?.open ?? 0), 0),
       overdue: teams.reduce((sum, t) => sum + (t.stats?.overdue ?? 0), 0),
-      unassigned: users.filter((u) => !onATeam.has(u.id)).length,
+      unassigned: activeUserTotal != null
+        ? Math.max(0, activeUserTotal - onATeam.size)
+        : null,
     };
-  }, [teams, users]);
+  }, [teams, activeUserTotal]);
 
   const visibleTeams = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -159,7 +163,7 @@ export default function TeamsPage() {
               <dt>Overdue</dt>
               <dd className={!loading && metrics.overdue ? 'team-panel__overdue' : undefined}>{loading ? '—' : metrics.overdue}</dd>
             </div>
-            <div><dt>Not on a team</dt><dd>{loading ? '—' : metrics.unassigned}</dd></div>
+            <div><dt>Not on a team</dt><dd>{loading || metrics.unassigned == null ? '—' : metrics.unassigned}</dd></div>
           </dl>
 
           <div className="teams-filters">
@@ -207,7 +211,6 @@ export default function TeamsPage() {
             <TeamCard
               key={team.id}
               team={team}
-              users={users}
               canEdit={canEdit}
               canDelete={canDelete}
               onAddMembers={canEdit ? handleAddMembers : undefined}

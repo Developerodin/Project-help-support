@@ -188,6 +188,17 @@ export function assignmentRoleHasPermission(assignment, permission, roleMatrix =
   return getRoleBundle(assignment.role, roleMatrix).has(permission);
 }
 
+/** True when any active scoped assignment grants the permission (module/route gates). */
+export function anyScopedAssignmentGrants(
+  permission,
+  { scopedAssignments = [], roleMatrix = null } = {},
+) {
+  return (scopedAssignments || []).some(
+    (row) => isAssignmentEffectivelyActive(row)
+      && assignmentRoleHasPermission(row, permission, roleMatrix),
+  );
+}
+
 export function hasActiveScopedConstraints(assignments = []) {
   return (assignments || []).some((row) => isAssignmentEffectivelyActive(row));
 }
@@ -221,7 +232,10 @@ export function canInScope(
   if (scope.invalidEnvironment) return false;
 
   const needsScope = Boolean(scope.clientId || scope.projectId || scope.environment);
-  if (!needsScope) return true;
+  if (!needsScope) {
+    if (active.some((assignment) => !isGlobalAssignment(assignment))) return false;
+    return true;
+  }
 
   return active.some(
     (assignment) => assignmentCoversScope(assignment, scope)

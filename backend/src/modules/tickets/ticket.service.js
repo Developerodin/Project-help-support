@@ -28,6 +28,7 @@ import Team from '../teams/team.model.js';
 import { assertTeamUsable, assertActiveUsers } from '../teams/team.service.js';
 import {
   assertScopedPermissionWhenConstrained,
+  buildScopedTicketListFilter,
   ticketScopeTarget,
   resolvePermissionContext,
 } from '../access/scope-enforcement.js';
@@ -262,7 +263,15 @@ async function applyTicketVisibility(filter, actor, permissionContext = null) {
     return { $and: [filter, externalFilter] };
   }
 
-  if (hasGlobalTicketView(actor, permissionContext)) return filter;
+  const ctx = await resolvePermissionContext(actor, permissionContext);
+  if (hasActiveScopedConstraints(ctx.scopedAssignments)) {
+    const scoped = await buildScopedTicketListFilter(ctx, 'tickets.view');
+    if (scoped === null) return filter;
+    if (Object.keys(filter).length === 0) return scoped;
+    return { $and: [filter, scoped] };
+  }
+
+  if (hasGlobalTicketView(actor, ctx)) return filter;
 
   const teamIds = await actorTeamIds(actor._id);
   const projectIds = await projectIdsForTeams(teamIds);
@@ -275,6 +284,7 @@ async function applyTicketVisibility(filter, actor, permissionContext = null) {
 // run of spaces/hyphens/unicode dashes between key and number is noise.
 const ID_SHAPE = /^([a-z]{2,10})?[\s\-\u2010-\u2015]*(\d{1,7})$/i;
 const MAX_WORDS = 6;
+const MIN_WORD_LENGTH = 2;
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
@@ -307,7 +317,7 @@ export function ticketSearchClause(raw) {
     .split(' ')
     // A lone "-" typed against an en-dash title matches nothing useful, and an
     // all-punctuation term would otherwise match every ticket.
-    .filter((word) => /[a-z0-9]/i.test(word))
+    .filter((word) => word.length >= MIN_WORD_LENGTH && /[a-z0-9]/i.test(word))
     .slice(0, MAX_WORDS)
     .map(escapeRegex);
   if (!words.length) return null;

@@ -11,7 +11,6 @@ export const MAX_REQUEST_BYTES = 100 * 1024 * 1024;
  * ALLOWLIST, not a blocklist. A blocklist is a losing game against extensions
  * nobody thought of, and it only has to be wrong once.
  */
-const OLE_MAGIC = [{ offset: 0, bytes: [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1] }];
 const ZIP_MAGIC = [{ offset: 0, bytes: [0x50, 0x4B, 0x03, 0x04] }];
 
 export const ALLOWED_TYPES = Object.freeze([
@@ -25,11 +24,7 @@ export const ALLOWED_TYPES = Object.freeze([
   { mime: 'image/avif', exts: ['avif'], magic: [{ offset: 4, bytes: [0x66, 0x74, 0x79, 0x70] }, { offset: 8, bytes: [0x61, 0x76, 0x69, 0x66] }] },
   { mime: 'image/x-icon', exts: ['ico'], magic: [{ offset: 0, bytes: [0x00, 0x00, 0x01, 0x00] }] },
   { mime: 'application/pdf', exts: ['pdf'], magic: [{ offset: 0, bytes: [0x25, 0x50, 0x44, 0x46] }] },
-  { mime: 'application/msword', exts: ['doc'], magic: OLE_MAGIC },
-  // Office formats may embed macros; magic-byte sniffing does not scan contents.
-  // Treat uploads as untrusted documents until a dedicated AV pipeline exists.
-  { mime: 'application/vnd.ms-excel', exts: ['xls'], magic: OLE_MAGIC },
-  { mime: 'application/vnd.ms-powerpoint', exts: ['ppt'], magic: OLE_MAGIC },
+  // Legacy OLE Office and archive types are excluded — macro/zip-bomb risk without content scanning.
   { mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', exts: ['docx'], magic: ZIP_MAGIC },
   { mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', exts: ['xlsx'], magic: ZIP_MAGIC },
   { mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', exts: ['pptx'], magic: ZIP_MAGIC },
@@ -39,9 +34,6 @@ export const ALLOWED_TYPES = Object.freeze([
   { mime: 'application/rtf', exts: ['rtf'], magic: [{ offset: 0, bytes: [0x7B, 0x5C, 0x72, 0x74, 0x66] }] },
   { mime: 'video/mp4', exts: ['mp4'], magic: [{ offset: 4, bytes: [0x66, 0x74, 0x79, 0x70] }] },
   { mime: 'video/webm', exts: ['webm'], magic: [{ offset: 0, bytes: [0x1A, 0x45, 0xDF, 0xA3] }] },
-  { mime: 'application/zip', exts: ['zip'], magic: ZIP_MAGIC },
-  { mime: 'application/gzip', exts: ['gz'], magic: [{ offset: 0, bytes: [0x1F, 0x8B] }] },
-  { mime: 'application/x-7z-compressed', exts: ['7z'], magic: [{ offset: 0, bytes: [0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C] }] },
 ]);
 
 /** Text has no magic number, so it is validated by decoding instead. */

@@ -21,6 +21,7 @@ import { normalizeApiError } from '@/shared/lib/api-error.js';
 import { showToast } from '@/shared/lib/toast.js';
 import { can } from '@pms/shared';
 import { usePermissionContext } from '@/shared/hooks/use-permission-context.js';
+import { permissionContextForUi } from '@/shared/lib/permission-context-ui.js';
 
 function ImpersonationBanner() {
   const { user, impersonation, stopImpersonation } = useAuth();
@@ -59,8 +60,8 @@ function TopBar() {
   const { activeProject, hasWorkspace } = useProject();
   const router = useRouter();
   const pathname = usePathname();
-  const ctx = permissionContext.loadFailed ? null : permissionContext;
-  const canCreateTicket = Boolean(user && can(user, 'tickets.create', ctx));
+  const ctx = permissionContextForUi(permissionContext);
+  const canCreateTicket = Boolean(user && !ctx?.loadFailed && can(user, 'tickets.create', ctx ?? undefined));
 
   const openSearch = useCallback(() => {
     if (pathname === '/tickets' || pathname.startsWith('/tickets?')) {

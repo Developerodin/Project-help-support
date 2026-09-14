@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import { NAV_GROUPS, canAccessNavItem } from '@/shared/lib/route-permissions.js';
 import { usePermissionContext } from '@/shared/hooks/use-permission-context.js';
+import { permissionContextForUi } from '@/shared/lib/permission-context-ui.js';
 import { formatBrandDisplayName } from '@/shared/lib/branding.js';
 import Icon from '@/shared/components/icons.jsx';
 import BrandMark from '@/shared/components/brand-mark.jsx';
@@ -32,7 +33,7 @@ export default function AppSidebar() {
   const { permissionContext } = usePermissionContext();
   const pathname = usePathname();
   if (!user) return null;
-  const ctx = permissionContext.loadFailed ? null : permissionContext;
+  const ctx = permissionContextForUi(permissionContext);
 
   return (
     <Sidebar collapsible="icon" aria-label="Primary">

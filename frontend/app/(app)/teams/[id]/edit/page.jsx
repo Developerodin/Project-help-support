@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { getTeam, patchTeam, updateMembers } from '@/shared/api/teams.js';
 import { listProjects } from '@/shared/api/projects.js';
-import { listUsers } from '@/shared/api/users.js';
 import FormError from '@/shared/components/form-error.jsx';
 import TeamForm from '@/shared/components/teams/team-form.jsx';
 import { normalizeApiError } from '@/shared/lib/api-error.js';
@@ -18,8 +17,6 @@ export default function EditTeamPage() {
   const [team, setTeam] = useState(null);
   const [projects, setProjects] = useState([]);
   const [projectsError, setProjectsError] = useState(false);
-  const [users, setUsers] = useState([]);
-  const [usersLoading, setUsersLoading] = useState(true);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -38,13 +35,6 @@ export default function EditTeamPage() {
     listProjects()
       .then((p) => setProjects(p.results.filter((proj) => proj.status === 'active')))
       .catch(() => setProjectsError(true));
-  }, []);
-
-  useEffect(() => {
-    listUsers({ status: 'active' })
-      .then((p) => setUsers(p.results))
-      .catch(() => {})
-      .finally(() => setUsersLoading(false));
   }, []);
 
   async function runMemberChange({ optimistic, request, busyKey, failure, success }) {
@@ -67,8 +57,9 @@ export default function EditTeamPage() {
     }
   }
 
-  function handleAddMembers(ids) {
-    const added = users.filter((u) => ids.includes(u.id));
+  function handleAddMembers(ids, pickedUsers = []) {
+    const byId = new Map(pickedUsers.map((u) => [u.id, u]));
+    const added = ids.map((id) => byId.get(id) || { id, name: 'Unknown' });
     return runMemberChange({
       busyKey: 'add',
       optimistic: (current) => [...current, ...added],
@@ -125,8 +116,6 @@ export default function EditTeamPage() {
       team={team}
       projects={projects}
       projectsError={projectsError}
-      users={users}
-      usersLoading={usersLoading}
       busy={busy}
       error={error}
       memberBusy={memberBusy}

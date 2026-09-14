@@ -99,10 +99,23 @@ export async function addAttachments(actor, idOrKey, files, config, opts = {}) {
     };
   });
 
-  for (const item of prepared) {
-    await storage.putObject(config, {
-      key: item.key, body: item.buffer, contentType: item.mimeType,
-    });
+  const uploadedKeys = [];
+  try {
+    for (const item of prepared) {
+      await storage.putObject(config, {
+        key: item.key, body: item.buffer, contentType: item.mimeType,
+      });
+      uploadedKeys.push(item.key);
+    }
+  } catch (err) {
+    for (const key of uploadedKeys) {
+      try {
+        await storage.deleteObject(config, key);
+      } catch {
+        /* best-effort cleanup */
+      }
+    }
+    throw err;
   }
 
   const entries = prepared.map(({ buffer: _buffer, ...rest }) => ({
@@ -162,9 +175,28 @@ export async function addAttachments(actor, idOrKey, files, config, opts = {}) {
     };
   }
 
-  const written = await Ticket.findOneAndUpdate(filter, update, { new: true });
+  let written;
+  try {
+    written = await Ticket.findOneAndUpdate(filter, update, { new: true });
+  } catch (err) {
+    for (const key of uploadedKeys) {
+      try {
+        await storage.deleteObject(config, key);
+      } catch {
+        /* best-effort cleanup */
+      }
+    }
+    throw err;
+  }
 
   if (!written) {
+    for (const key of uploadedKeys) {
+      try {
+        await storage.deleteObject(config, key);
+      } catch {
+        /* best-effort cleanup */
+      }
+    }
     const existing = await Ticket.findById(ticket._id);
     const replayed = attachmentReplay(existing, clientRef)
       || (commentClientRef ? commentReplay(existing, commentClientRef)?.attachments : null)

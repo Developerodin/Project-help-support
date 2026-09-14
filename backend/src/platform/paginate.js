@@ -35,5 +35,6 @@ export async function paginate(model, filter = {}, options = {}) {
     limit,
     totalPages: Math.ceil(totalResults / limit),
     totalResults,
+    resultsTruncated: totalResults > page * limit || (page === 1 && totalResults > results.length),
   };
 }

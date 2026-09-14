@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Icon, { initials } from '@/shared/components/icons.jsx';
+import { useActiveUserSearch } from '@/shared/hooks/use-active-user-search.js';
 
 function ChevronDown() {
   return (
@@ -21,14 +22,16 @@ function SearchGlyph() {
 }
 
 /**
- * The one searchable multi-select of people, shared by the team cards on
- * /teams and by the team form on create + edit. `available` is already
- * filtered by the caller, which is how "no duplicate members" is enforced:
- * a current member never reaches this list.
+ * Searchable multi-select of people for team membership.
+ * With `serverSearch`, lookups use GET /users?q=… (debounced) so users beyond
+ * the default first page are findable. `excludeMemberIds` keeps current members
+ * out of the list.
  */
 export default function MemberPicker({
-  available,
-  loading = false,
+  available: availableProp,
+  excludeMemberIds = [],
+  serverSearch = false,
+  loading: loadingProp = false,
   busy = false,
   onConfirm,
   title = 'Add team members',
@@ -38,9 +41,27 @@ export default function MemberPicker({
   busyLabel = 'Adding…',
 }) {
   const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState('');
   const [selected, setSelected] = useState([]);
+  const [selectedUsers, setSelectedUsers] = useState(() => new Map());
   const wrapRef = useRef(null);
+
+  const excludeList = useMemo(
+    () => excludeMemberIds.map((id) => String(id)),
+    [excludeMemberIds],
+  );
+
+  const {
+    query: search,
+    setQuery: setSearch,
+    available: serverAvailable,
+    loading: serverLoading,
+    error: serverError,
+    retry,
+  } = useActiveUserSearch({ enabled: open && serverSearch, excludeIds: excludeList });
+
+  const available = serverSearch ? serverAvailable : (availableProp ?? []);
+  const loading = serverSearch ? serverLoading : loadingProp;
+  const trimmedQuery = search.trim();
 
   useEffect(() => {
     if (!open) return undefined;
@@ -58,36 +79,44 @@ export default function MemberPicker({
     };
   }, [open]);
 
-  // Selection survives typing: filtering narrows what is shown, never what is picked.
-  const query = search.trim().toLowerCase();
-  const filtered = useMemo(() => {
-    if (!query) return available;
-    return available.filter(
-      (u) => u.name?.toLowerCase().includes(query) || u.email?.toLowerCase().includes(query),
-    );
-  }, [available, query]);
-
-  // Chips read from the unfiltered list so a search never hides who is picked.
   const picked = useMemo(
-    () => available.filter((u) => selected.includes(u.id)),
-    [available, selected],
+    () => selected.map((id) => selectedUsers.get(id)).filter(Boolean),
+    [selected, selectedUsers],
   );
 
   function toggle(id) {
-    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    if (selected.includes(id)) {
+      setSelected((prev) => prev.filter((x) => x !== id));
+      setSelectedUsers((map) => {
+        const next = new Map(map);
+        next.delete(id);
+        return next;
+      });
+      return;
+    }
+    const user = available.find((u) => u.id === id) || selectedUsers.get(id);
+    if (user) {
+      setSelectedUsers((map) => new Map(map).set(id, user));
+    }
+    setSelected((prev) => [...prev, id]);
   }
 
   function close() {
     setSelected([]);
+    setSelectedUsers(new Map());
     setSearch('');
     setOpen(false);
   }
 
   async function submit() {
     if (selected.length === 0 || busy) return;
-    await onConfirm(selected);
+    const users = selected.map((id) => selectedUsers.get(id)).filter(Boolean);
+    await onConfirm(selected, users);
     close();
   }
+
+  const listEmpty = !loading && !serverError && available.length === 0;
+  const showTypeToSearch = serverSearch && listEmpty && !trimmedQuery && !loading;
 
   return (
     <div className="menuwrap" ref={wrapRef}>
@@ -96,7 +125,7 @@ export default function MemberPicker({
         className={variant === 'menu' ? 'btn btn-sm' : 'btn member-picker__trigger'}
         aria-haspopup="listbox"
         aria-expanded={open}
-        disabled={busy || (available.length === 0 && !loading)}
+        disabled={busy || (!serverSearch && available.length === 0 && !loading)}
         onClick={() => setOpen((v) => !v)}
       >
         {busy ? (
@@ -166,27 +195,37 @@ export default function MemberPicker({
             </div>
           ) : null}
 
-          {!loading && filtered.length > 0 ? (
-            <p className="mp-listcap">
-              <span>{query ? 'Matches' : 'All people'}</span>
-              <span className="mp-listcap__n">{filtered.length}</span>
+          {!loading && !serverError && available.length > 0 ? (
+            <p className="mp-listcap" aria-live="polite">
+              <span>{trimmedQuery ? 'Matches' : serverSearch ? 'Suggestions' : 'All people'}</span>
+              <span className="mp-listcap__n">{available.length}</span>
             </p>
           ) : null}
 
           <div className="mp-scroll">
             {loading ? (
               <p className="mp-empty"><span>Searching people…</span></p>
-            ) : filtered.length === 0 ? (
+            ) : serverError ? (
               <div className="mp-empty">
-                <b>No people found</b>
+                <b>Could not load people</b>
+                <span>{serverError}</span>
+                <button type="button" className="btn btn-sm" onClick={() => retry?.()}>
+                  Retry
+                </button>
+              </div>
+            ) : listEmpty ? (
+              <div className="mp-empty">
+                <b>{showTypeToSearch ? 'Search for someone' : 'No people found'}</b>
                 <span>
-                  {available.length === 0
-                    ? 'Everyone active is already on this team.'
-                    : 'Try another name or email.'}
+                  {showTypeToSearch
+                    ? 'Type a name or email to find active users.'
+                    : trimmedQuery
+                      ? 'Try another name or email.'
+                      : 'Everyone active is already on this team.'}
                 </span>
               </div>
             ) : (
-              filtered.map((user) => {
+              available.map((user) => {
                 const checked = selected.includes(user.id);
                 return (
                   <label key={user.id} className={`mp-row${checked ? ' is-on' : ''}`}>

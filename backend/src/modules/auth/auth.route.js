@@ -32,8 +32,8 @@ export default function authRoutes(config, deliverReset) {
     controller.forgotPassword(deliverReset));
   router.post('/reset-password', passwordResetLimiter, validate(resetPasswordSchema), controller.resetPassword);
 
-  router.post('/impersonate/:id', auth(config), requireRole(...IMPERSONATION_INITIATOR_ROLES), validate(userIdSchema),
-    controller.impersonate(config));
+  router.post('/impersonate/:id', auth(config), requireRole(...IMPERSONATION_INITIATOR_ROLES), origin,
+    validate(userIdSchema), controller.impersonate(config));
   router.post('/stop-impersonation', auth(config), origin, controller.stopImpersonation(config));
 
   return router;
