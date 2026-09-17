@@ -6,6 +6,10 @@ export const listTeamsSchema = {
   query: Joi.object({
     project: objectId,
     status: Joi.string().valid('active', 'archived'),
+    scope: Joi.string().valid('all', 'global', 'project', 'empty'),
+    member: objectId,
+    search: Joi.string().trim().max(120),
+    q: Joi.string().trim().max(120),
     page: Joi.number().integer().min(1),
     limit: Joi.number().integer().min(1).max(100),
     sortBy: Joi.string().max(80),

@@ -17,6 +17,7 @@ export const listTicketsSchema = {
     severity: Joi.string().valid(...SEVERITIES),
     label: Joi.string().valid(...LABELS),
     module: Joi.string().trim().max(80),
+    environment: Joi.string().valid(...ENVIRONMENTS),
     assignedTo: objectId,
     team: objectId,
     q: Joi.string().trim().max(200),

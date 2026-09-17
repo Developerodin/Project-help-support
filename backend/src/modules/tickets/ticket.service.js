@@ -13,7 +13,10 @@ import {
   isPureExternalActor,
   hasActiveScopedConstraints,
   canInScope,
+  ticketSearchClause,
 } from '@pms/shared';
+
+export { ticketSearchClause };
 import { canExternalViewTicket, buildExternalTicketFilter, sanitizeExternalTicket, assertExternalCanCreateTicket } from '../access/external-auth.service.js';
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
@@ -205,6 +208,13 @@ export async function resolveTicketDoc(idOrKey, { populate = [], lean = false } 
   return ticket;
 }
 
+/** Populated fields needed for notification title/body and recipient resolution. */
+const NOTIFICATION_DISPATCH_POPULATE = ['assignedTo', 'createdBy', 'project'];
+
+export function resolveTicketDocForNotifications(idOrKey) {
+  return resolveTicketDoc(idOrKey, { populate: NOTIFICATION_DISPATCH_POPULATE });
+}
+
 export async function getTicket(actor, idOrKey, permissionContext = null) {
   const ticket = await resolveTicketDoc(idOrKey, { populate: DETAIL_POPULATE });
   await assertCanViewTicket(actor, ticket, permissionContext);
@@ -280,61 +290,6 @@ async function applyTicketVisibility(filter, actor, permissionContext = null) {
   return { $and: [filter, visibility] };
 }
 
-// "WEB-63", "web-63", "WEB63", "web 63", "63" — a project key is optional, and any
-// run of spaces/hyphens/unicode dashes between key and number is noise.
-const ID_SHAPE = /^([a-z]{2,10})?[\s\-\u2010-\u2015]*(\d{1,7})$/i;
-const MAX_WORDS = 6;
-const MIN_WORD_LENGTH = 2;
-const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-/**
- * The three fields the filter box advertises: number, title, module. Never
- * description — matching it is what made "Admin" return tickets with no
- * "Admin" anywhere the user could see.
- *
- * Returns a filter fragment to AND into the caller's filter, or null when
- * there is nothing to search for.
- *
- * ponytail: the word branch is an unanchored regex, so it is a collection
- * scan. Fine at this ticket volume; revisit around ~50k tickets, where the
- * upgrade is an Atlas Search `autocomplete` index. Do not reach for it early:
- * $search must be the first aggregation stage, which would push the RBAC
- * visibility filter to run after the match.
- */
-export function ticketSearchClause(raw) {
-  const term = String(raw ?? '').trim().replace(/\s+/g, ' ');
-  if (!term) return null;
-
-  const id = term.match(ID_SHAPE);
-  if (id) {
-    // Anchored both ends: "63" means ticket 63, not 630. With a key it is
-    // "^WEB-63$", a literal prefix the unique ticketId index can seek on.
-    const key = id[1] ? `^${escapeRegex(id[1])}-` : '^[A-Za-z0-9]+-';
-    return { ticketId: { $regex: `${key}${id[2]}$`, $options: 'i' } };
-  }
-
-  const words = term
-    .split(' ')
-    // A lone "-" typed against an en-dash title matches nothing useful, and an
-    // all-punctuation term would otherwise match every ticket.
-    .filter((word) => word.length >= MIN_WORD_LENGTH && /[a-z0-9]/i.test(word))
-    .slice(0, MAX_WORDS)
-    .map(escapeRegex);
-  if (!words.length) return null;
-
-  // Every word must appear somewhere: "administrator role" is not "anything
-  // containing role".
-  return {
-    $and: words.map((word) => ({
-      $or: [
-        { title: { $regex: word, $options: 'i' } },
-        { module: { $regex: word, $options: 'i' } },
-        { ticketId: { $regex: word, $options: 'i' } },
-      ],
-    })),
-  };
-}
-
 export async function buildTicketFilter(actor, query = {}, permissionContext = null) {
   const filter = {};
 
@@ -345,6 +300,7 @@ export async function buildTicketFilter(actor, query = {}, permissionContext = n
   if (query.severity) filter.severity = query.severity;
   if (query.label) filter.labels = query.label;
   if (query.module) filter.module = query.module;
+  if (query.environment) filter.environment = query.environment;
   if (query.assignedTo) filter.assignedTo = query.assignedTo;
   if (query.team) filter.team = query.team;
   if (query.blocked === 'true' || query.blocked === true) filter.blocked = true;

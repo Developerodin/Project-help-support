@@ -177,7 +177,7 @@ export default function TicketMetadataRail({
   const watcherAvatars = allWatchers.slice(0, 2);
   const watcherExtra = Math.max(0, allWatchers.length - 2);
   const canEditAssignment = canAssign && submitAssignment;
-  const canEditTeam = canEditAssignment && canViewTeams && !assignment?.projectTeamLocked;
+  const canEditTeam = canEditAssignment && !assignment?.projectTeamLocked;
 
   return (
     <aside

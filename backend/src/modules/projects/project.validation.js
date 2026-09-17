@@ -79,6 +79,8 @@ export const listProjectsSchema = {
     page: Joi.number().integer().min(1),
     limit: Joi.number().integer().min(1).max(100),
     sortBy: Joi.string().max(80),
+    search: Joi.string().trim().max(120).allow(''),
+    q: Joi.string().trim().max(120).allow(''),
   }),
 };
 
@@ -93,6 +95,7 @@ export const createProjectSchema = {
     defaultTester: objectId.allow(null),
     defaultTeam: objectId.allow(null),
     modules: Joi.array().items(moduleItem).default([]),
+    clientTesterIds: Joi.array().items(objectId).default([]),
   }),
 };
 

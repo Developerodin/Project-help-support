@@ -25,6 +25,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import { isTicketOverdue } from '@pms/shared';
 
 /** @type {Record<string, import('lucide-react').LucideIcon>} */
 const ICONS = {
@@ -102,7 +103,5 @@ export function priorityLabel(priority) {
 }
 
 export function isOverdue(ticket) {
-  if (!ticket?.estimatedResolutionAt) return false;
-  if (ticket.status === 'closed' || ticket.status === 'live') return false;
-  return new Date(ticket.estimatedResolutionAt).getTime() < Date.now();
+  return isTicketOverdue(ticket);
 }

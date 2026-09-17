@@ -5,7 +5,6 @@ import Link from 'next/link';
 import ConfirmDialog from '@/shared/components/confirm-dialog.jsx';
 import FormError from '@/shared/components/form-error.jsx';
 import ValidationDialog from '@/shared/components/validation-dialog.jsx';
-import { initials } from '@/shared/components/icons.jsx';
 import MemberList from '@/shared/components/teams/member-list.jsx';
 import MemberPicker from '@/shared/components/teams/member-picker.jsx';
 import { validateNewTeamDraft } from '@/shared/lib/validate-new-team.js';
@@ -85,6 +84,8 @@ export default function TeamForm({
   error = null,
   memberBusy = null,
   memberNotice = null,
+  canEdit = true,
+  teamsReturnUrl = '/teams',
   onSubmit,
   onCancel,
   onAddMembers,
@@ -105,6 +106,10 @@ export default function TeamForm({
   const [showValidation, setShowValidation] = useState(false);
   const [validationDialogOpen, setValidationDialogOpen] = useState(false);
   const [validationItems, setValidationItems] = useState([]);
+  const [confirmScopeChange, setConfirmScopeChange] = useState(null);
+  const [pendingPayload, setPendingPayload] = useState(null);
+
+  const formDisabled = busy || (isEdit && !canEdit);
 
   const members = isEdit ? (team?.members ?? []) : picked;
   const excludeMemberIds = useMemo(() => members.map((m) => m.id), [members]);
@@ -169,13 +174,28 @@ export default function TeamForm({
       project: draft.scope === 'project' ? draft.project : null,
     };
     if (!isEdit) payload.members = picked.map((m) => m.id);
+
+    const nextProject = draft.scope === 'project' ? draft.project : '';
+    const scopeChanged = isEdit && nextProject !== initialProject;
+    const linkedCount = team?.projects?.length ?? 0;
+    if (isEdit && scopeChanged && linkedCount > 0) {
+      setPendingPayload(payload);
+      setConfirmScopeChange({ linkedCount });
+      return;
+    }
     onSubmit(payload);
+  }
+
+  function confirmScopeChangeSubmit() {
+    setConfirmScopeChange(null);
+    if (pendingPayload) onSubmit(pendingPayload);
+    setPendingPayload(null);
   }
 
   return (
     <div className="team-form-page">
       <nav className="crumb" aria-label="Breadcrumb">
-        <Link href="/teams">Teams</Link>
+        <Link href={teamsReturnUrl}>Teams</Link>
         {isEdit && team?.name ? (
           <>
             <span aria-hidden="true">/</span>
@@ -219,7 +239,7 @@ export default function TeamForm({
                 onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))}
                 aria-invalid={nameInvalid}
                 aria-describedby="ntn-hint"
-                disabled={busy}
+                disabled={formDisabled}
               />
               {nameInvalid ? (
                 <p id="ntn-hint" className="field-hint invalid">{messageFor('name') ?? 'Required.'}</p>
@@ -231,7 +251,7 @@ export default function TeamForm({
               )}
             </div>
 
-            <fieldset className="team-scope" disabled={busy}>
+            <fieldset className="team-scope" disabled={formDisabled}>
               <legend className="team-form-legend">Team scope</legend>
               <div className="team-scope__options">
                 {SCOPES.map((option) => (
@@ -270,7 +290,7 @@ export default function TeamForm({
                   onChange={(e) => setDraft((prev) => ({ ...prev, project: e.target.value }))}
                   aria-invalid={projectInvalid}
                   aria-describedby="ntp-hint"
-                  disabled={busy || projectsLoading}
+                  disabled={formDisabled || projectsLoading}
                 >
                   <option value="">
                     {projectsLoading ? 'Loading projects…' : 'Select project'}
@@ -296,14 +316,17 @@ export default function TeamForm({
                   </p>
                 </div>
                 <span className="spacer" />
+                {canEdit || !isEdit ? (
                 <MemberPicker
                   variant="action"
                   triggerLabel="Add members"
                   serverSearch
                   excludeMemberIds={excludeMemberIds}
                   busy={memberBusy === 'add'}
+                  disabled={formDisabled}
                   onConfirm={handleAdd}
                 />
+                ) : null}
               </div>
 
               {memberNotice ? (
@@ -325,10 +348,10 @@ export default function TeamForm({
               ) : (
                 <MemberList
                   members={members}
-                  onRemove={handleRemove}
+                  onRemove={isEdit && !canEdit ? undefined : handleRemove}
                   removeLabel={isEdit ? 'Remove' : '×'}
                   removingId={memberBusy}
-                  disabled={busy}
+                  disabled={formDisabled}
                 />
               )}
             </section>
@@ -342,7 +365,7 @@ export default function TeamForm({
             <button type="button" className="btn" onClick={onCancel} disabled={busy}>
               Cancel
             </button>
-            <button type="submit" className="btn btn-primary" disabled={busy}>
+            <button type="submit" className="btn btn-primary" disabled={formDisabled}>
               {busy ? copy.submitting : copy.submit}
             </button>
           </footer>
@@ -376,13 +399,10 @@ export default function TeamForm({
                     </dd>
                   </div>
                 </dl>
-                {team?.lead ? (
+                {team?.lead && canEdit ? (
                   <div className="team-context__section">
                     <h4>Lead</h4>
-                    <p className="team-context__person">
-                      <span className="avatar sm">{initials(team.lead.name)}</span>
-                      {team.lead.name}
-                    </p>
+                    <p className="team-context__person meta">{team.lead.name}</p>
                   </div>
                 ) : null}
                 <div className="team-context__section">
@@ -438,6 +458,21 @@ export default function TeamForm({
           {validation.liveMessage}
         </div>
       ) : null}
+
+      <ConfirmDialog
+        open={Boolean(confirmScopeChange)}
+        title="Change team scope?"
+        message={confirmScopeChange
+          ? `This team is linked to ${confirmScopeChange.linkedCount} active project${confirmScopeChange.linkedCount === 1 ? '' : 's'}. Changing scope affects where the team can be assigned on new work.`
+          : ''}
+        confirmLabel="Change scope"
+        cancelLabel="Cancel"
+        onConfirm={confirmScopeChangeSubmit}
+        onCancel={() => {
+          setConfirmScopeChange(null);
+          setPendingPayload(null);
+        }}
+      />
 
       <ConfirmDialog
         open={Boolean(confirmRemove)}

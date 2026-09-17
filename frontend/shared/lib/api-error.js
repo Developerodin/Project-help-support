@@ -9,7 +9,7 @@ function readMessage(error) {
 function fallbackMessage({ code, status, message }) {
   if (code === 'ABORTED') return message || 'Request aborted';
   if (code === 'NETWORK_ERROR' || status === 0) {
-    return 'Cannot reach the server. Check that the backend is running and CORS allows this frontend URL.';
+    return 'Cannot reach the server. From the repo root run npm run dev:backend (port 4000), then confirm NEXT_PUBLIC_API_URL and CORS match this app.';
   }
   return message || (status ? `Request failed (${status})` : 'Request failed');
 }

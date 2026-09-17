@@ -224,6 +224,7 @@ export function canAccessProjectsModule(user, scopeOrContext = null) {
   return can(user, 'clients.view', scopeOrContext) && can(user, 'projects.view', scopeOrContext);
 }
 
+/** Matches API project create/update gates (scoped `projects.manage`; not `clients.manage`). */
 export function canManageProjectsModule(user, scopeOrContext = null) {
-  return can(user, 'clients.manage', scopeOrContext) && can(user, 'projects.manage', scopeOrContext);
+  return can(user, 'projects.manage', scopeOrContext);
 }

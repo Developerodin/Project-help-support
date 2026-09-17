@@ -8,7 +8,7 @@ import {
   resolveProjectModules,
 } from '@pms/shared';
 import { createTicket, uploadAttachments } from '@/shared/api/tickets.js';
-import { listProjects } from '@/shared/api/projects.js';
+import { fetchAllProjects } from '@/shared/lib/fetch-all-projects.js';
 import { useProject } from '@/shared/contexts/project-context.jsx';
 import FormError from '@/shared/components/form-error.jsx';
 import ValidationDialog from '@/shared/components/validation-dialog.jsx';
@@ -57,7 +57,7 @@ export default function NewTicketPage() {
   const [attachmentErrors, setAttachmentErrors] = useState([]);
 
   useEffect(() => {
-    listProjects()
+    fetchAllProjects({ status: 'active' })
       .then((p) => {
         const active = p.results.filter((proj) => proj.status === 'active');
         setProjects(active);

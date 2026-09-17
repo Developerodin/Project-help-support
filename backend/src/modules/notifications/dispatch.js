@@ -94,7 +94,7 @@ async function fanOut(eventKey, ticket, actor, context, config, deps, { hideFrom
   const branding = ticketBranding(emailTicket, config);
   const emailContext = branding ? { ...context, ...branding } : context;
 
-  await createInAppNotifications(eventKey, ticket, visible, config);
+  await createInAppNotifications(eventKey, ticket, visible, config, context);
 
   // Context is built ONCE per event and would otherwise be shared verbatim
   // across every recipient's email. Split it here, at send time, rather than

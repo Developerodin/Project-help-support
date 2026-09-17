@@ -1,18 +1,30 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { can } from '@pms/shared';
 import { getTeam, patchTeam, updateMembers } from '@/shared/api/teams.js';
-import { listProjects } from '@/shared/api/projects.js';
+import { fetchAllProjects } from '@/shared/lib/fetch-all-projects.js';
 import FormError from '@/shared/components/form-error.jsx';
 import TeamForm from '@/shared/components/teams/team-form.jsx';
+import { useAuth } from '@/shared/contexts/auth-context.jsx';
+import { usePermissionContext } from '@/shared/hooks/use-permission-context.js';
+import { permissionContextForUi } from '@/shared/lib/permission-context-ui.js';
 import { normalizeApiError } from '@/shared/lib/api-error.js';
+import { parseTeamsReturnUrl, TEAMS_RETURN_PARAM } from '@/shared/lib/teams-return-url.js';
 import { showToast } from '@/shared/lib/toast.js';
 
 export default function EditTeamPage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const teamId = params.id;
+  const teamsReturnUrl = parseTeamsReturnUrl(searchParams.get(TEAMS_RETURN_PARAM));
+  const { user } = useAuth();
+  const { permissionContext } = usePermissionContext();
+  const permCtx = permissionContextForUi(permissionContext);
+  const canEdit = Boolean(user && can(user, 'teams.edit', permCtx ?? undefined));
+  const canView = Boolean(user && can(user, 'teams.view', permCtx ?? undefined));
 
   const [team, setTeam] = useState(null);
   const [projects, setProjects] = useState([]);
@@ -24,16 +36,20 @@ export default function EditTeamPage() {
   const [memberNotice, setMemberNotice] = useState(null);
 
   useEffect(() => {
+    if (!canView) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     getTeam(teamId)
       .then(setTeam)
       .catch(setError)
       .finally(() => setLoading(false));
-  }, [teamId]);
+  }, [teamId, canView]);
 
   useEffect(() => {
-    listProjects()
-      .then((p) => setProjects(p.results.filter((proj) => proj.status === 'active')))
+    fetchAllProjects({ status: 'active' })
+      .then((p) => setProjects(p.results))
       .catch(() => setProjectsError(true));
   }, []);
 
@@ -85,7 +101,7 @@ export default function EditTeamPage() {
     try {
       await patchTeam(teamId, payload);
       showToast('Team updated');
-      router.push('/teams');
+      router.push(teamsReturnUrl);
     } catch (err) {
       setError(err);
     } finally {
@@ -97,6 +113,17 @@ export default function EditTeamPage() {
     return (
       <div className="team-form-page">
         <p className="loading-skeleton meta" role="status">Loading team…</p>
+      </div>
+    );
+  }
+
+  if (!canView) {
+    return (
+      <div className="team-form-page">
+        <div className="empty-state">
+          <h3>Permission required</h3>
+          <p>You need teams.view to open team settings.</p>
+        </div>
       </div>
     );
   }
@@ -120,10 +147,12 @@ export default function EditTeamPage() {
       error={error}
       memberBusy={memberBusy}
       memberNotice={memberNotice}
+      canEdit={canEdit}
+      teamsReturnUrl={teamsReturnUrl}
       onSubmit={handleSubmit}
-      onCancel={() => router.back()}
-      onAddMembers={handleAddMembers}
-      onRemoveMember={handleRemoveMember}
+      onCancel={() => router.push(teamsReturnUrl)}
+      onAddMembers={canEdit ? handleAddMembers : undefined}
+      onRemoveMember={canEdit ? handleRemoveMember : undefined}
     />
   );
 }

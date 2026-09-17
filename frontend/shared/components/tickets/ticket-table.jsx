@@ -1,15 +1,10 @@
 'use client';
 
-import { STAGES, stageIndex, stageLabel, sortAriaValue } from '@pms/shared';
-import { initials, isOverdue } from '../icons.jsx';
-
-function stageAgeDays(ticket) {
-  const entered = ticket.currentStageEnteredAt
-    || ticket.stageHistory?.[ticket.stageHistory.length - 1]?.at
-    || ticket.updatedAt
-    || ticket.createdAt;
-  return Math.max(0, Math.floor((Date.now() - new Date(entered).getTime()) / 86400000));
-}
+import {
+  STAGES, stageIndex, stageLabel, sortAriaValue,
+  formatTicketDisplayDate, ticketStageAgeDays, isTicketOverdue,
+} from '@pms/shared';
+import { initials } from '../icons.jsx';
 
 function Rail({ ticket }) {
   const current = stageIndex(ticket.status);
@@ -71,7 +66,7 @@ export default function TicketTable({ tickets, onOpen, sort, onSort, busy = fals
         </thead>
         <tbody>
           {tickets.map((ticket) => {
-            const late = isOverdue(ticket);
+            const late = isTicketOverdue(ticket);
             const rowLabel = `Open ticket ${ticket.ticketId}: ${ticket.title}`;
             const ownerName = ticket.assignedTo?.name;
             return (
@@ -111,10 +106,14 @@ export default function TicketTable({ tickets, onOpen, sort, onSort, busy = fals
                     {ownerName ? initials(ownerName) : '—'}
                   </span>
                 </td>
-                <td className="t-num">{stageAgeDays(ticket)}d</td>
+                <td className="t-num">{ticketStageAgeDays(ticket)}d</td>
                 <td className={`t-num${late ? ' late' : ''}`}>
                   {ticket.estimatedResolutionAt
-                    ? new Date(ticket.estimatedResolutionAt).toLocaleDateString()
+                    ? (
+                      <span title={`Estimated resolution: ${formatTicketDisplayDate(ticket.estimatedResolutionAt)}`}>
+                        {formatTicketDisplayDate(ticket.estimatedResolutionAt)}
+                      </span>
+                    )
                     : <span className="dash">—</span>}
                 </td>
               </tr>

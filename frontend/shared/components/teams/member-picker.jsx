@@ -33,6 +33,7 @@ export default function MemberPicker({
   serverSearch = false,
   loading: loadingProp = false,
   busy = false,
+  disabled = false,
   onConfirm,
   title = 'Add team members',
   subtitle = 'Select people to add to this team.',
@@ -125,7 +126,7 @@ export default function MemberPicker({
         className={variant === 'menu' ? 'btn btn-sm' : 'btn member-picker__trigger'}
         aria-haspopup="listbox"
         aria-expanded={open}
-        disabled={busy || (!serverSearch && available.length === 0 && !loading)}
+        disabled={busy || disabled || (!serverSearch && available.length === 0 && !loading)}
         onClick={() => setOpen((v) => !v)}
       >
         {busy ? (
@@ -145,8 +146,9 @@ export default function MemberPicker({
       {open && (
         <div
           className={`member-picker${variant === 'action' ? ' member-picker--right' : ''}`}
-          role="listbox"
-          aria-label="Select members to add"
+          role="dialog"
+          aria-modal="true"
+          aria-label={title}
         >
           <div className="mp-head">
             <div className="mp-head__text">
@@ -202,7 +204,7 @@ export default function MemberPicker({
             </p>
           ) : null}
 
-          <div className="mp-scroll">
+          <div className="mp-scroll" role="listbox" aria-label="People to add">
             {loading ? (
               <p className="mp-empty"><span>Searching people…</span></p>
             ) : serverError ? (

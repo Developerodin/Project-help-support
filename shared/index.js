@@ -11,4 +11,5 @@ export * from './ui-qa.js';
 export * from './external-ticket-status.js';
 export * from './ticket-dates.js';
 export * from './ticket-preferences.js';
+export * from './ticket-search.js';
 export * from './permission-matrix-ui.js';

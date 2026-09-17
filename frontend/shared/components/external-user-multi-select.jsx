@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { initials } from '@/shared/components/icons.jsx';
+import { useActiveUserSearch } from '@/shared/hooks/use-active-user-search.js';
 
 function SearchGlyph() {
   return (
@@ -26,7 +27,9 @@ export default function ExternalUserMultiSelect({
   selectedIds = [],
   onChange,
   disabled = false,
-  loading = false,
+  loading: loadingProp = false,
+  serverSearch = false,
+  userRole = null,
   emptyMessage = 'No users available. Invite users from People.',
   lockedIds = [],
   lockedBadge = 'Company-wide',
@@ -38,16 +41,35 @@ export default function ExternalUserMultiSelect({
   const wrapRef = useRef(null);
   const inputRef = useRef(null);
   const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState('');
+  const [localSearch, setLocalSearch] = useState('');
   const [expanded, setExpanded] = useState(false);
 
   const lockedSet = useMemo(() => new Set(lockedIds), [lockedIds]);
 
+  const {
+    query: serverQuery,
+    setQuery: setServerQuery,
+    available: serverUsers,
+    loading: serverLoading,
+    error: serverError,
+    retry: retryServerSearch,
+  } = useActiveUserSearch({
+    enabled: serverSearch && open,
+    role: userRole,
+  });
+
+  const search = serverSearch ? serverQuery : localSearch;
+  const setSearch = serverSearch ? setServerQuery : setLocalSearch;
+
+  const usersList = serverSearch ? serverUsers : users;
+  const loading = serverSearch ? serverLoading : loadingProp;
+
   const userMap = useMemo(() => {
     const map = new Map();
+    usersList.forEach((user) => map.set(user.id, user));
     users.forEach((user) => map.set(user.id, user));
     return map;
-  }, [users]);
+  }, [users, usersList]);
 
   const picked = useMemo(
     () => selectedIds
@@ -58,12 +80,13 @@ export default function ExternalUserMultiSelect({
 
   const query = search.trim().toLowerCase();
   const filtered = useMemo(() => {
-    if (!query) return users;
-    return users.filter(
+    if (serverSearch) return usersList;
+    if (!query) return usersList;
+    return usersList.filter(
       (user) => displayName(user).toLowerCase().includes(query)
         || user.email?.toLowerCase().includes(query),
     );
-  }, [users, query]);
+  }, [serverSearch, usersList, query]);
 
   const visibleChips = expanded ? picked : picked.slice(0, maxVisibleChips);
   const hiddenCount = expanded ? 0 : Math.max(0, picked.length - maxVisibleChips);
@@ -154,9 +177,18 @@ export default function ExternalUserMultiSelect({
         </ul>
       ) : null}
 
+      {serverError ? (
+        <div className="banner banner-sm" role="alert">
+          <div className="banner-body">{serverError}</div>
+          <button type="button" className="btn btn-sm" onClick={retryServerSearch}>
+            Retry
+          </button>
+        </div>
+      ) : null}
+
       {loading ? (
         <p className="external-user-ms__empty">Loading users…</p>
-      ) : users.length === 0 ? (
+      ) : !serverSearch && usersList.length === 0 ? (
         <p className="external-user-ms__empty">{emptyMessage}</p>
       ) : (
         <div className="external-user-ms__search">

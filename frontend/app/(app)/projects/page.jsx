@@ -1,8 +1,9 @@
 ﻿'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { can, canAccessProjectsModule } from '@pms/shared';
+import { usePathname } from 'next/navigation';
+import { can, canAccessProjectsModule, canManageProjectsModule } from '@pms/shared';
 import { listClients, patchClient } from '@/shared/api/clients.js';
 import { listProjects, patchProject } from '@/shared/api/projects.js';
 import CompanyLogo from '@/shared/components/companies/company-logo.jsx';
@@ -13,10 +14,28 @@ import FormError from '@/shared/components/form-error.jsx';
 import Icon from '@/shared/components/icons.jsx';
 import AppLoader from '@/shared/components/app-loader.jsx';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
+import { usePermissionContext } from '@/shared/hooks/use-permission-context.js';
+import { permissionContextForUi } from '@/shared/lib/permission-context-ui.js';
 import { normalizeApiError } from '@/shared/lib/api-error.js';
 import { showToast } from '@/shared/lib/toast.js';
+import { useDebouncedValue } from '@/shared/lib/use-debounced-value.js';
+import { projectsListUrlFromSearch, withProjectsReturn } from '@/shared/lib/projects-return-url.js';
+import { useHistorySearch } from '@/shared/lib/use-history-search.js';
 
 const COMPANY_EXPANDED_STORAGE_KEY = 'pms-companies-expanded';
+const PROJECT_SEARCH_DEBOUNCE_MS = 300;
+const PROJECT_PAGE_SIZES = [20, 50, 100];
+const DEFAULT_PROJECT_LIMIT = 20;
+
+function projectListQueryFromSearch(searchString) {
+  const params = new URLSearchParams(searchString);
+  const page = Math.max(1, Number(params.get('page')) || 1);
+  const limit = PROJECT_PAGE_SIZES.includes(Number(params.get('limit')))
+    ? Number(params.get('limit'))
+    : DEFAULT_PROJECT_LIMIT;
+  const urlSearch = params.get('search') || '';
+  return { page, limit, urlSearch };
+}
 
 function isForbiddenError(error) {
   return normalizeApiError(error)?.status === 403;
@@ -82,6 +101,7 @@ function ProjectPanel({
   canEdit,
   canDelete,
   onDelete,
+  listReturnUrl,
 }) {
   return (
     <section className="panel project-panel">
@@ -100,15 +120,20 @@ function ProjectPanel({
             <div className="project-panel-actions">
               {canEdit ? (
                 <Link
-                  href={`/projects/${project.id}/edit`}
+                  href={withProjectsReturn(`/projects/${project.id}/edit`, listReturnUrl)}
                   className="btn btn-sm"
                 >
                   Edit
                 </Link>
               ) : null}
               {canDelete ? (
-                <button type="button" className="btn btn-sm btn-danger" onClick={onDelete}>
-                  Delete
+                <button
+                  type="button"
+                  className="btn btn-sm btn-danger"
+                  aria-label={`Archive ${project.key}`}
+                  onClick={onDelete}
+                >
+                  Archive
                 </button>
               ) : null}
             </div>
@@ -121,14 +146,57 @@ function ProjectPanel({
 
 export default function ProjectsPage() {
   const { user, loading: authLoading } = useAuth();
-  const canViewProjects = Boolean(user && canAccessProjectsModule(user));
-  const canManageClients = Boolean(user && can(user, 'clients.manage'));
-  const canManageProjects = Boolean(user && can(user, 'projects.manage'));
+  const { permissionContext } = usePermissionContext();
+  const permCtx = permissionContextForUi(permissionContext);
+  const pathname = usePathname();
+  const searchString = useHistorySearch();
+  const { page, limit, urlSearch } = useMemo(
+    () => projectListQueryFromSearch(searchString),
+    [searchString],
+  );
+  const listReturnUrl = useMemo(
+    () => projectsListUrlFromSearch(searchString),
+    [searchString],
+  );
+
+  const canViewProjects = Boolean(user && canAccessProjectsModule(user, permCtx ?? undefined));
+  const canManageClients = Boolean(user && can(user, 'clients.manage', permCtx ?? undefined));
+  const canManageProjects = Boolean(user && canManageProjectsModule(user, permCtx ?? undefined));
+
+  const [searchInput, setSearchInput] = useState(urlSearch);
+  const debouncedSearch = useDebouncedValue(searchInput, PROJECT_SEARCH_DEBOUNCE_MS);
+
+  useEffect(() => {
+    setSearchInput(urlSearch);
+  }, [urlSearch]);
+
+  const writeProjectSearch = useCallback((next) => {
+    const params = new URLSearchParams(window.location.search);
+    if (next.search) params.set('search', next.search);
+    else params.delete('search');
+    if (next.page) params.set('page', String(next.page));
+    else params.delete('page');
+    if (next.limit) params.set('limit', String(next.limit));
+    const qs = params.toString();
+    const url = qs ? `${pathname}?${qs}` : pathname;
+    window.history.replaceState(null, '', url);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (debouncedSearch === urlSearch) return;
+    writeProjectSearch({ search: debouncedSearch, page: 1 });
+  }, [debouncedSearch, urlSearch, writeProjectSearch]);
 
   const [companies, setCompanies] = useState([]);
   const [projects, setProjects] = useState([]);
+  const [projectPage, setProjectPage] = useState({
+    totalResults: 0,
+    totalPages: 1,
+    resultsTruncated: false,
+  });
   const [companyExpanded, setCompanyExpanded] = useState({});
   const [loading, setLoading] = useState(true);
+  const hasLoadedOnce = useRef(false);
   const [error, setError] = useState(null);
   const [clientsAccessDenied, setClientsAccessDenied] = useState(false);
   const [loadForbidden, setLoadForbidden] = useState(false);
@@ -157,10 +225,15 @@ export default function ProjectsPage() {
       }));
   }, [companies, projects]);
 
-  const applyLoadedData = useCallback((clientPage, projectPage) => {
-    const mergedCompanies = mergeCompaniesFromProjects(clientPage, projectPage);
+  const applyLoadedData = useCallback((clientPage, projectListPage) => {
+    const mergedCompanies = mergeCompaniesFromProjects(clientPage, projectListPage);
     setCompanies(mergedCompanies);
-    setProjects(projectPage.results ?? []);
+    setProjects(projectListPage.results ?? []);
+    setProjectPage({
+      totalResults: projectListPage.totalResults ?? 0,
+      totalPages: projectListPage.totalPages ?? 1,
+      resultsTruncated: Boolean(projectListPage.resultsTruncated),
+    });
     setCompanyExpanded((prev) => mergeCompanyExpandedState(
       { ...readStoredExpanded(COMPANY_EXPANDED_STORAGE_KEY), ...prev },
       mergedCompanies.map((c) => c.id),
@@ -177,11 +250,15 @@ export default function ProjectsPage() {
     setNetworkError(null);
 
     try {
-      const [clientPage, projectPage] = await Promise.all([
+      const [clientPage, projectListPage] = await Promise.all([
         fetchClientsForProjects(() => setClientsAccessDenied(true)),
-        listProjects(),
+        listProjects({
+          page,
+          limit,
+          search: debouncedSearch || undefined,
+        }),
       ]);
-      applyLoadedData(clientPage, projectPage);
+      applyLoadedData(clientPage, projectListPage);
     } catch (err) {
       if (isForbiddenError(err)) {
         setLoadForbidden(true);
@@ -193,7 +270,7 @@ export default function ProjectsPage() {
     } finally {
       setLoading(false);
     }
-  }, [applyLoadedData, canViewProjects, user]);
+  }, [applyLoadedData, canViewProjects, debouncedSearch, limit, page, user]);
 
   useEffect(() => {
     if (authLoading || !user) return undefined;
@@ -215,7 +292,11 @@ export default function ProjectsPage() {
           fetchClientsForProjects(() => {
             if (!cancelled) setClientsAccessDenied(true);
           }),
-          listProjects(),
+          listProjects({
+            page,
+            limit,
+            search: debouncedSearch || undefined,
+          }),
         ]);
         if (!cancelled) applyLoadedData(clientPage, projectPage);
       } catch (err) {
@@ -228,12 +309,15 @@ export default function ProjectsPage() {
           setError(err);
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          hasLoadedOnce.current = true;
+        }
       }
     })();
 
     return () => { cancelled = true; };
-  }, [applyLoadedData, authLoading, canViewProjects, user]);
+  }, [applyLoadedData, authLoading, canViewProjects, debouncedSearch, limit, page, user]);
 
   const toggleCompanyExpanded = (companyId) => {
     setCompanyExpanded((prev) => {
@@ -260,11 +344,11 @@ export default function ProjectsPage() {
     setError(null);
     try {
       await patchClient(confirmDeleteCompany.id, { status: 'archived' });
-      showToast(`${confirmDeleteCompany.name} deleted`);
+      showToast(`${confirmDeleteCompany.name} archived`);
       setConfirmDeleteCompany(null);
       await reload();
     } catch (err) {
-      const message = normalizeApiError(err)?.message || 'Could not delete company';
+      const message = normalizeApiError(err)?.message || 'Could not archive company';
       setError(err);
       showToast(message);
     } finally {
@@ -278,11 +362,11 @@ export default function ProjectsPage() {
     setError(null);
     try {
       await patchProject(confirmDeleteProject.id, { status: 'archived' });
-      showToast(`${confirmDeleteProject.key} deleted`);
+      showToast(`${confirmDeleteProject.key} archived`);
       setConfirmDeleteProject(null);
       await reload();
     } catch (err) {
-      const message = normalizeApiError(err)?.message || 'Could not delete project';
+      const message = normalizeApiError(err)?.message || 'Could not archive project';
       setError(err);
       showToast(message);
     } finally {
@@ -290,7 +374,8 @@ export default function ProjectsPage() {
     }
   }
 
-  const pageBusy = authLoading || (canViewProjects && loading);
+  const pageBusy = authLoading || (canViewProjects && loading && !hasLoadedOnce.current);
+  const listRefreshing = canViewProjects && loading && hasLoadedOnce.current;
 
   return (
     <>
@@ -300,7 +385,7 @@ export default function ProjectsPage() {
           <p className="sub">Companies and projects. Open Edit to manage team, testers, and modules.</p>
         </div>
         <span className="spacer" />
-        {canViewProjects ? (
+        {canManageClients ? (
           <button type="button" className="btn btn-primary" onClick={() => setNewCompanyOpen(true)}>
             <Icon name="plus" size={12} /> New company
           </button>
@@ -336,19 +421,45 @@ export default function ProjectsPage() {
         </div>
       ) : (
         <>
+          <div className="projects-toolbar">
+            <label className="projects-search">
+              <span className="sr">Search projects</span>
+              <input
+                type="search"
+                className="menusearch projects-search__input"
+                placeholder="Search by name or key…"
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
+                aria-label="Search projects"
+                aria-busy={listRefreshing || undefined}
+              />
+            </label>
+          </div>
+
+          {projectPage.resultsTruncated ? (
+            <div className="banner" role="status">
+              <div className="banner-body">
+                More projects match your access than are shown on this page. Use search or pagination to find them.
+              </div>
+            </div>
+          ) : null}
+
           {clientsAccessDenied ? (
             <p className="meta" role="status">
               Company list is unavailable. Projects are grouped using company data from each project.
             </p>
           ) : null}
 
-          {companies.length === 0 && projects.length === 0 ? (
+          <div aria-busy={listRefreshing || undefined}>
+          {companies.length === 0 && projects.length === 0 && !listRefreshing ? (
             <div className="empty-state">
               <h3>No companies yet</h3>
               <p>Create a company, then add projects under it.</p>
-              <button type="button" className="btn btn-primary" onClick={() => setNewCompanyOpen(true)}>
-                New company
-              </button>
+              {canManageClients ? (
+                <button type="button" className="btn btn-primary" onClick={() => setNewCompanyOpen(true)}>
+                  New company
+                </button>
+              ) : null}
             </div>
           ) : (
             companyGroups.map(({ company, projects: companyProjects }) => {
@@ -381,28 +492,33 @@ export default function ProjectsPage() {
                         </span>
                       </button>
                       <div className="company-group-actions">
-                        <button
-                          type="button"
-                          className="btn btn-sm"
-                          onClick={() => setEditCompany(company)}
-                        >
-                          Edit
-                        </button>
+                        {canManageClients ? (
+                          <button
+                            type="button"
+                            className="btn btn-sm"
+                            onClick={() => setEditCompany(company)}
+                          >
+                            Edit
+                          </button>
+                        ) : null}
                         {canManageClients ? (
                           <button
                             type="button"
                             className="btn btn-sm btn-danger"
+                            aria-label={`Archive ${company.name}`}
                             onClick={() => setConfirmDeleteCompany(company)}
                           >
-                            Delete
+                            Archive
                           </button>
                         ) : null}
-                        <Link
-                          href={`/projects/new?clientId=${company.id}`}
-                          className="btn btn-sm btn-primary"
-                        >
-                          <Icon name="plus" size={12} /> Add project
-                        </Link>
+                        {canManageProjects ? (
+                          <Link
+                            href={withProjectsReturn(`/projects/new?clientId=${company.id}`, listReturnUrl)}
+                            className="btn btn-sm btn-primary"
+                          >
+                            <Icon name="plus" size={12} /> Add project
+                          </Link>
+                        ) : null}
                       </div>
                     </div>
                   </header>
@@ -411,7 +527,9 @@ export default function ProjectsPage() {
                     {companyProjects.length === 0 ? (
                       <p className="meta company-group-empty">
                         No projects yet.{' '}
-                        <Link href={`/projects/new?clientId=${company.id}`}>Add a project</Link>
+                        <Link href={withProjectsReturn(`/projects/new?clientId=${company.id}`, listReturnUrl)}>
+                          Add a project
+                        </Link>
                       </p>
                     ) : (
                       companyProjects.map((project) => (
@@ -420,6 +538,7 @@ export default function ProjectsPage() {
                           project={project}
                           canEdit={canManageProjects}
                           canDelete={canManageProjects}
+                          listReturnUrl={listReturnUrl}
                           onDelete={() => setConfirmDeleteProject(project)}
                         />
                       ))
@@ -429,6 +548,53 @@ export default function ProjectsPage() {
               );
             })
           )}
+          </div>
+
+          <nav className="pager" aria-label="Projects pagination">
+            <div className="pager__meta" aria-live="polite" aria-atomic="true">
+              <span className="of">{projectPage.totalResults} projects</span>
+              {(projectPage.totalPages || 1) > 1 ? (
+                <span className="of">Page {page} of {projectPage.totalPages}</span>
+              ) : null}
+            </div>
+            <div className="pager__controls">
+              <label className="pagesize">
+                <span className="pagesize__label">Rows</span>
+                <select
+                  aria-label="Projects per page"
+                  value={limit}
+                  disabled={loading}
+                  onChange={(event) => {
+                    writeProjectSearch({
+                      search: urlSearch,
+                      page: 1,
+                      limit: Number(event.target.value),
+                    });
+                  }}
+                >
+                  {PROJECT_PAGE_SIZES.map((size) => (
+                    <option key={size} value={size}>{size} / page</option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                className="pagebtn"
+                disabled={loading || page <= 1}
+                onClick={() => writeProjectSearch({ search: urlSearch, page: page - 1, limit })}
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                className="pagebtn"
+                disabled={loading || page >= (projectPage.totalPages || 1)}
+                onClick={() => writeProjectSearch({ search: urlSearch, page: page + 1, limit })}
+              >
+                Next
+              </button>
+            </div>
+          </nav>
         </>
       )}
 
@@ -447,11 +613,11 @@ export default function ProjectsPage() {
 
       <ConfirmDialog
         open={Boolean(confirmDeleteCompany)}
-        title={confirmDeleteCompany ? `Delete ${confirmDeleteCompany.name}?` : ''}
+        title={confirmDeleteCompany ? `Archive ${confirmDeleteCompany.name}?` : ''}
         message={confirmDeleteCompany
           ? 'This archives the company and hides it from active listings. Its projects are also hidden from active project lists.'
           : ''}
-        confirmLabel="Delete"
+        confirmLabel="Archive"
         cancelLabel="Cancel"
         danger
         busy={deleteCompanyBusy}
@@ -461,11 +627,11 @@ export default function ProjectsPage() {
 
       <ConfirmDialog
         open={Boolean(confirmDeleteProject)}
-        title={confirmDeleteProject ? `Delete ${confirmDeleteProject.key} — ${confirmDeleteProject.name}?` : ''}
+        title={confirmDeleteProject ? `Archive ${confirmDeleteProject.key} — ${confirmDeleteProject.name}?` : ''}
         message={confirmDeleteProject
           ? 'This archives the project. Tickets already filed keep their history.'
           : ''}
-        confirmLabel="Delete"
+        confirmLabel="Archive"
         cancelLabel="Cancel"
         danger
         busy={deleteProjectBusy}

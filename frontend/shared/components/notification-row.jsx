@@ -1,0 +1,88 @@
+'use client';
+
+import Link from 'next/link';
+import { notificationEventLabel } from '@pms/shared';
+import Icon from '@/shared/components/icons.jsx';
+import {
+  formatRelativeTime,
+  notificationEffectiveEvent,
+  notificationEventChipClass,
+  notificationEventIconName,
+  notificationHref,
+  notificationPrimaryLine,
+} from '@/shared/lib/notification-utils.js';
+
+/**
+ * Shared notification row for bell dropdown and inbox.
+ * @param {'link'|'static'} as - link wraps primary in Next Link (bell); static uses plain heading (inbox group child)
+ */
+export default function NotificationRow({
+  item,
+  as = 'link',
+  className = '',
+  omitTicketKey = false,
+  bodyLines = 1,
+  onNavigate,
+  onMarkRead,
+  showMarkRead = false,
+}) {
+  const unread = !item.readAt;
+  const href = notificationHref(item.link);
+  const primary = notificationPrimaryLine(item, { omitTicketKey });
+  const effectiveEvent = notificationEffectiveEvent(item);
+  const body = item.body?.trim() ?? '';
+
+  const rowClass = [
+    'notif-row',
+    unread ? 'unread' : 'read',
+    bodyLines === 1 ? 'notif-row--one-line-body' : '',
+    className,
+  ].filter(Boolean).join(' ');
+
+  const titleInner = (
+    <span className="notif-row__title-text">{primary}</span>
+  );
+
+  const titleNode = as === 'link' ? (
+    <Link
+      href={href}
+      className="notif-row__title"
+      onClick={onNavigate ? (event) => onNavigate(event, item) : undefined}
+    >
+      {titleInner}
+    </Link>
+  ) : (
+    <p className="notif-row__title notif-row__title--static">{titleInner}</p>
+  );
+
+  return (
+    <div className={rowClass}>
+      <div className="notif-row__main">
+        {unread ? <span className="notif-row__dot" aria-hidden="true" /> : null}
+        {titleNode}
+        {body ? (
+          <p className="notif-row__body" title={body}>{body}</p>
+        ) : null}
+        <p className="notif-row__meta meta">
+          <span
+            className={`chip chip-sm notif-row__event ${notificationEventChipClass(effectiveEvent)}`}
+          >
+            <Icon name={notificationEventIconName(effectiveEvent)} size={11} aria-hidden="true" />
+            {notificationEventLabel(effectiveEvent)}
+          </span>
+          <span className="notif-row__meta-sep" aria-hidden="true"> · </span>
+          <time dateTime={item.createdAt}>{formatRelativeTime(item.createdAt)}</time>
+        </p>
+      </div>
+      {showMarkRead && unread && onMarkRead ? (
+        <button
+          type="button"
+          className="btn btn-sm btn-ghost notif-row__mark-read"
+          onClick={() => onMarkRead(item.id)}
+        >
+          Mark read
+        </button>
+      ) : null}
+    </div>
+  );
+}

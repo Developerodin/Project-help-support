@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
+import { useHistorySearch } from '@/shared/lib/use-history-search.js';
 import {
   LANES,
   laneOf,
@@ -48,17 +49,23 @@ function BoardPage() {
   } = useTicketPreferences();
   const [tickets, setTickets] = useState([]);
   const [boardTruncated, setBoardTruncated] = useState(false);
+  const [boardTotalResults, setBoardTotalResults] = useState(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
-  const [openTicketId, setOpenTicketId] = useState(null);
+  const searchString = useHistorySearch();
+  const openTicketId = ticketFromSearch(searchString);
   const [error, setError] = useState(null);
   const [readOnlyNoticeDismissed, setReadOnlyNoticeDismissed] = useState(false);
   const loadController = useRef(null);
   const normalizedBoardMineUrl = useRef(false);
 
-  const writeSearch = useCallback((nextSearch) => {
-    window.history.replaceState(null, '', `${pathname}${nextSearch}`);
+  const writeSearch = useCallback((nextSearch, { push = false } = {}) => {
+    const url = `${pathname}${nextSearch}`;
+    if (push) window.history.pushState(null, '', url);
+    else window.history.replaceState(null, '', url);
   }, [pathname]);
+
+  const drawerOpenedFrom = useRef(null);
 
   useEffect(() => {
     if (!ready || normalizedBoardMineUrl.current) return;
@@ -102,17 +109,21 @@ function BoardPage() {
     const loadAll = async () => {
       const all = [];
       let truncated = false;
+      let totalResults = null;
       const baseQuery = buildTicketListQuery({
         preferences,
         projectId: activeProjectId,
         scopeOverride: savedBoardMine ? 'assigned' : preferences.filters.scope,
       });
       for (let p = 1; p <= BOARD_PAGE_CAP; p += 1) {
+        if (controller.signal.aborted) return null;
         // eslint-disable-next-line no-await-in-loop -- page N+1 needs N's totalPages
         const res = await listTickets(
           { ...baseQuery, page: p, limit: BOARD_LIMIT },
           { signal: controller.signal },
         );
+        if (controller.signal.aborted) return null;
+        if (totalResults == null) totalResults = res.totalResults ?? all.length;
         all.push(...res.results);
         const totalPages = res.totalPages || 1;
         if (p >= totalPages) break;
@@ -120,6 +131,7 @@ function BoardPage() {
       }
       if (controller.signal.aborted) return null;
       setBoardTruncated(truncated);
+      setBoardTotalResults(totalResults);
       return all;
     };
 
@@ -143,7 +155,13 @@ function BoardPage() {
   useEffect(() => {
     if (ready) reload();
   }, [reload, ready]);
-  useEffect(() => { setOpenTicketId(ticketFromSearch(window.location.search)); }, []);
+  const tableViewHref = useMemo(() => {
+    const params = new URLSearchParams();
+    if (activeProjectId) params.set('project', activeProjectId);
+    if (savedBoardMine) params.set('scope', 'assigned');
+    const qs = params.toString();
+    return qs ? `/tickets?${qs}` : '/tickets';
+  }, [activeProjectId, savedBoardMine]);
 
   const byLane = useMemo(() => {
     const groups = Object.fromEntries(LANES.map((l) => [l.key, []]));
@@ -243,15 +261,19 @@ function BoardPage() {
   }
 
   const open = (ticketId) => {
-    setOpenTicketId(ticketId);
-    window.history.replaceState(null, '', withTicketParam(window.location.search, ticketId));
+    drawerOpenedFrom.current = window.location.search;
+    writeSearch(withTicketParam(window.location.search, ticketId), { push: true });
   };
 
   const close = () => {
-    setOpenTicketId(null);
-    window.history.replaceState(
-      null, '', `/tickets/board${withoutTicketParam(window.location.search)}`,
-    );
+    const openedFrom = drawerOpenedFrom.current;
+    drawerOpenedFrom.current = null;
+    const without = withoutTicketParam(window.location.search);
+    if (openedFrom === without) {
+      window.history.back();
+      return;
+    }
+    writeSearch(without);
   };
 
   return (
@@ -298,9 +320,15 @@ function BoardPage() {
       ) : null}
 
       {boardTruncated ? (
-        <p className="meta" role="status">
-          Showing the first 1,000 tickets. Use table view with filters to reach the rest.
-        </p>
+        <div className="board-truncation-banner" role="alert">
+          <strong>Board list truncated</strong>
+          <p>
+            Loaded {tickets.length.toLocaleString()}
+            {boardTotalResults != null ? ` of ${boardTotalResults.toLocaleString()}` : ''} tickets.
+            Cards beyond the first 1,000 are hidden on the board.
+          </p>
+          <Link href={tableViewHref} className="btn btn-sm">Open filtered table view</Link>
+        </div>
       ) : null}
 
       {loading && tickets.length === 0 ? (

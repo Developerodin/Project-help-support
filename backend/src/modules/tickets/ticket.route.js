@@ -52,7 +52,7 @@ export default function ticketRoutes(config) {
   router.post('/', requireTicketPermission('tickets.create'), validate(createTicketSchema), controller.create(config));
 
   // Before /:id, or "bulk" is parsed as a ticket reference.
-  router.post('/bulk', requireBulkPermission, validate(bulkSchema), controller.bulk);
+  router.post('/bulk', requireBulkPermission, validate(bulkSchema), controller.bulk(config));
 
   router.get('/:id', requireTicketPermission('tickets.view'), validate(ticketIdSchema), controller.get);
   router.patch('/:id', requireTicketPermission('tickets.edit'), validate(patchTicketSchema), controller.patch(config));

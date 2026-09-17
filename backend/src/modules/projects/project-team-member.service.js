@@ -18,27 +18,51 @@ export function projectTeamRoleLabel(role) {
   return ROLE_LABELS[role] || role;
 }
 
+function mapTeamMemberRow(row) {
+  if (!row.user || row.user.status !== 'active') return null;
+  return {
+    id: String(row._id),
+    user: {
+      id: String(row.user._id),
+      name: row.user.name,
+      email: row.user.email,
+      globalRole: pickPrimaryRole(getUserRoles(row.user)),
+      globalRoles: getUserRoles(row.user),
+    },
+    role: row.role,
+    roleLabel: projectTeamRoleLabel(row.role),
+    teamId: String(row.team),
+  };
+}
+
 export async function listProjectTeamMembers(projectId) {
   const rows = await ProjectTeamMember.find({ project: projectId })
     .populate('user', 'name email status role roles')
     .sort({ role: 1, 'user.name': 1 })
     .lean();
 
-  return rows
-    .filter((row) => row.user?.status === 'active')
-    .map((row) => ({
-      id: String(row._id),
-      user: {
-        id: String(row.user._id),
-        name: row.user.name,
-        email: row.user.email,
-        globalRole: pickPrimaryRole(getUserRoles(row.user)),
-        globalRoles: getUserRoles(row.user),
-      },
-      role: row.role,
-      roleLabel: projectTeamRoleLabel(row.role),
-      teamId: String(row.team),
-    }));
+  return rows.map(mapTeamMemberRow).filter(Boolean);
+}
+
+/** Batch load for project list responses — keyed by project id string. */
+export async function listProjectTeamMembersByProjects(projectIds) {
+  const ids = [...new Set((projectIds || []).map(String))].filter(Boolean);
+  const map = new Map(ids.map((id) => [id, []]));
+  if (!ids.length) return map;
+
+  const rows = await ProjectTeamMember.find({ project: { $in: ids } })
+    .populate('user', 'name email status role roles')
+    .sort({ role: 1, 'user.name': 1 })
+    .lean();
+
+  for (const row of rows) {
+    const mapped = mapTeamMemberRow(row);
+    if (!mapped) continue;
+    const key = String(row.project);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(mapped);
+  }
+  return map;
 }
 
 async function loadTeamRoster(teamId) {

@@ -11,7 +11,7 @@ const query = (params) => {
 
 /** `options` carries the AbortSignal so a superseded list request is dropped. */
 export const listTickets = (params, options) => apiFetch(`/tickets${query(params)}`, options);
-export const getTicket = (id) => apiFetch(`/tickets/${encodeURIComponent(id)}`);
+export const getTicket = (id, options) => apiFetch(`/tickets/${encodeURIComponent(id)}`, options);
 export const createTicket = (body) => apiFetch('/tickets', { method: 'POST', body });
 
 export const patchTicket = (id, body) =>

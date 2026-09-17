@@ -1,9 +1,14 @@
 export const ACTIVE_PROJECT_STORAGE_KEY = 'pms:activeProjectId';
 
-/** @returns {string | null} project id, or null for all projects */
-export function readStoredProjectId() {
+/** Raw stored value: project id, `'all'`, or null when unset. */
+export function readStoredProjectRaw() {
   if (typeof window === 'undefined') return null;
-  const stored = window.localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
+  return window.localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
+}
+
+/** @returns {string | null} project id, or null for all projects / unset */
+export function readStoredProjectId() {
+  const stored = readStoredProjectRaw();
   if (!stored || stored === 'all') return null;
   return stored;
 }
@@ -23,8 +28,12 @@ export function writeStoredProjectId(projectId) {
  * @returns {string | null}
  */
 export function resolveInitialProjectId(projects, { isExternal = false } = {}) {
-  const stored = readStoredProjectId();
-  if (stored && projects.some((p) => p.id === stored)) return stored;
+  const raw = readStoredProjectRaw();
+  if (raw === 'all') return null;
+
+  const stored = raw && projects.some((p) => p.id === raw) ? raw : null;
+  if (stored) return stored;
+
   if (isExternal) {
     if (projects.length === 1) return projects[0].id;
     return projects[0]?.id ?? null;

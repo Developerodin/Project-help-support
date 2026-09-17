@@ -1,8 +1,15 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { usePathname, useSearchParams } from 'next/navigation';
-import { cycleTicketSort, hasActiveTicketFilters, hasTicketPreferenceChanges, defaultTicketPreferencesForUser } from '@pms/shared';
+import { usePathname } from 'next/navigation';
+import {
+  activeTicketFilterLabels,
+  cycleTicketSort,
+  hasActiveTicketFilters,
+  hasTicketPreferenceChanges,
+  defaultTicketPreferencesForUser,
+  ticketSearchTermIsNoOp,
+} from '@pms/shared';
 import { listTickets } from '@/shared/api/tickets.js';
 import { getProject } from '@/shared/api/projects.js';
 import { listUsers } from '@/shared/api/users.js';
@@ -33,6 +40,7 @@ import {
   DEFAULT_TICKET_PREFERENCES,
 } from '@/shared/lib/ticket-list-query.js';
 import { useDebouncedValue } from '@/shared/lib/use-debounced-value.js';
+import { useHistorySearch } from '@/shared/lib/use-history-search.js';
 import { normalizeApiError } from '@/shared/lib/api-error.js';
 import { showToast } from '@/shared/lib/toast.js';
 import TicketFilters from '@/shared/components/tickets/ticket-filters.jsx';
@@ -50,7 +58,7 @@ const CATEGORY_CARD_DEFS = Object.freeze([
 
 function TicketListPage() {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const searchString = useHistorySearch();
   const { status: authStatus, user } = useAuth();
   const { activeProjectId, loading: projectLoading, setActiveProjectId } = useProject();
   const {
@@ -80,8 +88,6 @@ function TicketListPage() {
   // The URL is the view: filters, page and the open ticket all live in it, so a
   // refresh, a shared link and the back button all land on the same screen.
   // Saved preferences are only the default a bare /tickets starts from.
-  const search = searchParams.toString();
-  const searchString = search ? `?${search}` : '';
   const page = pageFromSearch(searchString);
   const limit = limitFromSearch(searchString, preferences.limit);
   const openTicketId = ticketFromSearch(searchString);
@@ -109,6 +115,7 @@ function TicketListPage() {
   }, [viewFilters.q]);
 
   const debouncedSearchInput = useDebouncedValue(searchInput, SEARCH_DEBOUNCE_MS);
+  const searchNoOpHint = ticketSearchTermIsNoOp(debouncedSearchInput);
 
   /**
    * One mechanism for every URL write on this page. The native history API is
@@ -353,13 +360,21 @@ function TicketListPage() {
   const categoryCounts = listPage.categoryTotals || { Bug: 0, Improvement: 0, 'New Feature': 0 };
   const showingFrom = listPage.totalResults === 0 ? 0 : ((page - 1) * limit) + 1;
   const showingTo = Math.min(page * limit, listPage.totalResults || 0);
+  const ownerLabel = viewFilters.assignedTo && ownerOptions
+    ? ownerOptions.find((o) => o.id === viewFilters.assignedTo)?.name
+    : undefined;
+  const ownerNotInList = Boolean(
+    viewFilters.assignedTo && ownerOptions && !ownerOptions.some((o) => o.id === viewFilters.assignedTo),
+  );
+  const filterLabels = activeTicketFilterLabels(viewFilters, roleDefaults.filters, { ownerLabel });
+
   const categoryCards = CATEGORY_CARD_DEFS.map((card) => {
     const count = Number(categoryCounts[card.key]) || 0;
     return {
       ...card,
       count,
       zero: count === 0,
-      ariaLabel: `${card.label}: ${count} tickets in funnel.`,
+      ariaLabel: `${card.label}: ${count} in early pipeline (pending through ready for QA).`,
     };
   });
 
@@ -397,23 +412,25 @@ function TicketListPage() {
           <h1>Tickets</h1>
         </div>
         {!initialPageLoading ? (
-          <div
-            className="tickets-category-grid tickets-category-grid--top"
-            role="list"
-            aria-label="Ticket category summary"
-          >
-            {categoryCards.map((card) => (
-              <div
-                key={card.key}
-                role="listitem"
-                className={`tickets-category-card${card.zero ? ' is-zero' : ''}`}
-                aria-label={card.ariaLabel}
-              >
-                <span className="tickets-category-label">{card.label}</span>
-                <span className="tickets-category-count num">{card.count}</span>
-              </div>
-            ))}
-          </div>
+          <>
+            <div
+              className="tickets-category-grid tickets-category-grid--top"
+              role="list"
+              aria-label="Ticket category summary"
+            >
+              {categoryCards.map((card) => (
+                <div
+                  key={card.key}
+                  role="listitem"
+                  className={`tickets-category-card${card.zero ? ' is-zero' : ''}`}
+                  aria-label={card.ariaLabel}
+                >
+                  <span className="tickets-category-label">{card.label}</span>
+                  <span className="tickets-category-count num">{card.count}</span>
+                </div>
+              ))}
+            </div>
+          </>
         ) : null}
       </div>
 
@@ -424,6 +441,8 @@ function TicketListPage() {
         onSearchChange={setSearchInput}
         ownerOptions={ownerOptions ?? []}
         ownerScopeHint={!activeProjectId && ownerOptions?.length ? 'Any owner (all projects)' : null}
+        ownerNotInList={ownerNotInList}
+        searchNoOpHint={searchNoOpHint}
         onReset={handleReset}
         resetBusy={resetBusy}
         showReset={hasTicketPreferenceChanges(
@@ -444,6 +463,13 @@ function TicketListPage() {
       ) : showEmptyState ? (
         <div className="empty-state">
           <h3>{filtersActive ? 'No ticket matches those filters' : 'No tickets yet'}</h3>
+          {filtersActive && filterLabels.length > 0 ? (
+            <ul className="ticket-empty-filters">
+              {filterLabels.map((label) => (
+                <li key={label}>{label}</li>
+              ))}
+            </ul>
+          ) : null}
           <p>
             {filtersActive
               ? 'Try clearing filters or widening the search.'
@@ -467,6 +493,7 @@ function TicketListPage() {
 
       <nav className="pager" aria-label="Ticket list pagination">
         <div className="pager__meta" aria-live="polite" aria-atomic="true">
+          {tableBusy ? <span className="of">Updating results…</span> : null}
           <span className="of">{listPage.totalResults} tickets</span>
           <span className="of">Showing {showingFrom}-{showingTo}</span>
           {(listPage.totalPages || 1) > 1 ? <span className="of">Page {page} of {listPage.totalPages}</span> : null}

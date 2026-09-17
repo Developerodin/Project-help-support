@@ -32,7 +32,7 @@ export const create = (config) => catchAsync(async (req, res) => {
 
   // After the response. A notification failure must never turn a successful
   // create into a 500 the user reads as "the ticket was not filed".
-  const doc = await ticketService.resolveTicketDoc(ticket.id);
+  const doc = await ticketService.resolveTicketDocForNotifications(ticket.id);
   await dispatchTicketEvent({
     event: { type: 'TICKET_CREATED', requestId: req.id },
     ticket: doc, actor: req.user, config,
@@ -54,7 +54,7 @@ export const patch = (config) => catchAsync(async (req, res) => {
 
   if (!estimatePatched) return;
 
-  const doc = await ticketService.resolveTicketDoc(ticket.id);
+  const doc = await ticketService.resolveTicketDocForNotifications(ticket.id);
   if (!didEstimateFieldsChange(beforeDoc, doc)) return;
 
   await dispatchTicketEvent({
@@ -67,7 +67,7 @@ export const assign = (config) => catchAsync(async (req, res) => {
   const ticket = await ticketService.assignTicket(req.user, req.params.id, req.body, req.permissionContext);
   res.json(ticket);
 
-  const doc = await ticketService.resolveTicketDoc(ticket.id);
+  const doc = await ticketService.resolveTicketDocForNotifications(ticket.id);
   await dispatchTicketEvent({
     event: { type: 'TICKET_ASSIGNED', requestId: req.id },
     ticket: doc, actor: req.user, config,
@@ -94,8 +94,20 @@ export const remove = catchAsync(async (req, res) => {
   res.json(await ticketService.deleteTicket(req.params.id, req.user, req.permissionContext));
 });
 
-export const bulk = catchAsync(async (req, res) => {
-  res.json(await ticketService.bulkTickets(req.user, req.body, req.permissionContext));
+export const bulk = (config) => catchAsync(async (req, res) => {
+  const result = await ticketService.bulkTickets(req.user, req.body, req.permissionContext);
+  res.json(result);
+
+  if (req.body?.action !== 'assign') return;
+
+  for (const item of result.results) {
+    if (!item.ok || !item.ticketId) continue;
+    const doc = await ticketService.resolveTicketDocForNotifications(item.ticketId);
+    await dispatchTicketEvent({
+      event: { type: 'TICKET_ASSIGNED', requestId: req.id },
+      ticket: doc, actor: req.user, config,
+    });
+  }
 });
 
 export const transition = (config) => catchAsync(async (req, res) => {
@@ -104,7 +116,7 @@ export const transition = (config) => catchAsync(async (req, res) => {
   );
   res.json(ticket);
 
-  const doc = await ticketService.resolveTicketDoc(ticket.id);
+  const doc = await ticketService.resolveTicketDocForNotifications(ticket.id);
   await dispatchTicketEvent({
     event: { ...event, requestId: req.id }, ticket: doc, actor: req.user, config,
   });
@@ -117,7 +129,7 @@ export const addComment = (config) => catchAsync(async (req, res) => {
   res.status(created ? 201 : 200).json(comment);
 
   if (!created) return;   // a replay notifies nobody a second time
-  const doc = await ticketService.resolveTicketDoc(req.params.id);
+  const doc = await ticketService.resolveTicketDocForNotifications(req.params.id);
   await dispatchTicketEvent({
     event: { ...event, requestId: req.id }, ticket: doc, actor: req.user, config,
   });
@@ -154,7 +166,7 @@ export const addAttachments = (config) => catchAsync(async (req, res) => {
   res.status(201).json(attachments);
 
   if (!commentCreated || !event) return;
-  const doc = await ticketService.resolveTicketDoc(req.params.id);
+  const doc = await ticketService.resolveTicketDocForNotifications(req.params.id);
   await dispatchTicketEvent({
     event: { ...event, requestId: req.id }, ticket: doc, actor: req.user, config,
   });

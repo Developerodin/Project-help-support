@@ -142,7 +142,7 @@ export async function getNotificationRecipients(event, ticket, actor, context = 
     }
   }
 
-  ids.delete(idStr(actor?._id));
+  ids.delete(idStr(actor?._id ?? actor?.id));
   ids.delete(null);
 
   if (ids.size === 0) return [];

@@ -2,8 +2,17 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import useSWR from 'swr';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
+import { listNotifications } from '@/shared/api/notifications.js';
 import { NAV_GROUPS, canAccessNavItem } from '@/shared/lib/route-permissions.js';
+import {
+  notificationSwrKeys,
+  listNotificationsParams,
+  unreadCountFrom,
+  useNotificationPollInterval,
+  useNotificationProjectScope,
+} from '@/shared/lib/notification-swr.js';
 import { usePermissionContext } from '@/shared/hooks/use-permission-context.js';
 import { permissionContextForUi } from '@/shared/lib/permission-context-ui.js';
 import { formatBrandDisplayName } from '@/shared/lib/branding.js';
@@ -18,6 +27,7 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
@@ -32,6 +42,17 @@ export default function AppSidebar() {
   const { user, logout, effectiveBranding } = useAuth();
   const { permissionContext } = usePermissionContext();
   const pathname = usePathname();
+  const refreshInterval = useNotificationPollInterval();
+  const { projectId } = useNotificationProjectScope();
+  const unreadParams = listNotificationsParams({ unread: true, limit: 1 }, projectId);
+  const { data: unreadData } = useSWR(
+    unreadParams ? notificationSwrKeys.unreadCount(projectId) : null,
+    () => listNotifications(unreadParams),
+    { refreshInterval },
+  );
+  const navUnread = unreadCountFrom(unreadData);
+  const navUnreadBadge = navUnread > 99 ? '99+' : String(navUnread);
+
   if (!user) return null;
   const ctx = permissionContextForUi(permissionContext);
 
@@ -65,6 +86,9 @@ export default function AppSidebar() {
                         <Link href={item.href}>
                           <Icon name={item.icon} size={16} />
                           <span>{item.label}</span>
+                          {item.id === 'inbox' && navUnread > 0 ? (
+                            <SidebarMenuBadge>{navUnreadBadge}</SidebarMenuBadge>
+                          ) : null}
                         </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>

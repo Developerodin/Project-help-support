@@ -2,9 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
-import { listUsers } from '@/shared/api/users.js';
-import { listTeams } from '@/shared/api/teams.js';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { fetchAllTeams } from '@/shared/lib/fetch-all-teams.js';
 import {
   getProject,
   getProjectClientTesters,
@@ -22,7 +21,10 @@ import ExternalUserMultiSelect from '@/shared/components/external-user-multi-sel
 import ValidationDialog from '@/shared/components/validation-dialog.jsx';
 import { formRowsToModules, modulesToFormRows } from '@/shared/lib/project-modules.js';
 import { validateNewProjectDraft, EDIT_PROJECT_FIELD_IDS } from '@/shared/lib/validate-new-project.js';
+import { parseProjectsReturnUrl, PROJECTS_RETURN_PARAM } from '@/shared/lib/projects-return-url.js';
 import { showToast } from '@/shared/lib/toast.js';
+import { normalizeApiError } from '@/shared/lib/api-error.js';
+import { useProject } from '@/shared/contexts/project-context.jsx';
 
 function projectToDraft(project, testerIds = []) {
   return {
@@ -37,15 +39,16 @@ function projectToDraft(project, testerIds = []) {
 export default function EditProjectPage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const projectId = params.id;
+  const projectsReturnUrl = parseProjectsReturnUrl(searchParams.get(PROJECTS_RETURN_PARAM));
+  const { setActiveProjectId } = useProject();
 
   const [project, setProject] = useState(null);
   const [draft, setDraft] = useState(null);
   const [moduleRows, setModuleRows] = useState([]);
   const [teams, setTeams] = useState([]);
-  const [clientTesters, setClientTesters] = useState([]);
   const [companyWideIds, setCompanyWideIds] = useState([]);
-  const [testersLoading, setTestersLoading] = useState(true);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -61,7 +64,7 @@ export default function EditProjectPage() {
     Promise.all([
       getProject(projectId),
       getProjectClientTesters(projectId).catch(() => ({ items: [] })),
-      listTeams().catch(() => ({ results: [] })),
+      fetchAllTeams({ status: 'active' }).catch(() => ({ results: [] })),
     ])
       .then(([loaded, testers, teamPage]) => {
         if (cancelled) return;
@@ -78,7 +81,13 @@ export default function EditProjectPage() {
         setCompanyWideIds(companyIds);
       })
       .catch((err) => {
-        if (!cancelled) setError(err);
+        if (!cancelled) {
+          setError(err);
+          const status = normalizeApiError(err)?.status;
+          if (status === 404 || status === 403) {
+            setActiveProjectId(null);
+          }
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -86,31 +95,6 @@ export default function EditProjectPage() {
 
     return () => { cancelled = true; };
   }, [projectId]);
-
-  const clientId = draft?.clientId;
-
-  useEffect(() => {
-    if (!clientId) {
-      setClientTesters([]);
-      setTestersLoading(false);
-      return undefined;
-    }
-
-    let cancelled = false;
-    setTestersLoading(true);
-    listUsers({ role: ROLE_IDS.CLIENT_TESTER, status: 'active', limit: 100 })
-      .then((page) => {
-        if (!cancelled) setClientTesters(page.results || []);
-      })
-      .catch(() => {
-        if (!cancelled) setClientTesters([]);
-      })
-      .finally(() => {
-        if (!cancelled) setTestersLoading(false);
-      });
-
-    return () => { cancelled = true; };
-  }, [clientId]);
 
   const selectedCompany = project?.client && typeof project.client === 'object'
     ? project.client
@@ -142,7 +126,7 @@ export default function EditProjectPage() {
   };
 
   function goToProjects() {
-    router.push('/projects');
+    router.push(projectsReturnUrl);
   }
 
   function closeValidationDialog() {
@@ -170,16 +154,38 @@ export default function EditProjectPage() {
 
     setBusy(true);
     setError(null);
+    const steps = [
+      {
+        label: 'Project details',
+        run: () => patchProject(projectId, {
+          name: draft.name.trim(),
+          description: draft.description.trim(),
+          team: draft.team || null,
+        }),
+      },
+      {
+        label: 'Client testers',
+        run: () => replaceProjectClientTesters(projectId, draft.clientTesterIds),
+      },
+      {
+        label: 'Module catalog',
+        run: () => replaceModules(projectId, formRowsToModules(moduleRows)),
+      },
+    ];
+
     try {
-      await patchProject(projectId, {
-        name: draft.name.trim(),
-        description: draft.description.trim(),
-        team: draft.team || null,
-      });
-      await replaceProjectClientTesters(projectId, draft.clientTesterIds);
-      await replaceModules(projectId, formRowsToModules(moduleRows));
+      for (const step of steps) {
+        try {
+          await step.run();
+        } catch (stepErr) {
+          const message = normalizeApiError(stepErr)?.message || 'Save failed';
+          throw Object.assign(stepErr instanceof Error ? stepErr : new Error(message), {
+            message: `${step.label}: ${message}`,
+          });
+        }
+      }
       showToast(`${project.key} updated`);
-      router.push('/projects');
+      router.push(projectsReturnUrl);
     } catch (err) {
       setError(err);
     } finally {
@@ -199,7 +205,7 @@ export default function EditProjectPage() {
     return (
       <>
         <nav className="crumb" aria-label="Breadcrumb">
-          <Link href="/projects">Projects</Link>
+          <Link href={projectsReturnUrl}>Projects</Link>
           <span aria-hidden="true">/</span>
           <span aria-current="page">Edit</span>
         </nav>
@@ -220,7 +226,7 @@ export default function EditProjectPage() {
   return (
     <>
       <nav className="crumb" aria-label="Breadcrumb">
-        <Link href="/projects">Projects</Link>
+        <Link href={projectsReturnUrl}>Projects</Link>
         <span aria-hidden="true">/</span>
         <span>{project.key}</span>
         <span aria-hidden="true">/</span>
@@ -311,7 +317,7 @@ export default function EditProjectPage() {
           <section className="new-ticket-block" aria-labelledby="project-team-heading">
             <h2 id="project-team-heading" className="form-section">Project team</h2>
             <p className="form-hint">
-              Assign one team to this project. Member roles come from each person&apos;s profile.
+              Assign one team to this project. Project roles are shown per member below.
             </p>
 
             <ProjectTeamPanel
@@ -330,11 +336,11 @@ export default function EditProjectPage() {
               label="Client tester assign"
               hideLabel
               ariaLabelledBy="project-client-testers-heading"
-              users={clientTesters}
               selectedIds={displayTesterIds}
               onChange={onTesterChange}
               disabled={busy}
-              loading={testersLoading}
+              serverSearch
+              userRole={ROLE_IDS.CLIENT_TESTER}
               lockedIds={companyWideIds}
               emptyMessage="No client testers available. Invite users from People."
             />
@@ -382,8 +388,8 @@ export default function EditProjectPage() {
           <div className="panel">
             <header><h3>Project team and modules</h3></header>
             <p className="note-line">
-              Assign a team and keep the module catalog in one place. Member roles come from each
-              person&apos;s profile, not from this page.
+              Assign a team here and set each member&apos;s project role in the Project team panel on this page.
+              The Teams hub manages group membership only, not per-project roles.
             </p>
           </div>
         </aside>

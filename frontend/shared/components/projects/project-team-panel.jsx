@@ -87,7 +87,9 @@ export default function ProjectTeamPanel({
                     <span>{member.user.email}</span>
                   </div>
                   <span className="chip member-row__role">
-                    {capRole(member.user.globalRole)}
+                    {member.roleLabel || member.role
+                      ? (member.roleLabel || member.role)
+                      : capRole(member.user.globalRole)}
                   </span>
                   <span className="chip">Active</span>
                 </li>

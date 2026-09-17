@@ -2,6 +2,7 @@ import { ROLE_IDS } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
 import Project from '../projects/project.model.js';
+import { assignProjectTeam } from '../projects/project-team-member.service.js';
 import {
   assertScopedPermissionWhenConstrained,
   assertCanViewTeams,
@@ -96,6 +97,63 @@ const ZERO_STATS = Object.freeze({ total: 0, open: 0, overdue: 0 });
  * does NOT catch it (missing is not null in an aggregation expression), so a
  * null-guard lets every estimate-less ticket read as overdue.
  */
+function escapeRegex(term) {
+  return String(term || '').trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function teamSearchClause(term) {
+  const raw = String(term || '').trim();
+  if (!raw) return null;
+  const safe = escapeRegex(raw);
+  const regex = { $regex: safe, $options: 'i' };
+  const clauses = [{ name: regex }];
+
+  const matchingProjects = await Project.find({
+    status: 'active',
+    $or: [{ name: regex }, { key: regex }],
+  }).select('_id').lean();
+  if (matchingProjects.length) {
+    clauses.push({ project: { $in: matchingProjects.map((p) => p._id) } });
+  }
+
+  const matchingUsers = await User.find({ status: 'active', name: regex })
+    .select('_id')
+    .limit(50)
+    .lean();
+  if (matchingUsers.length) {
+    clauses.push({ members: { $in: matchingUsers.map((u) => u._id) } });
+  }
+
+  return { $or: clauses };
+}
+
+async function projectsLinkedToTeams(teamIds) {
+  const ids = [...new Set((teamIds || []).map(String))].filter(Boolean);
+  const map = new Map(ids.map((id) => [id, []]));
+  if (!ids.length) return map;
+
+  const rows = await Project.find({ team: { $in: ids }, status: 'active' })
+    .select('key name team')
+    .lean();
+  for (const row of rows) {
+    const key = String(row.team);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push({ id: String(row._id), key: row.key, name: row.name });
+  }
+  return map;
+}
+
+/**
+ * When a team's roster changes, every active project that uses this team as
+ * `Project.team` must mirror members via ProjectTeamMember (add/remove in sync).
+ */
+async function syncLinkedProjectRosters(teamId) {
+  const projectIds = await Project.find({ team: teamId, status: 'active' }).distinct('_id');
+  for (const projectId of projectIds) {
+    await assignProjectTeam(projectId, teamId);
+  }
+}
+
 async function ticketStatsByTeam(teamIds) {
   if (teamIds.length === 0) return new Map();
   const now = new Date();
@@ -128,11 +186,24 @@ async function ticketStatsByTeam(teamIds) {
 
 export async function listTeams(query = {}, actor = null, permissionContext = null) {
   if (actor) await assertCanViewTeams(actor, permissionContext);
-  const filter = {};
-  if (query.status) filter.status = query.status;
+  const filter = { status: query.status || 'active' };
   if (query.project) {
     // Global teams belong to every project's list, which is what makes them global.
     filter.$or = [{ project: query.project }, { project: null }];
+  }
+
+  const scope = query.scope || 'all';
+  if (!query.project) {
+    if (scope === 'global') filter.project = null;
+    else if (scope === 'project') filter.project = { $ne: null };
+    else if (scope === 'empty') filter.members = { $size: 0 };
+  }
+
+  if (query.member) filter.members = query.member;
+
+  const search = await teamSearchClause(query.search || query.q);
+  if (search) {
+    filter.$and = [...(filter.$and ?? []), search];
   }
 
   const page = await paginate(Team, filter, {
@@ -144,13 +215,7 @@ export async function listTeams(query = {}, actor = null, permissionContext = nu
 
   const stats = await ticketStatsByTeam(page.results.map((t) => t._id));
   const teamIds = page.results.map((t) => t._id);
-  const projectRows = teamIds.length
-    ? await Project.find({ team: { $in: teamIds }, status: 'active' }).select('key name team').lean()
-    : [];
-  const projectsByTeam = new Map(teamIds.map((id) => [String(id), []]));
-  for (const row of projectRows) {
-    projectsByTeam.get(String(row.team))?.push({ id: String(row._id), key: row.key, name: row.name });
-  }
+  const projectsByTeam = await projectsLinkedToTeams(teamIds);
 
   return {
     ...page,
@@ -162,11 +227,28 @@ export async function listTeams(query = {}, actor = null, permissionContext = nu
   };
 }
 
+/** Teams a ticket editor may assign on a project without teams.view. */
+export async function listAssignableTeamsForProject(projectId, actor, permissionContext = null) {
+  const project = await Project.findById(projectId).select('client');
+  if (!project) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
+  await assertScopedPermissionWhenConstrained(
+    actor,
+    'tickets.edit',
+    projectScopeTarget(project),
+    permissionContext,
+  );
+  return listTeams({ project: projectId, status: 'active', limit: 100 }, null, null);
+}
+
 export async function getTeam(id, actor = null, permissionContext = null) {
   if (actor) await assertCanViewTeams(actor, permissionContext);
   const team = await Team.findById(id).populate(['lead', 'members', 'project']);
   if (!team) throw new ApiError(404, 'TEAM_NOT_FOUND', 'Team not found');
-  return team.toJSON();
+  const projectsByTeam = await projectsLinkedToTeams([team._id]);
+  return {
+    ...team.toJSON(),
+    projects: projectsByTeam.get(String(team._id)) ?? [],
+  };
 }
 
 async function assertTeamScopedPermission(actor, teamId, permission, permissionContext = null) {
@@ -209,6 +291,10 @@ export async function updateMembers(id, { add = [], remove = [] }, actor = null,
   // retried request cannot duplicate a member or double-remove one.
   if (add.length) await Team.updateOne({ _id: id }, { $addToSet: { members: { $each: add } } });
   if (remove.length) await Team.updateOne({ _id: id }, { $pull: { members: { $in: remove } } });
+
+  if (add.length || remove.length) {
+    await syncLinkedProjectRosters(id);
+  }
 
   const team = await Team.findById(id).populate(['lead', 'members', 'project']);
   if (!team) throw new ApiError(404, 'TEAM_NOT_FOUND', 'Team not found');

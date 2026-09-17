@@ -2,6 +2,7 @@ import catchAsync from '../../platform/catchAsync.js';
 import { ApiError } from '../../platform/errors.js';
 import * as projectService from './project.service.js';
 import * as uiQaService from './ui-qa.service.js';
+import { listAssignableTeamsForProject } from '../teams/team.service.js';
 
 export function parseUiQaJsonField(value, fieldName) {
   if (value == null || value === '' || value === 'undefined') {
@@ -111,7 +112,15 @@ export const uiQaDownloadAttachment = (config) => catchAsync(async (req, res) =>
 });
 
 export const teamMembers = catchAsync(async (req, res) => {
-  res.json(await projectService.getProjectTeamMembers(req.params.id));
+  res.json(await projectService.getProjectTeamMembers(
+    req.params.id, req.user, req.permissionContext,
+  ));
+});
+
+export const assignableTeams = catchAsync(async (req, res) => {
+  res.json(await listAssignableTeamsForProject(
+    req.params.id, req.user, req.permissionContext,
+  ));
 });
 
 export const replaceTeamMembers = catchAsync(async (req, res) => {
@@ -121,7 +130,9 @@ export const replaceTeamMembers = catchAsync(async (req, res) => {
 });
 
 export const clientTesters = catchAsync(async (req, res) => {
-  res.json(await projectService.getProjectClientTesters(req.params.id));
+  res.json(await projectService.getProjectClientTesters(
+    req.params.id, req.user, req.permissionContext,
+  ));
 });
 
 export const replaceClientTesters = catchAsync(async (req, res) => {

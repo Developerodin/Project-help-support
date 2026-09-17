@@ -65,6 +65,7 @@ export default function TicketCard({
         <label className="card-move">
           <span className="sr">Move {ticket.ticketId} to lane</span>
           <select
+            className="card-move-select"
             defaultValue=""
             onClick={(e) => e.stopPropagation()}
             onChange={(e) => {

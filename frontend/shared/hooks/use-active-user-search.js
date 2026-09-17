@@ -13,7 +13,7 @@ export const ACTIVE_USER_SEARCH_LIMIT = 50;
  * Debounced server lookup for active users (name/email via `q`).
  * Used by team member pickers so people beyond the default first page are findable.
  */
-export function useActiveUserSearch({ enabled = false, excludeIds = [] } = {}) {
+export function useActiveUserSearch({ enabled = false, excludeIds = [], role = null } = {}) {
   const [query, setQuery] = useState('');
   const debouncedQuery = useDebouncedValue(query, ACTIVE_USER_SEARCH_DEBOUNCE_MS);
   const [results, setResults] = useState([]);
@@ -33,6 +33,7 @@ export function useActiveUserSearch({ enabled = false, excludeIds = [] } = {}) {
     const q = debouncedQuery.trim();
     const params = { status: 'active', limit: ACTIVE_USER_SEARCH_LIMIT };
     if (q) params.q = q;
+    if (role) params.role = role;
 
     return listUsers(params)
       .then((page) => {
@@ -47,7 +48,7 @@ export function useActiveUserSearch({ enabled = false, excludeIds = [] } = {}) {
       .finally(() => {
         if (requestId === requestIdRef.current) setLoading(false);
       });
-  }, [debouncedQuery]);
+  }, [debouncedQuery, role]);
 
   useEffect(() => {
     if (!enabled) {

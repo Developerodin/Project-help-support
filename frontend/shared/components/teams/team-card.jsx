@@ -4,11 +4,13 @@ import { useMemo } from 'react';
 import Link from 'next/link';
 import { initials } from '@/shared/components/icons.jsx';
 import MemberPicker from '@/shared/components/teams/member-picker.jsx';
+import { withTeamsReturn } from '@/shared/lib/teams-return-url.js';
 
 export default function TeamCard({
   team,
   canEdit = false,
   canDelete = false,
+  listReturnUrl = '/teams',
   onAddMembers,
   onRequestRemove,
   onDelete,
@@ -22,18 +24,30 @@ export default function TeamCard({
 
   return (
     <section className="panel team-panel">
-      <header>
-        <h3>{team.name}</h3>
-        <span className="spacer" />
-        {canEdit ? (
-          <Link href={`/teams/${team.id}/edit`} className="btn btn-ghost btn-sm">Edit</Link>
-        ) : null}
-        {canDelete ? (
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => onDelete?.()}>
-            Delete
-          </button>
-        ) : null}
-        <span className="chip">{team.project ? team.project.key : 'global'}</span>
+      <header className="team-panel__head">
+        <div className="team-panel__title-row">
+          <h3 className="team-panel__name">{team.name}</h3>
+          <span className="chip team-panel__key">
+            {team.project ? team.project.key : 'global'}
+          </span>
+          {(canEdit || canDelete) ? (
+            <div className="team-panel__actions">
+              {canEdit ? (
+                <Link
+                  href={withTeamsReturn(`/teams/${team.id}/edit`, listReturnUrl)}
+                  className="btn btn-ghost"
+                >
+                  Edit
+                </Link>
+              ) : null}
+              {canDelete ? (
+                <button type="button" className="btn btn-ghost" onClick={() => onDelete?.()}>
+                  Archive
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
       </header>
 
       <dl className="team-panel__stats">
@@ -57,10 +71,9 @@ export default function TeamCard({
         </div>
       </dl>
 
-      {team.lead ? (
-        <p className="team-panel__lead">
-          <span className="avatar sm">{initials(team.lead.name)}</span>
-          <span>{team.lead.name}<span className="meta"> · lead</span></span>
+      {team.lead && canEdit ? (
+        <p className="team-panel__lead meta">
+          Lead: {team.lead.name}
         </p>
       ) : null}
 

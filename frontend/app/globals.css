@@ -756,17 +756,6 @@
   justify-content: flex-start;
 }
 
-.team-panel__projects ul {
-  margin: 6px 0 0;
-  padding-left: 18px;
-  font-size: 0.8125rem;
-}
-
-.team-panel__projects .lbl {
-  display: block;
-  margin-top: 10px;
-}
-
 .sr {
   position: absolute;
   width: 1px;

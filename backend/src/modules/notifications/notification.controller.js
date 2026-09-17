@@ -10,5 +10,5 @@ export const read = catchAsync(async (req, res) => {
 });
 
 export const readAll = catchAsync(async (req, res) => {
-  res.json(await notificationService.markAllRead(req.user));
+  res.json(await notificationService.markAllRead(req.user, req.query));
 });

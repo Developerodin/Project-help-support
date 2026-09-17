@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
-import { STAGES, PRIORITIES, CATEGORIES, SEVERITIES } from '@pms/shared';
+import { useEffect, useRef, useState } from 'react';
+import { STAGES, PRIORITIES, CATEGORIES, SEVERITIES, TICKET_SEARCH_MAX_LENGTH } from '@pms/shared';
 import {
   FOCUS_TICKET_SEARCH_KEY,
   TICKET_SEARCH_INPUT_ID,
@@ -15,11 +15,14 @@ export default function TicketFilters({
   onSearchChange,
   ownerOptions = [],
   ownerScopeHint = null,
+  ownerNotInList = false,
+  searchNoOpHint = false,
   onReset,
   resetBusy = false,
   showReset = false,
 }) {
   const searchRef = useRef(null);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const set = (key) => (event) => onChange({ ...filters, [key]: event.target.value });
   const toggle = (key) => {
     const next = filters[key] ? false : true;
@@ -35,18 +38,30 @@ export default function TicketFilters({
     }
   }, []);
 
-  return (
-    <div className="toolbar">
-      <input
-        ref={searchRef}
-        id={TICKET_SEARCH_INPUT_ID}
-        className="filterin"
-        type="search"
-        aria-label="Filter tickets"
-        placeholder="Filter by number, title or module"
-        value={searchValue ?? filters.q ?? ''}
-        onChange={(event) => onSearchChange(event.target.value)}
-      />
+  const ownerSelectValue = filters.assignedTo || '';
+  const ownerInList = !ownerSelectValue || ownerOptions.some((p) => p.id === ownerSelectValue);
+
+  const controls = (
+    <>
+      <div className="ticket-filters__search-wrap">
+        <input
+          ref={searchRef}
+          id={TICKET_SEARCH_INPUT_ID}
+          className="filterin"
+          type="search"
+          aria-label="Filter tickets"
+          aria-describedby={searchNoOpHint ? 'ticket-search-hint' : undefined}
+          placeholder="Filter by number, title or module"
+          maxLength={TICKET_SEARCH_MAX_LENGTH}
+          value={searchValue ?? filters.q ?? ''}
+          onChange={(event) => onSearchChange(event.target.value)}
+        />
+        {searchNoOpHint ? (
+          <p id="ticket-search-hint" className="ticket-filters__hint" role="status">
+            Add at least two letters or a ticket number — punctuation alone is ignored.
+          </p>
+        ) : null}
+      </div>
 
       <select aria-label="Stage" value={filters.status || ''} onChange={set('status')}>
         <option value="">Any stage</option>
@@ -72,8 +87,13 @@ export default function TicketFilters({
         ))}
       </select>
 
-      <select aria-label="Owner" value={filters.assignedTo || ''} onChange={set('assignedTo')}>
+      <select aria-label="Owner" value={ownerSelectValue} onChange={set('assignedTo')}>
         <option value="">{ownerScopeHint || 'Any owner'}</option>
+        {!ownerInList && ownerSelectValue ? (
+          <option value={ownerSelectValue}>
+            {ownerNotInList ? 'Owner (not in list)' : 'Selected owner'}
+          </option>
+        ) : null}
         {ownerOptions.map((person) => (
           <option key={person.id} value={person.id}>{person.name}</option>
         ))}
@@ -121,6 +141,50 @@ export default function TicketFilters({
           {resetBusy ? 'Resetting…' : 'Reset to default'}
         </button>
       )}
+    </>
+  );
+
+  return (
+    <div className="ticket-filters">
+      <div className="toolbar ticket-filters__bar ticket-filters__bar--desktop">
+        {controls}
+      </div>
+
+      <div className="ticket-filters__mobile">
+        <div className="toolbar ticket-filters__bar ticket-filters__bar--mobile-head">
+          <div className="ticket-filters__search-wrap ticket-filters__search-wrap--grow">
+            <input
+              className="filterin"
+              type="search"
+              aria-label="Filter tickets on mobile"
+              aria-describedby={searchNoOpHint ? 'ticket-search-hint-mobile' : undefined}
+              placeholder="Search tickets"
+              maxLength={TICKET_SEARCH_MAX_LENGTH}
+              value={searchValue ?? filters.q ?? ''}
+              onChange={(event) => onSearchChange(event.target.value)}
+            />
+            {searchNoOpHint ? (
+              <p id="ticket-search-hint-mobile" className="ticket-filters__hint" role="status">
+                Add at least two letters or a ticket number — punctuation alone is ignored.
+              </p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            className="btn btn-sm ticket-filters__toggle"
+            aria-expanded={mobileOpen}
+            aria-controls="ticket-filters-sheet"
+            onClick={() => setMobileOpen((open) => !open)}
+          >
+            Filters
+          </button>
+        </div>
+        {mobileOpen ? (
+          <div id="ticket-filters-sheet" className="ticket-filters__sheet toolbar">
+            {controls}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -3,9 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { listClients } from '@/shared/api/clients.js';
-import { createProject, replaceProjectClientTesters } from '@/shared/api/projects.js';
-import { listUsers } from '@/shared/api/users.js';
-import { listTeams } from '@/shared/api/teams.js';
+import { createProject } from '@/shared/api/projects.js';
+import { fetchAllTeams } from '@/shared/lib/fetch-all-teams.js';
 import { ROLE_IDS } from '@pms/shared';
 import CompanyLogo from '@/shared/components/companies/company-logo.jsx';
 import FormError from '@/shared/components/form-error.jsx';
@@ -15,6 +14,7 @@ import ValidationDialog from '@/shared/components/validation-dialog.jsx';
 import { formRowsToModules } from '@/shared/lib/project-modules.js';
 import { filterTeamsForProjectAssignment } from '@/shared/lib/team-scope.js';
 import { validateNewProjectDraft } from '@/shared/lib/validate-new-project.js';
+import { parseProjectsReturnUrl, PROJECTS_RETURN_PARAM } from '@/shared/lib/projects-return-url.js';
 import { showToast } from '@/shared/lib/toast.js';
 
 const INITIAL_DRAFT = {
@@ -29,6 +29,7 @@ export default function NewProjectPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const presetClientId = searchParams.get('clientId') ?? '';
+  const projectsReturnUrl = parseProjectsReturnUrl(searchParams.get(PROJECTS_RETURN_PARAM));
 
   const [draft, setDraft] = useState({ ...INITIAL_DRAFT, clientId: presetClientId });
   const [moduleRows, setModuleRows] = useState([]);
@@ -39,30 +40,10 @@ export default function NewProjectPage() {
   const [showValidation, setShowValidation] = useState(false);
   const [validationDialogOpen, setValidationDialogOpen] = useState(false);
   const [validationItems, setValidationItems] = useState([]);
-  const [clientTesters, setClientTesters] = useState([]);
-
   useEffect(() => {
     listClients({ status: 'active' }).then((p) => setCompanies(p.results)).catch(() => {});
-    listTeams().then((p) => setTeams(p.results)).catch(() => {});
+    fetchAllTeams({ status: 'active' }).then((p) => setTeams(p.results)).catch(() => {});
   }, []);
-
-  useEffect(() => {
-    if (!draft.clientId) {
-      setClientTesters([]);
-      return undefined;
-    }
-
-    let cancelled = false;
-    listUsers({ role: ROLE_IDS.CLIENT_TESTER, status: 'active', limit: 100 })
-      .then((page) => {
-        if (!cancelled) setClientTesters(page.results || []);
-      })
-      .catch(() => {
-        if (!cancelled) setClientTesters([]);
-      });
-
-    return () => { cancelled = true; };
-  }, [draft.clientId]);
 
   useEffect(() => {
     if (presetClientId) {
@@ -122,12 +103,12 @@ export default function NewProjectPage() {
         team: draft.team || null,
         modules: formRowsToModules(moduleRows),
       };
-      const created = await createProject(body);
-      if (draft.clientTesterIds.length) {
-        await replaceProjectClientTesters(created.id, draft.clientTesterIds);
-      }
+      const created = await createProject({
+        ...body,
+        clientTesterIds: draft.clientTesterIds,
+      });
       showToast(`Project ${created.key} created`);
-      router.push('/projects');
+      router.push(projectsReturnUrl);
     } catch (err) {
       setError(err);
     } finally {
@@ -221,7 +202,7 @@ export default function NewProjectPage() {
           <section className="new-ticket-block" aria-labelledby="project-team-heading">
             <h2 id="project-team-heading" className="form-section">Project team</h2>
             <p className="form-hint">
-              Assign the team that owns work in this project. Set member roles after creation.
+              Assign the team that owns work in this project. Project roles are set on the team in People → Teams.
             </p>
 
             <div className="new-project-defaults-stack">
@@ -250,11 +231,11 @@ export default function NewProjectPage() {
                 label="Client tester assign"
                 hideLabel
                 ariaLabelledBy="project-client-testers-heading"
-                users={clientTesters}
                 selectedIds={draft.clientTesterIds}
                 onChange={(clientTesterIds) => setDraft((prev) => ({ ...prev, clientTesterIds }))}
                 disabled={busy}
-                loading={false}
+                serverSearch
+                userRole={ROLE_IDS.CLIENT_TESTER}
                 emptyMessage="No client testers available. Invite users from People."
               />
             )}
@@ -276,7 +257,12 @@ export default function NewProjectPage() {
             <button type="submit" className="btn btn-primary" disabled={busy}>
               {busy ? 'Creating…' : 'Create project'}
             </button>
-            <button type="button" className="btn" onClick={() => router.back()} disabled={busy}>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => router.push(projectsReturnUrl)}
+              disabled={busy}
+            >
               Cancel
             </button>
           </div>

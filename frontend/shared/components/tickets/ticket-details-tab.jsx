@@ -82,7 +82,7 @@ export default function TicketDetailsTab({
   const elapsed = ticket.createdAt ? daysBetween(ticket.createdAt) : 0;
   const projectName = ticket.project?.name || ticket.project?.key || ticket.projectKey;
   const editable = canAssign && assignment?.submitAssignment;
-  const canEditTeam = editable && canViewTeams && !assignment?.projectTeamLocked;
+  const canEditTeam = editable && !assignment?.projectTeamLocked;
 
   const assigneeId = assignment?.assigneeValue?.id || '';
   const teamId = assignment?.teamValue?.id || '';

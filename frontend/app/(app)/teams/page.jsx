@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { can } from '@pms/shared';
 import { listTeams, patchTeam, updateMembers } from '@/shared/api/teams.js';
 import { listUsers } from '@/shared/api/users.js';
@@ -11,70 +12,225 @@ import Icon from '@/shared/components/icons.jsx';
 import AppLoader from '@/shared/components/app-loader.jsx';
 import TeamCard from '@/shared/components/teams/team-card.jsx';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
+import { usePermissionContext } from '@/shared/hooks/use-permission-context.js';
+import { permissionContextForUi } from '@/shared/lib/permission-context-ui.js';
 import { normalizeApiError } from '@/shared/lib/api-error.js';
+import { fetchAllTeams } from '@/shared/lib/fetch-all-teams.js';
 import { showToast } from '@/shared/lib/toast.js';
+import { useDebouncedValue } from '@/shared/lib/use-debounced-value.js';
+import { teamsListUrlFromSearch, withTeamsReturn } from '@/shared/lib/teams-return-url.js';
+import { useHistorySearch } from '@/shared/lib/use-history-search.js';
+
+const TEAM_SEARCH_DEBOUNCE_MS = 300;
+const TEAM_PAGE_SIZES = [20, 50, 100];
+const DEFAULT_TEAM_LIMIT = 20;
+const TEAM_SCOPES = ['all', 'global', 'project', 'empty'];
+
+function teamListQueryFromSearch(searchString) {
+  const params = new URLSearchParams(searchString);
+  const page = Math.max(1, Number(params.get('page')) || 1);
+  const limit = TEAM_PAGE_SIZES.includes(Number(params.get('limit')))
+    ? Number(params.get('limit'))
+    : DEFAULT_TEAM_LIMIT;
+  const urlSearch = params.get('search') || params.get('q') || '';
+  const scope = TEAM_SCOPES.includes(params.get('scope')) ? params.get('scope') : 'all';
+  const status = params.get('status') === 'archived' ? 'archived' : 'active';
+  return { page, limit, urlSearch, scope, status };
+}
+
+function isForbiddenError(error) {
+  return normalizeApiError(error)?.status === 403;
+}
+
+function isNetworkError(error) {
+  const normalized = normalizeApiError(error);
+  return Boolean(normalized && !normalized.status);
+}
 
 export default function TeamsPage() {
-  const { user } = useAuth();
-  const canCreate = can(user, 'teams.create');
-  const canEdit = can(user, 'teams.edit');
-  const canDelete = can(user, 'teams.delete');
+  const { user, loading: authLoading } = useAuth();
+  const { permissionContext } = usePermissionContext();
+  const permCtx = permissionContextForUi(permissionContext);
+  const pathname = usePathname();
+  const searchString = useHistorySearch();
+  const { page, limit, urlSearch, scope, status } = useMemo(
+    () => teamListQueryFromSearch(searchString),
+    [searchString],
+  );
+  const listReturnUrl = useMemo(
+    () => teamsListUrlFromSearch(searchString),
+    [searchString],
+  );
 
-  const [teams, setTeams] = useState([]);
-  const [activeUserTotal, setActiveUserTotal] = useState(null);
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [addBusyTeamId, setAddBusyTeamId] = useState(null);
-  const [confirmRemove, setConfirmRemove] = useState(null);
-  const [confirmDelete, setConfirmDelete] = useState(null);
-  const [removeBusy, setRemoveBusy] = useState(false);
-  const [deleteBusy, setDeleteBusy] = useState(false);
-  const [removingMemberId, setRemovingMemberId] = useState(null);
-  const [search, setSearch] = useState('');
-  const [scope, setScope] = useState('all');
+  const canViewTeams = Boolean(user && can(user, 'teams.view', permCtx ?? undefined));
+  const canCreate = Boolean(user && can(user, 'teams.create', permCtx ?? undefined));
+  const canEdit = Boolean(user && can(user, 'teams.edit', permCtx ?? undefined));
+  const canDelete = Boolean(user && can(user, 'teams.delete', permCtx ?? undefined));
 
-  const reload = useCallback(() => {
-    setLoading(true);
-    return listTeams()
-      .then((p) => setTeams(p.results))
-      .catch(setError)
-      .finally(() => setLoading(false));
-  }, []);
+  const [searchInput, setSearchInput] = useState(urlSearch);
+  const debouncedSearch = useDebouncedValue(searchInput, TEAM_SEARCH_DEBOUNCE_MS);
 
   useEffect(() => {
-    if (!user) return;
-    reload();
-    listUsers({ status: 'active', limit: 1 })
-      .then((p) => setActiveUserTotal(p.totalResults ?? null))
-      .catch(() => setActiveUserTotal(null));
-  }, [user, reload]);
+    setSearchInput(urlSearch);
+  }, [urlSearch]);
 
-  const metrics = useMemo(() => {
-    const onATeam = new Set(teams.flatMap((t) => t.members.map((m) => m.id)));
-    return {
-      teams: teams.length,
-      people: onATeam.size,
-      openTickets: teams.reduce((sum, t) => sum + (t.stats?.open ?? 0), 0),
-      overdue: teams.reduce((sum, t) => sum + (t.stats?.overdue ?? 0), 0),
-      unassigned: activeUserTotal != null
-        ? Math.max(0, activeUserTotal - onATeam.size)
-        : null,
-    };
-  }, [teams, activeUserTotal]);
+  const writeTeamsSearch = useCallback((next) => {
+    const params = new URLSearchParams(window.location.search);
+    if (next.search) params.set('search', next.search);
+    else params.delete('search');
+    params.delete('q');
+    if (next.page) params.set('page', String(next.page));
+    else params.delete('page');
+    if (next.limit) params.set('limit', String(next.limit));
+    else params.delete('limit');
+    if (next.scope && next.scope !== 'all') params.set('scope', next.scope);
+    else params.delete('scope');
+    if (next.status === 'archived') params.set('status', 'archived');
+    else params.delete('status');
+    const qs = params.toString();
+    const url = qs ? `${pathname}?${qs}` : pathname;
+    window.history.replaceState(null, '', url);
+  }, [pathname]);
 
-  const visibleTeams = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return teams.filter((t) => {
-      if (scope === 'global' && t.project) return false;
-      if (scope === 'project' && !t.project) return false;
-      if (scope === 'empty' && t.members.length > 0) return false;
-      if (!q) return true;
-      return t.name.toLowerCase().includes(q)
-        || t.project?.name?.toLowerCase().includes(q)
-        || t.members.some((m) => m.name.toLowerCase().includes(q));
+  useEffect(() => {
+    if (debouncedSearch === urlSearch) return;
+    writeTeamsSearch({
+      search: debouncedSearch,
+      page: 1,
+      limit,
+      scope,
+      status,
     });
-  }, [teams, search, scope]);
-  const showOverview = loading || teams.length > 0;
+  }, [debouncedSearch, urlSearch, writeTeamsSearch, limit, scope, status]);
+
+  const [teams, setTeams] = useState([]);
+  const [teamPage, setTeamPage] = useState({
+    totalResults: 0,
+    totalPages: 1,
+    resultsTruncated: false,
+  });
+  const [metrics, setMetrics] = useState(null);
+  const [activeUserTotal, setActiveUserTotal] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const hasLoadedOnce = useRef(false);
+  const [error, setError] = useState(null);
+  const [loadForbidden, setLoadForbidden] = useState(false);
+  const [networkError, setNetworkError] = useState(null);
+  const [addBusyTeamId, setAddBusyTeamId] = useState(null);
+  const [confirmRemove, setConfirmRemove] = useState(null);
+  const [confirmArchive, setConfirmArchive] = useState(null);
+  const [removeBusy, setRemoveBusy] = useState(false);
+  const [archiveBusy, setArchiveBusy] = useState(false);
+  const [removingMemberId, setRemovingMemberId] = useState(null);
+
+  const reloadMetrics = useCallback(async () => {
+    if (!canViewTeams) return;
+    try {
+      const [allTeams, usersPage] = await Promise.all([
+        fetchAllTeams({ status }),
+        listUsers({ status: 'active', limit: 1 }).catch(() => ({ totalResults: null })),
+      ]);
+      const onATeam = new Set(allTeams.results.flatMap((t) => t.members.map((m) => m.id)));
+      const userTotal = usersPage.totalResults ?? activeUserTotal;
+      setActiveUserTotal(userTotal);
+      setMetrics({
+        teams: allTeams.totalResults,
+        people: onATeam.size,
+        openTickets: allTeams.results.reduce((sum, t) => sum + (t.stats?.open ?? 0), 0),
+        overdue: allTeams.results.reduce((sum, t) => sum + (t.stats?.overdue ?? 0), 0),
+        unassigned: userTotal != null ? Math.max(0, userTotal - onATeam.size) : null,
+      });
+    } catch {
+      setMetrics(null);
+    }
+  }, [activeUserTotal, canViewTeams, status]);
+
+  const reload = useCallback(async () => {
+    if (!user || !canViewTeams) return;
+
+    setLoading(true);
+    setError(null);
+    setLoadForbidden(false);
+    setNetworkError(null);
+
+    try {
+      const listPage = await listTeams({
+        page,
+        limit,
+        search: debouncedSearch || undefined,
+        scope: scope === 'all' ? undefined : scope,
+        status,
+      });
+      setTeams(listPage.results ?? []);
+      setTeamPage({
+        totalResults: listPage.totalResults ?? 0,
+        totalPages: listPage.totalPages ?? 1,
+        resultsTruncated: Boolean(listPage.resultsTruncated),
+      });
+      await reloadMetrics();
+    } catch (err) {
+      if (isForbiddenError(err)) {
+        setLoadForbidden(true);
+      } else if (isNetworkError(err)) {
+        setNetworkError(normalizeApiError(err));
+      } else {
+        setError(err);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [canViewTeams, debouncedSearch, limit, page, reloadMetrics, scope, status, user]);
+
+  useEffect(() => {
+    if (authLoading || !user) return undefined;
+    if (!canViewTeams) {
+      setLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      setLoadForbidden(false);
+      setNetworkError(null);
+
+      try {
+        const listPage = await listTeams({
+          page,
+          limit,
+          search: debouncedSearch || undefined,
+          scope: scope === 'all' ? undefined : scope,
+          status,
+        });
+        if (!cancelled) {
+          setTeams(listPage.results ?? []);
+          setTeamPage({
+            totalResults: listPage.totalResults ?? 0,
+            totalPages: listPage.totalPages ?? 1,
+            resultsTruncated: Boolean(listPage.resultsTruncated),
+          });
+        }
+        if (!cancelled) await reloadMetrics();
+      } catch (err) {
+        if (cancelled) return;
+        if (isForbiddenError(err)) {
+          setLoadForbidden(true);
+        } else if (isNetworkError(err)) {
+          setNetworkError(normalizeApiError(err));
+        } else {
+          setError(err);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+          hasLoadedOnce.current = true;
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [authLoading, canViewTeams, debouncedSearch, limit, page, reloadMetrics, scope, status, user]);
 
   async function handleAddMembers(teamId, userIds) {
     setError(null);
@@ -119,23 +275,27 @@ export default function TeamsPage() {
     }
   }
 
-  async function confirmDeleteTeam() {
-    if (!confirmDelete) return;
-    setDeleteBusy(true);
+  async function confirmArchiveTeam() {
+    if (!confirmArchive) return;
+    setArchiveBusy(true);
     setError(null);
     try {
-      await patchTeam(confirmDelete.id, { status: 'archived' });
-      showToast(`${confirmDelete.name} deleted`);
-      setConfirmDelete(null);
+      await patchTeam(confirmArchive.id, { status: 'archived' });
+      showToast(`${confirmArchive.name} archived`);
+      setConfirmArchive(null);
       await reload();
     } catch (err) {
-      const message = normalizeApiError(err)?.message || 'Could not delete team';
+      const message = normalizeApiError(err)?.message || 'Could not archive team';
       setError(err);
       showToast(message);
     } finally {
-      setDeleteBusy(false);
+      setArchiveBusy(false);
     }
   }
+
+  const pageBusy = authLoading || (canViewTeams && loading && !hasLoadedOnce.current);
+  const listRefreshing = canViewTeams && loading && hasLoadedOnce.current;
+  const showOverview = pageBusy || teamPage.totalResults > 0 || status === 'archived' || debouncedSearch || scope !== 'all';
 
   return (
     <>
@@ -146,81 +306,207 @@ export default function TeamsPage() {
         </div>
         <span className="spacer" />
         {canCreate ? (
-          <Link href="/teams/new" className="btn btn-primary">
+          <Link href={withTeamsReturn('/teams/new', listReturnUrl)} className="btn btn-primary">
             <Icon name="plus" size={12} /> New team
           </Link>
         ) : null}
       </div>
       <FormError error={error} />
 
-      {showOverview && (
-        <>
-          <dl className="teams-metrics">
-            <div><dt>Teams</dt><dd>{loading ? '—' : metrics.teams}</dd></div>
-            <div><dt>People on a team</dt><dd>{loading ? '—' : metrics.people}</dd></div>
-            <div><dt>Open tickets</dt><dd>{loading ? '—' : metrics.openTickets}</dd></div>
-            <div>
-              <dt>Overdue</dt>
-              <dd className={!loading && metrics.overdue ? 'team-panel__overdue' : undefined}>{loading ? '—' : metrics.overdue}</dd>
-            </div>
-            <div><dt>Not on a team</dt><dd>{loading || metrics.unassigned == null ? '—' : metrics.unassigned}</dd></div>
-          </dl>
-
-          <div className="teams-filters">
-            <input
-              type="search"
-              placeholder="Search teams, projects or people…"
-              aria-label="Search teams"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              disabled={loading}
-            />
-            <select aria-label="Scope" value={scope} onChange={(e) => setScope(e.target.value)} disabled={loading}>
-              <option value="all">All teams</option>
-              <option value="global">Global teams</option>
-              <option value="project">Project teams</option>
-              <option value="empty">Empty teams</option>
-            </select>
-          </div>
-        </>
-      )}
-
-      {loading ? (
+      {pageBusy ? (
         <div className="loading-skeleton" aria-busy="true">
           <AppLoader inline label="Loading teams…" ariaLabel="Loading teams" />
         </div>
-      ) : teams.length === 0 ? (
+      ) : !canViewTeams ? (
         <div className="empty-state">
-          <h3>No teams yet</h3>
-          <p>Create a team to route tickets to a group. Teams can be global or scoped to one project.</p>
-          {canCreate ? (
-            <Link href="/teams/new" className="btn btn-primary">New team</Link>
-          ) : null}
+          <h3>Permission required</h3>
+          <p>You need teams.view to access this page.</p>
         </div>
-      ) : visibleTeams.length === 0 ? (
+      ) : loadForbidden ? (
         <div className="empty-state">
-          <h3>No teams match</h3>
-          <p>Nothing here fits that search and scope. Clear the filters to see all {teams.length} teams.</p>
-          <button type="button" className="btn" onClick={() => { setSearch(''); setScope('all'); }}>
-            Clear filters
+          <h3>Permission denied</h3>
+          <p>You do not have permission to view teams.</p>
+        </div>
+      ) : networkError ? (
+        <div className="banner" role="alert">
+          <Icon name="alert" size={16} aria-hidden="true" />
+          <div className="banner-body">
+            <b>Could not load teams</b>
+            <div>{networkError.message || 'Check your connection and try again.'}</div>
+          </div>
+          <span className="spacer" />
+          <button type="button" className="btn btn-sm" onClick={reload}>
+            Retry
           </button>
         </div>
       ) : (
-        <div className="teams-cards-grid">
-          {visibleTeams.map((team) => (
-            <TeamCard
-              key={team.id}
-              team={team}
-              canEdit={canEdit}
-              canDelete={canDelete}
-              onAddMembers={canEdit ? handleAddMembers : undefined}
-              onRequestRemove={canEdit ? requestRemove : undefined}
-              onDelete={canDelete ? () => setConfirmDelete(team) : undefined}
-              addBusy={addBusyTeamId === team.id}
-              removingMemberId={confirmRemove?.team.id === team.id ? removingMemberId : null}
-            />
-          ))}
-        </div>
+        <>
+          {showOverview ? (
+            <>
+              <dl className="teams-metrics">
+                <div><dt>Teams</dt><dd>{metrics ? metrics.teams : '—'}</dd></div>
+                <div><dt>People on a team</dt><dd>{metrics ? metrics.people : '—'}</dd></div>
+                <div><dt>Open tickets</dt><dd>{metrics ? metrics.openTickets : '—'}</dd></div>
+                <div>
+                  <dt>Overdue</dt>
+                  <dd className={metrics?.overdue ? 'team-panel__overdue' : undefined}>
+                    {metrics ? metrics.overdue : '—'}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Not on a team</dt>
+                  <dd>{metrics?.unassigned == null ? '—' : metrics.unassigned}</dd>
+                </div>
+              </dl>
+
+              <div className="teams-toolbar">
+                <label className="projects-search teams-toolbar__search">
+                  <span className="sr">Search teams</span>
+                  <input
+                    type="search"
+                    className="menusearch projects-search__input"
+                    placeholder="Search teams, projects or people…"
+                    aria-label="Search teams"
+                    value={searchInput}
+                    onChange={(event) => setSearchInput(event.target.value)}
+                    aria-busy={listRefreshing || undefined}
+                  />
+                </label>
+                <select
+                  className="teams-toolbar__scope"
+                  aria-label="Team scope"
+                  value={scope}
+                  disabled={loading}
+                  onChange={(event) => {
+                    writeTeamsSearch({
+                      search: urlSearch,
+                      page: 1,
+                      limit,
+                      scope: event.target.value,
+                      status,
+                    });
+                  }}
+                >
+                  <option value="all">All teams</option>
+                  <option value="global">Global teams</option>
+                  <option value="project">Project teams</option>
+                  <option value="empty">Empty teams</option>
+                </select>
+                <div className="seg teams-toolbar__status" role="group" aria-label="Team status">
+                  <button
+                    type="button"
+                    aria-pressed={status === 'active'}
+                    onClick={() => writeTeamsSearch({
+                      search: urlSearch, page: 1, limit, scope, status: 'active',
+                    })}
+                  >
+                    Active
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={status === 'archived'}
+                    onClick={() => writeTeamsSearch({
+                      search: urlSearch, page: 1, limit, scope, status: 'archived',
+                    })}
+                  >
+                    Archived
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : null}
+
+          {teamPage.resultsTruncated ? (
+            <div className="banner" role="status">
+              <div className="banner-body">
+                More teams match your access than are shown on this page. Use search or pagination to find them.
+              </div>
+            </div>
+          ) : null}
+
+          <div aria-busy={listRefreshing || undefined}>
+            {teams.length === 0 && !listRefreshing ? (
+              <div className="empty-state">
+                <h3>{status === 'archived' ? 'No archived teams' : 'No teams yet'}</h3>
+                <p>
+                  {status === 'archived'
+                    ? 'Archived teams are hidden from the active list.'
+                    : 'Create a team to route tickets to a group. Teams can be global or scoped to one project.'}
+                </p>
+                {canCreate && status === 'active' ? (
+                  <Link href={withTeamsReturn('/teams/new', listReturnUrl)} className="btn btn-primary">
+                    New team
+                  </Link>
+                ) : null}
+              </div>
+            ) : (
+              <div className="teams-cards-grid">
+                {teams.map((team) => (
+                  <TeamCard
+                    key={team.id}
+                    team={team}
+                    canEdit={canEdit}
+                    canDelete={canDelete}
+                    listReturnUrl={listReturnUrl}
+                    onAddMembers={canEdit ? handleAddMembers : undefined}
+                    onRequestRemove={canEdit ? requestRemove : undefined}
+                    onDelete={canDelete ? () => setConfirmArchive(team) : undefined}
+                    addBusy={addBusyTeamId === team.id}
+                    removingMemberId={confirmRemove?.team.id === team.id ? removingMemberId : null}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          <nav className="pager" aria-label="Teams pagination">
+            <div className="pager__meta" aria-live="polite" aria-atomic="true">
+              <span className="of">{teamPage.totalResults} teams</span>
+              {(teamPage.totalPages || 1) > 1 ? (
+                <span className="of">Page {page} of {teamPage.totalPages}</span>
+              ) : null}
+            </div>
+            <div className="pager__controls">
+              <label className="pagesize">
+                <span className="pagesize__label">Rows</span>
+                <select
+                  aria-label="Teams per page"
+                  value={limit}
+                  disabled={loading}
+                  onChange={(event) => {
+                    writeTeamsSearch({
+                      search: urlSearch,
+                      page: 1,
+                      limit: Number(event.target.value),
+                      scope,
+                      status,
+                    });
+                  }}
+                >
+                  {TEAM_PAGE_SIZES.map((size) => (
+                    <option key={size} value={size}>{size} / page</option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                className="pagebtn"
+                disabled={loading || page <= 1}
+                onClick={() => writeTeamsSearch({ search: urlSearch, page: page - 1, limit, scope, status })}
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                className="pagebtn"
+                disabled={loading || page >= (teamPage.totalPages || 1)}
+                onClick={() => writeTeamsSearch({ search: urlSearch, page: page + 1, limit, scope, status })}
+              >
+                Next
+              </button>
+            </div>
+          </nav>
+        </>
       )}
 
       <ConfirmDialog
@@ -238,17 +524,17 @@ export default function TeamsPage() {
       />
 
       <ConfirmDialog
-        open={Boolean(confirmDelete)}
-        title={confirmDelete ? `Delete ${confirmDelete.name}?` : ''}
-        message={confirmDelete
+        open={Boolean(confirmArchive)}
+        title={confirmArchive ? `Archive ${confirmArchive.name}?` : ''}
+        message={confirmArchive
           ? 'This archives the team. Tickets already assigned keep their history.'
           : ''}
-        confirmLabel="Delete"
+        confirmLabel="Archive"
         cancelLabel="Cancel"
         danger
-        busy={deleteBusy}
-        onConfirm={confirmDeleteTeam}
-        onCancel={() => { if (!deleteBusy) setConfirmDelete(null); }}
+        busy={archiveBusy}
+        onConfirm={confirmArchiveTeam}
+        onCancel={() => { if (!archiveBusy) setConfirmArchive(null); }}
       />
     </>
   );

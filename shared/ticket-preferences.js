@@ -8,6 +8,7 @@ export const TICKET_SORT_COLUMNS = Object.freeze([
 ]);
 
 import { isExternalUser } from './permissions.js';
+import { STAGES } from './stages.js';
 
 export const TICKET_SCOPES = Object.freeze(['all', 'assigned', 'reported', 'unassigned']);
 
@@ -103,13 +104,45 @@ export function cycleTicketSort(current, column) {
     return { column, direction: 'desc' };
   }
   if (current.direction === 'desc') return { column, direction: 'asc' };
-  if (current.direction === 'asc') return { column: '', direction: '' };
   return { column, direction: 'desc' };
 }
 
 export function sortAriaValue(sort, column) {
   if (sort?.column !== column || !sort?.direction) return undefined;
   return sort.direction === 'asc' ? 'ascending' : 'descending';
+}
+
+const SCOPE_LABELS = Object.freeze({
+  all: 'All tickets',
+  assigned: 'Assigned to me',
+  reported: 'Reported by me',
+  unassigned: 'Unassigned',
+});
+
+/**
+ * Human-readable active filters for empty states and chips.
+ * @param {{ ownerLabel?: string }} [options]
+ */
+export function activeTicketFilterLabels(filters = {}, defaults = DEFAULT_TICKET_PREFERENCES.filters, options = {}) {
+  const labels = [];
+  if (filters.q) labels.push(`Search: ${filters.q}`);
+  if (filters.status && filters.status !== defaults.status) {
+    const stage = STAGES.find((s) => s.key === filters.status);
+    labels.push(`Stage: ${stage?.label || filters.status}`);
+  }
+  if (filters.priority) labels.push(`Priority: ${filters.priority}`);
+  if (filters.category) labels.push(`Category: ${filters.category}`);
+  if (filters.severity) labels.push(`Severity: ${filters.severity}`);
+  if (filters.scope && filters.scope !== defaults.scope && TICKET_SCOPES.includes(filters.scope)) {
+    labels.push(`Scope: ${SCOPE_LABELS[filters.scope] || filters.scope}`);
+  }
+  if (filters.assignedTo) {
+    labels.push(options.ownerLabel ? `Owner: ${options.ownerLabel}` : 'Owner: selected');
+  }
+  if (filters.blocked) labels.push('Blocked');
+  if (filters.overdue) labels.push('Overdue');
+  if (filters.reopened) labels.push('Reopened');
+  return labels;
 }
 
 export function hasActiveTicketFilters(filters = {}, defaults = DEFAULT_TICKET_PREFERENCES.filters) {

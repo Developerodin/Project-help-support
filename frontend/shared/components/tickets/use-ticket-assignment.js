@@ -1,7 +1,7 @@
 ﻿'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { getProject } from '@/shared/api/projects.js';
+import { getProject, getProjectAssignableTeams } from '@/shared/api/projects.js';
 import { listTeams } from '@/shared/api/teams.js';
 import { normalizeApiError } from '@/shared/lib/api-error.js';
 import { getUserRoles } from '@pms/shared';
@@ -54,14 +54,21 @@ export function useTicketAssignment({
   }, [canAssign, assigneePickerOpen, teamPickerOpen, projectId, eagerLoad]);
 
   useEffect(() => {
-    if (!canAssign || !canViewTeams || (!eagerLoad && !teamPickerOpen)) return undefined;
+    if (!canAssign || (!eagerLoad && !teamPickerOpen)) return undefined;
     let cancelled = false;
     setLoadingTeams(true);
     setTeamsError(null);
-    listTeams(projectId)
+
+    const loadTeams = canViewTeams
+      ? listTeams({ project: projectId, status: 'active', limit: 100 })
+      : getProjectAssignableTeams(projectId);
+
+    loadTeams
       .then((page) => { if (!cancelled) setTeams(page.results || []); })
       .catch((err) => {
-        if (!cancelled) setTeamsError(normalizeApiError(err)?.message || 'Could not load teams');
+        if (!cancelled) {
+          setTeamsError(normalizeApiError(err)?.message || 'Could not load teams');
+        }
       })
       .finally(() => { if (!cancelled) setLoadingTeams(false); });
     return () => { cancelled = true; };

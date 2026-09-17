@@ -68,3 +68,40 @@ export function resolveTicketEstimateDates(ticket, patch = {}) {
       : ticket.expectedReleaseDate,
   };
 }
+
+/** Calendar-day distance; positive when `to` is after `from`. */
+export function daysBetweenDates(from, to = Date.now()) {
+  return Math.floor((new Date(to).getTime() - new Date(from).getTime()) / 86400000);
+}
+
+/**
+ * Matches backend overdue filter and frontend list chips: closed/live never overdue.
+ * @param {{ estimatedResolutionAt?: Date|string|null, status?: string }} ticket
+ * @param {number} [nowMs]
+ */
+export function isTicketOverdue(ticket, nowMs = Date.now()) {
+  if (!ticket?.estimatedResolutionAt) return false;
+  if (ticket.status === 'closed' || ticket.status === 'live') return false;
+  return new Date(ticket.estimatedResolutionAt).getTime() < nowMs;
+}
+
+/** @param {Date|string|null|undefined} iso */
+export function formatTicketDisplayDate(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+/** Days since the ticket entered its current stage (minimum 0). */
+export function ticketStageAgeDays(ticket, nowMs = Date.now()) {
+  const entered = ticket?.currentStageEnteredAt
+    || ticket?.stageHistory?.[ticket.stageHistory.length - 1]?.at
+    || ticket?.updatedAt
+    || ticket?.createdAt;
+  if (!entered) return 0;
+  return Math.max(0, daysBetweenDates(entered, nowMs));
+}
+

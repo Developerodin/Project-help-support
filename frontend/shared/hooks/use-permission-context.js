@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { getRoleMatrixEffective } from '../api/rbac.js';
 
 /**
@@ -15,6 +15,12 @@ export function usePermissionContext() {
     loadFailed: false,
   });
   const [loading, setLoading] = useState(true);
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  const retry = useCallback(() => {
+    setLoading(true);
+    setReloadNonce((n) => n + 1);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,7 +49,7 @@ export function usePermissionContext() {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [reloadNonce]);
 
-  return { permissionContext, loading };
+  return { permissionContext, loading, retryPermissions: retry };
 }

@@ -81,7 +81,9 @@ export default function ProfilePage() {
       try {
         await refreshUser();
         const [teamsPage, projectsPage] = await Promise.all([
-          listTeams({ limit: 100 }),
+          user?.id && canAccessTeams(user)
+            ? listTeams({ member: user.id, limit: 100, status: 'active' })
+            : Promise.resolve({ results: [] }),
           canAccessProjects(user) ? listProjects({ limit: 1 }) : Promise.resolve(null),
         ]);
         if (!cancelled) {

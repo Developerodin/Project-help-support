@@ -26,6 +26,7 @@ import {
   ensureProjectMigrated,
   getProjectTeamContext,
   listProjectTeamMembers,
+  listProjectTeamMembersByProjects,
   migrateProjectTeamFromLegacy,
   replaceProjectTeamMemberRoles,
 } from './project-team-member.service.js';
@@ -141,12 +142,47 @@ async function assertDefaults(projectId, body) {
   if (body.defaultTeam) await assertTeamUsable(body.defaultTeam, projectId);
 }
 
+function projectSearchClause(term) {
+  const raw = String(term || '').trim();
+  if (!raw) return null;
+  const safe = raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return {
+    $or: [
+      { name: { $regex: safe, $options: 'i' } },
+      { key: { $regex: safe, $options: 'i' } },
+    ],
+  };
+}
+
+function emptyProjectPage(query) {
+  return {
+    results: [],
+    page: Number(query.page) || 1,
+    limit: Number(query.limit) || 20,
+    totalPages: 0,
+    totalResults: 0,
+    resultsTruncated: false,
+  };
+}
+
 async function attachTeamContext(projectJson) {
   if (!projectJson?.id && !projectJson?._id) return projectJson;
   const projectId = projectJson.id || projectJson._id;
   await ensureProjectMigrated(projectId);
   const { team, teamMembers } = await getProjectTeamContext(projectId);
   return { ...projectJson, team, teamMembers };
+}
+
+async function attachTeamContextBatch(projectJsons) {
+  if (!projectJsons.length) return [];
+  const ids = projectJsons.map((p) => p.id || p._id).filter(Boolean);
+  await Promise.all(ids.map((id) => ensureProjectMigrated(id)));
+  const membersByProject = await listProjectTeamMembersByProjects(ids);
+  return projectJsons.map((projectJson) => {
+    const projectId = String(projectJson.id || projectJson._id);
+    const teamMembers = membersByProject.get(projectId) || [];
+    return { ...projectJson, teamMembers };
+  });
 }
 
 export async function createProject(actor, body, permissionContext = null) {
@@ -190,6 +226,11 @@ export async function createProject(actor, body, permissionContext = null) {
 
   await assignCompanyWideClientTestersToProject(actor, client._id, project._id);
 
+  const clientTesterIds = body.clientTesterIds || [];
+  if (clientTesterIds.length) {
+    await setProjectClientTesters(actor, project._id, clientTesterIds, permissionContext);
+  }
+
   if (project.team) {
     await assignProjectTeam(project._id, project.team);
   } else if (body.defaultAssignee || body.defaultTester) {
@@ -222,13 +263,7 @@ export async function listProjects(query = {}, actor = null, permissionContext =
   if (actor && isExternalUser(actor)) {
     const permittedIds = await permittedProjectIdsForExternalUser(actor._id);
     if (!permittedIds.length) {
-      return {
-        results: [],
-        page: Number(query.page) || 1,
-        limit: Number(query.limit) || 20,
-        totalPages: 0,
-        totalResults: 0,
-      };
+      return emptyProjectPage(query);
     }
     filter._id = { $in: permittedIds };
   } else if (actor) {
@@ -244,13 +279,7 @@ export async function listProjects(query = {}, actor = null, permissionContext =
         else if (client) clientIds.add(String(client));
       }
       if (!projectIds.size && !clientIds.size) {
-        return {
-          results: [],
-          page: Number(query.page) || 1,
-          limit: Number(query.limit) || 20,
-          totalPages: 0,
-          totalResults: 0,
-        };
+        return emptyProjectPage(query);
       }
       const scopeClauses = [];
       if (projectIds.size) scopeClauses.push({ _id: { $in: [...projectIds] } });
@@ -259,13 +288,18 @@ export async function listProjects(query = {}, actor = null, permissionContext =
     }
   }
 
+  const search = projectSearchClause(query.search || query.q);
+  if (search) {
+    filter.$and = [...(filter.$and ?? []), search];
+  }
+
   const page = await paginate(Project, filter, {
     page: query.page,
     limit: query.limit,
     sortBy: query.sortBy || 'key:asc',
     populate: ['team', 'client'],
   });
-  const results = await Promise.all(page.results.map(async (p) => attachTeamContext(p.toJSON())));
+  const results = await attachTeamContextBatch(page.results.map((p) => p.toJSON()));
   return { ...page, results };
 }
 
@@ -345,7 +379,8 @@ export async function setProjectTeamMembers(id, members, actor = null, permissio
   return { teamMembers: rows };
 }
 
-export async function getProjectTeamMembers(id) {
+export async function getProjectTeamMembers(id, actor = null, permissionContext = null) {
+  await getProject(id, actor, permissionContext);
   await ensureProjectMigrated(id);
   return { teamMembers: await listProjectTeamMembers(id) };
 }
@@ -371,9 +406,21 @@ export async function replaceModules(id, modules, actor = null, permissionContex
   return project.toJSON();
 }
 
-export async function getProjectClientTesters(id) {
+export async function getProjectClientTesters(id, actor = null, permissionContext = null) {
   const project = await Project.findById(id).select('client');
   if (!project) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
+  if (actor) {
+    await assertCanViewProjects(actor, permissionContext);
+    await assertExternalProjectAccess(actor, project._id);
+    if (!isExternalUser(actor)) {
+      await assertScopedPermissionWhenConstrained(
+        actor,
+        'projects.view',
+        projectScopeTarget(project),
+        permissionContext,
+      );
+    }
+  }
   if (!project.client) {
     return { projectId: String(id), clientId: null, items: [] };
   }

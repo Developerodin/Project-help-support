@@ -46,8 +46,9 @@ export default function projectRoutes(config) {
   router.patch('/:id', requirePermission('projects.manage'), validate(updateProjectSchema), controller.update);
   router.put('/:id/modules', requirePermission('projects.manage'),
     validate(replaceModulesSchema), controller.modules);
-  router.get('/:id/team-members', validate(projectIdSchema), controller.teamMembers);
-  router.get('/:id/client-testers', validate(projectIdSchema), controller.clientTesters);
+  router.get('/:id/team-members', requireProjectView, validate(projectIdSchema), controller.teamMembers);
+  router.get('/:id/assignable-teams', requirePermission('tickets.edit'), validate(projectIdSchema), controller.assignableTeams);
+  router.get('/:id/client-testers', requireProjectView, validate(projectIdSchema), controller.clientTesters);
   router.put('/:id/client-testers', requirePermission('projects.manage'),
     validate(replaceClientTestersSchema), controller.replaceClientTesters);
   router.put('/:id/team-members', requirePermission('projects.manage'),

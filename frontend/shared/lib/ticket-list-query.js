@@ -29,6 +29,9 @@ export function buildTicketListQuery({
   if (filters.priority) query.priority = filters.priority;
   if (filters.category) query.category = filters.category;
   if (filters.severity) query.severity = filters.severity;
+  if (filters.module) query.module = filters.module;
+  if (filters.environment) query.environment = filters.environment;
+  if (filters.label) query.label = filters.label;
   const scope = scopeOverride ?? filters.scope;
   if (scope && scope !== 'all') query.scope = scope;
   if (filters.assignedTo) query.assignedTo = filters.assignedTo;
@@ -138,7 +141,10 @@ export function windowedPageNumbers(current, total, window = 5) {
  * The filter keys the URL carries. Flags ride as '1' so the URL only ever
  * names a filter that is actually on.
  */
-const URL_FILTER_KEYS = Object.freeze(['q', 'status', 'priority', 'category', 'severity', 'scope', 'assignedTo']);
+const URL_FILTER_KEYS = Object.freeze([
+  'q', 'status', 'priority', 'category', 'severity', 'scope', 'assignedTo',
+  'module', 'environment', 'label',
+]);
 const URL_FLAG_KEYS = Object.freeze(['blocked', 'overdue', 'reopened']);
 
 export function hasFilterParams(search) {

@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -8,6 +8,8 @@ import {
   getTicket, patchTicket, transitionTicket, addComment, editComment, deleteComment, uploadAttachments, deleteAttachment, assignTicket,
   watchTicket, unwatchTicket, setBlocked, clearBlocked, deleteTicket,
 } from '@/shared/api/tickets.js';
+import { isAbortError } from '@/shared/api/client.js';
+import { showToast } from '@/shared/lib/toast.js';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import { useProject } from '@/shared/contexts/project-context.jsx';
 import Icon from '@/shared/components/icons.jsx';
@@ -52,6 +54,9 @@ function TicketDrawerContent({
   load,
   boardPolicy,
   permissionContext,
+  permissionsLoadFailed,
+  onRetryPermissions,
+  projectBanner,
 }) {
   const [error, setError] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -124,7 +129,10 @@ function TicketDrawerContent({
         setError(apiError);
       }
 
-      if (apiError.status === 409) await load();
+      if (apiError.status === 409) {
+        await load();
+        showToast('This ticket changed elsewhere — showing the latest version.');
+      }
       if (rethrow) throw apiError;
     }
   };
@@ -134,8 +142,9 @@ function TicketDrawerContent({
   );
   const canViewTicket = can(user, 'tickets.view', permissionContext) || isExternalUser(user);
   const canEditTicket = can(user, 'tickets.edit', permissionContext);
-  const canManageOwnComments = canEditTicket || isExternalUser(user);
   const externalViewer = isExternalUser(user);
+  const canComment = externalViewer ? canViewTicket : canEditTicket;
+  const canManageOwnComments = canEditTicket || isExternalUser(user);
   const canAssign = Boolean(canEditTicket && !externalViewer);
   const canViewTeams = can(user, 'teams.view', permissionContext);
   const canDeleteTicket = can(user, 'tickets.delete', permissionContext);
@@ -187,6 +196,20 @@ function TicketDrawerContent({
 
   return (
     <>
+      {permissionsLoadFailed ? (
+        <div className="drawer-permissions-banner" role="alert">
+          Permissions could not load — actions may be unavailable.
+          <button type="button" className="btn btn-sm" onClick={onRetryPermissions}>Retry</button>
+        </div>
+      ) : null}
+      {projectBanner ? (
+        <div className="drawer-project-banner" role="status">
+          {projectBanner.message}
+          <button type="button" className="btn btn-sm" onClick={projectBanner.onSwitch}>
+            Switch to {projectBanner.projectName}
+          </button>
+        </div>
+      ) : null}
       <div className="drawer-head">
         <TicketHeader
           ticket={ticket}
@@ -285,13 +308,13 @@ function TicketDrawerContent({
                 <TicketComments
                   ticket={ticket}
                   user={user}
-                  canComment={canViewTicket}
+                  canComment={canComment}
                   canEditComments={canManageOwnComments}
                   canDeleteComments={canManageOwnComments}
-                  onAdd={canViewTicket
+                  onAdd={canComment
                     ? run((body) => addComment(ticket.ticketId, body), { rethrow: true })
                     : undefined}
-                  onUpload={canViewTicket
+                  onUpload={canComment
                     ? run((form) => uploadAttachments(ticket.ticketId, form), { rethrow: true })
                     : undefined}
                   onEdit={canManageOwnComments
@@ -466,40 +489,47 @@ function TicketDrawerContent({
 export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
   const { user } = useAuth();
   const { policy: boardPolicy } = useBoardPolicy();
-  const { permissionContext } = usePermissionContext();
+  const { permissionContext, retryPermissions } = usePermissionContext();
   const { activeProjectId, setActiveProjectId } = useProject();
-  const activeProjectIdRef = useRef(activeProjectId);
   const loadSeqRef = useRef(0);
+  const loadAbortRef = useRef(null);
   const drawerRef = useRef(null);
   const openerRef = useRef(null);
   const [ticket, setTicket] = useState(null);
   const [error, setError] = useState(null);
 
-  activeProjectIdRef.current = activeProjectId;
-
   const load = useCallback(async () => {
+    loadAbortRef.current?.abort();
+    const controller = new AbortController();
+    loadAbortRef.current = controller;
     const seq = ++loadSeqRef.current;
+    setTicket(null);
     try {
-      const next = await getTicket(ticketId);
-      if (seq !== loadSeqRef.current) return null;
+      const next = await getTicket(ticketId, { signal: controller.signal });
+      if (seq !== loadSeqRef.current || controller.signal.aborted) return null;
       setTicket(next);
       setError(null);
       return next;
     } catch (err) {
+      if (isAbortError(err) || controller.signal.aborted) return null;
       if (seq !== loadSeqRef.current) return null;
       throw err;
     }
   }, [ticketId]);
 
-  useEffect(() => {
-    if (!ticket) return;
-    const projectId = ticket.project?.id || ticket.project?._id;
-    if (projectId && String(projectId) !== String(activeProjectIdRef.current)) {
-      setActiveProjectId(String(projectId));
-    }
-  }, [ticket, setActiveProjectId]);
+  useEffect(() => () => loadAbortRef.current?.abort(), []);
 
   useEffect(() => { load().catch(setError); }, [load]);
+
+  const ticketProjectId = ticket?.project?.id || ticket?.project?._id;
+  const projectMismatch = Boolean(
+    ticketProjectId && String(ticketProjectId) !== String(activeProjectId),
+  );
+  const projectBanner = projectMismatch ? {
+    projectName: ticket.project?.name || 'this project',
+    message: `This ticket belongs to ${ticket.project?.name || 'another project'}.`,
+    onSwitch: () => setActiveProjectId(String(ticketProjectId)),
+  } : null;
 
   useEffect(() => {
     openerRef.current = document.activeElement;
@@ -550,7 +580,11 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
 
   return (
     <>
-      <div className={`scrim${ticket ? ' on' : ''}`} onClick={onClose} />
+      <div
+        className={`scrim${ticket ? ' on' : ''}`}
+        onClick={ticket ? onClose : undefined}
+        aria-hidden={!ticket}
+      />
       <aside
         role="dialog"
         aria-modal="true"
@@ -574,6 +608,9 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
             load={load}
             boardPolicy={boardPolicy}
             permissionContext={permissionContextForUi(permissionContext)}
+            permissionsLoadFailed={permissionContext.loadFailed}
+            onRetryPermissions={retryPermissions}
+            projectBanner={projectBanner}
           />
         )}
       </aside>

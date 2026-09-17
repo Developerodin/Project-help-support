@@ -14,34 +14,37 @@ import { buildTicketFilter } from './ticket.service.js';
  * Every analysis projects ONLY the fields it needs. Never whole documents.
  */
 
+/** Documented in-service ceiling; UI warns when exceeded. */
+export const ANALYTICS_TICKET_CEILING = 10000;
+
+const ANALYTICS_SELECT = [
+  'status', 'severity', 'labels', 'stageHistory', 'estimatedResolutionAt',
+  'createdAt', 'closedAt', 'blocked', 'priority', 'module', 'category',
+  'environment', 'assignedTo', 'team',
+].join(' ');
+
 const emptyLanes = () => Object.fromEntries(LANES.map((lane) => [lane.key, 0]));
 const emptyStages = () => Object.fromEntries(STAGE_KEYS.map((key) => [key, 0]));
 
-export async function overview(actor, query = {}) {
+export async function loadAnalyticsTickets(actor, query = {}) {
   const filter = await buildTicketFilter(actor, query);
-
-  const tickets = await Ticket.find(filter).select('status severity labels').lean();
-
-  const lanes = emptyLanes();
-  const byStage = emptyStages();
-  let blockerCritical = 0;
-
-  for (const ticket of tickets) {
-    byStage[ticket.status] += 1;
-    lanes[laneOf(ticket.status)] += 1;
-
-    // Deliberately overlapping: a critical ticket is also counted in its lane.
-    // It is reported BESIDE the tiles, never as one of them, so the lane tiles
-    // keep summing to the total.
-    if (ticket.severity === 'Critical' || ticket.severity === 'Blocker') {
-      blockerCritical += 1;
-    }
-  }
-
-  return { total: tickets.length, lanes, byStage, blockerCritical };
+  const tickets = await Ticket.find(filter)
+    .select(ANALYTICS_SELECT)
+    .populate('assignedTo', 'name')
+    .populate('team', 'name')
+    .lean();
+  const ticketCount = tickets.length;
+  return {
+    tickets,
+    ticketCount,
+    exceedsCeiling: ticketCount > ANALYTICS_TICKET_CEILING,
+    ceiling: ANALYTICS_TICKET_CEILING,
+  };
 }
 
 const HOUR_MS = 3600000;
+const DAY_MS = 86400000;
+const QA_ENTRY_INDEX = stageIndex('ready_qa');
 
 export function median(values) {
   if (!values.length) return null;
@@ -89,11 +92,24 @@ export function stageDurations(stageHistory) {
   return durations;
 }
 
-export async function timeInStage(actor, query = {}) {
-  const filter = await buildTicketFilter(actor, query);
+export function computeOverview(tickets) {
+  const lanes = emptyLanes();
+  const byStage = emptyStages();
+  let blockerCritical = 0;
 
-  const tickets = await Ticket.find(filter).select('stageHistory').lean();
+  for (const ticket of tickets) {
+    byStage[ticket.status] += 1;
+    lanes[laneOf(ticket.status)] += 1;
 
+    if (ticket.severity === 'Critical' || ticket.severity === 'Blocker') {
+      blockerCritical += 1;
+    }
+  }
+
+  return { total: tickets.length, lanes, byStage, blockerCritical };
+}
+
+export function computeTimeInStage(tickets) {
   const samples = Object.fromEntries(STAGE_KEYS.map((key) => [key, []]));
 
   for (const ticket of tickets) {
@@ -126,29 +142,7 @@ export async function timeInStage(actor, query = {}) {
   return { byStage, bottleneck };
 }
 
-const DAY_MS = 86400000;
-const QA_ENTRY_INDEX = stageIndex('ready_qa');
-
-const dayKey = (date) => new Date(date).toISOString().slice(0, 10);
-
-/**
- * actualResolutionAt = the stageHistory entry whose `to` is 'live'
- * variance           = actualResolutionAt − estimatedResolutionAt
- *   < 0 early ·  = 0 on time ·  > 0 late
- *
- * Compared by CALENDAR DAY: an estimate is a date, and a ticket that shipped at
- * 17:30 on the estimated day is on time, not eight hours late.
- *
- * A ticket that never reached `live`, or was never estimated, is NOT MEASURABLE
- * and is excluded — counting it as on time would flatter every report.
- */
-export async function estimateAccuracy(actor, query = {}) {
-  const filter = await buildTicketFilter(actor, query);
-
-  const tickets = await Ticket.find(filter)
-    .select('estimatedResolutionAt stageHistory')
-    .lean();
-
+export function computeEstimateAccuracy(tickets) {
   let early = 0;
   let onTime = 0;
   let late = 0;
@@ -172,21 +166,11 @@ export async function estimateAccuracy(actor, query = {}) {
     early,
     onTime,
     late,
-    // Reported as a distribution across three buckets, never as one number.
     buckets: { early, onTime, late },
   };
 }
 
-/**
- * Reopens whose ORIGIN stage was ready_qa or later, over tickets that reached
- * QA at all. Distinct from raw reopenCount — and the more useful of the two,
- * because it measures work QA sent back rather than churn in general.
- */
-export async function reopenAfterQa(actor, query = {}) {
-  const filter = await buildTicketFilter(actor, query);
-
-  const tickets = await Ticket.find(filter).select('stageHistory').lean();
-
+export function computeReopenAfterQa(tickets) {
   let reachedQa = 0;
   let reopenedAfterQa = 0;
 
@@ -207,21 +191,16 @@ export async function reopenAfterQa(actor, query = {}) {
   return {
     reachedQa,
     reopenedAfterQa,
-    // null, not 0 — "nothing reached QA" and "nothing came back" are different
-    // facts, and a 0% rate over an empty denominator is a lie.
     rate: reachedQa === 0 ? null : reopenedAfterQa / reachedQa,
   };
 }
 
-export async function aging(actor, query = {}) {
-  const filter = { ...(await buildTicketFilter(actor, query)), status: { $ne: 'closed' } };
-
-  const tickets = await Ticket.find(filter).select('createdAt').lean();
-
+export function computeAging(tickets) {
   const buckets = { '0-1': 0, '2-7': 0, '8-30': 0, '31+': 0 };
   const now = Date.now();
 
   for (const ticket of tickets) {
+    if (ticket.status === 'closed') continue;
     const days = Math.floor((now - new Date(ticket.createdAt).getTime()) / DAY_MS);
     if (days <= 1) buckets['0-1'] += 1;
     else if (days <= 7) buckets['2-7'] += 1;
@@ -232,20 +211,18 @@ export async function aging(actor, query = {}) {
   return { buckets };
 }
 
+const dayKey = (date) => new Date(date).toISOString().slice(0, 10);
+
 function weekKey(date) {
-  // The Monday of that week, so buckets are stable and sort as strings.
   const d = new Date(date);
   const day = (d.getUTCDay() + 6) % 7;
   d.setUTCDate(d.getUTCDate() - day);
   return d.toISOString().slice(0, 10);
 }
 
-export async function trend(actor, query = {}) {
+export function computeTrend(tickets, query = {}) {
   const groupBy = query.groupBy === 'week' ? 'week' : 'day';
   const bucketOf = groupBy === 'week' ? weekKey : dayKey;
-  const filter = await buildTicketFilter(actor, query);
-
-  const tickets = await Ticket.find(filter).select('createdAt closedAt').lean();
 
   const points = new Map();
   const touch = (bucket) => {
@@ -285,15 +262,10 @@ const durationStats = (values) => {
   };
 };
 
-export async function delivery(actor, query = {}) {
+export function computeDelivery(tickets, query = {}) {
   const groupBy = query.groupBy === 'week' ? 'week' : 'day';
   const bucketOf = groupBy === 'week' ? weekKey : dayKey;
   const windowDays = clampWindowDays(query.windowDays);
-  const filter = await buildTicketFilter(actor, query);
-
-  const tickets = await Ticket.find(filter)
-    .select('createdAt closedAt status blocked estimatedResolutionAt stageHistory')
-    .lean();
 
   const leadSamples = [];
   const cycleSamples = [];
@@ -371,16 +343,9 @@ const DRILL_FIELDS = {
   label: 'labels',
 };
 
-export async function drill(actor, query = {}) {
+export function computeDrill(tickets, query = {}) {
   const dimension = DRILL_FIELDS[query.dimension] ? query.dimension : 'severity';
   const field = DRILL_FIELDS[dimension];
-  const filter = await buildTicketFilter(actor, query);
-
-  let cursor = Ticket.find(filter).select(field);
-  if (dimension === 'assignee') cursor = cursor.populate('assignedTo', 'name');
-  if (dimension === 'team') cursor = cursor.populate('team', 'name');
-
-  const tickets = await cursor.lean();
   const counts = new Map();
 
   for (const ticket of tickets) {
@@ -413,7 +378,6 @@ export async function drill(actor, query = {}) {
     }
 
     const raw = ticket[field];
-    // A named empty bucket, so missing fields are visible rather than absent.
     const key = raw || 'Unspecified';
     counts.set(key, (counts.get(key) || 0) + 1);
   }
@@ -423,5 +387,76 @@ export async function drill(actor, query = {}) {
     rows: [...counts.entries()]
       .map(([key, count]) => ({ key, count }))
       .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key)),
+  };
+}
+
+export async function overview(actor, query = {}) {
+  const { tickets } = await loadAnalyticsTickets(actor, query);
+  return computeOverview(tickets);
+}
+
+export async function timeInStage(actor, query = {}) {
+  const { tickets } = await loadAnalyticsTickets(actor, query);
+  return computeTimeInStage(tickets);
+}
+
+export async function estimateAccuracy(actor, query = {}) {
+  const { tickets } = await loadAnalyticsTickets(actor, query);
+  return computeEstimateAccuracy(tickets);
+}
+
+export async function reopenAfterQa(actor, query = {}) {
+  const { tickets } = await loadAnalyticsTickets(actor, query);
+  return computeReopenAfterQa(tickets);
+}
+
+export async function aging(actor, query = {}) {
+  const { tickets } = await loadAnalyticsTickets(actor, query);
+  return computeAging(tickets);
+}
+
+export async function trend(actor, query = {}) {
+  const { tickets } = await loadAnalyticsTickets(actor, query);
+  return computeTrend(tickets, query);
+}
+
+export async function delivery(actor, query = {}) {
+  const { tickets } = await loadAnalyticsTickets(actor, query);
+  return computeDelivery(tickets, query);
+}
+
+export async function drill(actor, query = {}) {
+  const { tickets } = await loadAnalyticsTickets(actor, query);
+  return computeDrill(tickets, query);
+}
+
+/**
+ * BFF: one permission-scoped ticket load, all dashboard panels derived in memory.
+ */
+export async function dashboard(actor, query = {}) {
+  const loaded = await loadAnalyticsTickets(actor, query);
+  const { tickets } = loaded;
+  const trendGroupBy = query.trendGroupBy === 'week' ? 'week' : 'day';
+  const deliveryGroupBy = query.deliveryGroupBy === 'week' ? 'week' : 'day';
+  const dimension = DRILL_FIELDS[query.dimension] ? query.dimension : 'severity';
+
+  const tiles = computeOverview(tickets);
+
+  return {
+    ticketCount: loaded.ticketCount,
+    exceedsCeiling: loaded.exceedsCeiling,
+    ceiling: loaded.ceiling,
+    overview: {
+      ...tiles,
+      estimates: computeEstimateAccuracy(tickets),
+      reopens: computeReopenAfterQa(tickets),
+      aging: computeAging(tickets).buckets,
+    },
+    trend: computeTrend(tickets, { groupBy: trendGroupBy }),
+    delivery: computeDelivery(tickets, { groupBy: deliveryGroupBy, windowDays: query.windowDays }),
+    timeInStage: computeTimeInStage(tickets),
+    drill: computeDrill(tickets, { dimension }),
+    categoryDrill: computeDrill(tickets, { dimension: 'category' }),
+    severityDrill: computeDrill(tickets, { dimension: 'severity' }),
   };
 }
