@@ -33,9 +33,10 @@ import RoleMatrix from './roleMatrix.model.js';
 import BoardRoleMatrix from './boardRoleMatrix.model.js';
 import UserPermissionOverride from './userPermissionOverride.model.js';
 import RbacAuditLog from './rbacAuditLog.model.js';
-import { recordRbacAudit } from './rbac-audit.js';
+import { recordRbacAudit, getAuditOutboxStats } from './rbac-audit.js';
+import { assertEffectivePermission } from '../../platform/effective-permission.js';
 
-export { canInScope, normaliseScopeTarget };
+export { getAuditOutboxStats, canInScope, normaliseScopeTarget };
 
 const MATRIX_KEY = 'active';
 const BOARD_MATRIX_KEY = 'active';
@@ -95,7 +96,7 @@ export async function getBoardPermissions(actor) {
   };
 }
 
-export async function updateBoardPermissions(actor, body) {
+export async function updateBoardPermissions(actor, body, auditContext = {}) {
   assertCanManageRbac(actor);
   if (!body?.grants || typeof body.grants !== 'object') {
     throw new ApiError(400, 'GRANTS_REQUIRED', 'grants object is required');
@@ -145,7 +146,7 @@ export async function updateBoardPermissions(actor, body) {
     changes,
     previous: previousRecord,
     next: nextRecord,
-  });
+  }, auditContext);
 
   return {
     effective: nextRecord,
@@ -156,7 +157,7 @@ export async function updateBoardPermissions(actor, body) {
   };
 }
 
-export async function resetBoardPermissions(actor) {
+export async function resetBoardPermissions(actor, auditContext = {}) {
   assertCanManageRbac(actor);
   const existing = await BoardRoleMatrix.findOne({ key: BOARD_MATRIX_KEY });
   if (!existing) {
@@ -174,7 +175,7 @@ export async function resetBoardPermissions(actor) {
   const baseline = boardPolicyToRecord(getCodeBaselineBoardPolicy());
   const changes = diffBoardPolicies(grantsMapToBoardPolicy(existing.grants), getCodeBaselineBoardPolicy());
 
-  await auditRbacChange(actor, 'board_permissions.reset', { previous, next: baseline, changes });
+  await auditRbacChange(actor, 'board_permissions.reset', { previous, next: baseline, changes }, auditContext);
 
   return {
     effective: baseline,
@@ -310,8 +311,8 @@ function assertMatrixSafety(matrixRecord) {
   }
 }
 
-async function auditRbacChange(actor, action, details) {
-  await recordRbacAudit(actor, action, details);
+async function auditRbacChange(actor, action, details, auditContext = {}) {
+  await recordRbacAudit(actor, action, details, auditContext);
 }
 
 function serialiseAuditRow(doc) {
@@ -321,11 +322,42 @@ function serialiseAuditRow(doc) {
     action: json.action,
     category: json.category,
     actor: json.actor,
+    initiator: json.initiator ?? null,
     targetUser: json.targetUser ?? null,
     assignment: json.assignment ?? null,
     details: json.details ?? {},
     createdAt: json.createdAt,
   };
+}
+
+function buildAuditLogFilter(query = {}) {
+  const filter = {};
+  if (query.category) filter.category = query.category;
+  if (query.action) filter.action = query.action;
+  if (query.targetUserId) filter.targetUser = query.targetUserId;
+  if (query.actorId) filter.actor = query.actorId;
+  return filter;
+}
+
+function escapeCsvCell(value) {
+  const text = value == null ? '' : String(value);
+  if (/[",\n\r]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+  return text;
+}
+
+function auditRowToCsv(row) {
+  const actorLabel = row.actor?.email || row.actor?.name || row.actor?.id || '';
+  const initiatorLabel = row.initiator?.email || row.initiator?.name || row.initiator?.id || '';
+  const targetLabel = row.targetUser?.email || row.targetUser?.name || row.targetUser?.id || '';
+  return [
+    row.createdAt,
+    row.category,
+    row.action,
+    actorLabel,
+    initiatorLabel,
+    targetLabel,
+    JSON.stringify(row.details ?? {}),
+  ].map(escapeCsvCell).join(',');
 }
 
 export async function getRoleMatrix(actor) {
@@ -346,7 +378,7 @@ export async function getRoleMatrix(actor) {
   };
 }
 
-export async function updateRoleMatrix(actor, body) {
+export async function updateRoleMatrix(actor, body, auditContext = {}) {
   assertCanManageRbac(actor);
   if (!body?.grants || typeof body.grants !== 'object') {
     throw new ApiError(400, 'GRANTS_REQUIRED', 'grants object is required');
@@ -417,7 +449,7 @@ export async function updateRoleMatrix(actor, body) {
     changes,
     previous: previousEffective,
     next: nextRecord,
-  });
+  }, auditContext);
 
   return {
     effective: nextRecord,
@@ -428,7 +460,7 @@ export async function updateRoleMatrix(actor, body) {
   };
 }
 
-export async function resetRoleMatrix(actor) {
+export async function resetRoleMatrix(actor, auditContext = {}) {
   assertCanManageRbac(actor);
   const existing = await RoleMatrix.findOne({ key: MATRIX_KEY });
   if (!existing) {
@@ -446,7 +478,7 @@ export async function resetRoleMatrix(actor) {
   const baseline = roleMatrixToRecord(getCodeBaselineMatrix());
   const changes = diffRoleMatrices(storedRecordToMatrix(previous), getCodeBaselineMatrix());
 
-  await auditRbacChange(actor, 'role_matrix.reset', { previous, next: baseline, changes });
+  await auditRbacChange(actor, 'role_matrix.reset', { previous, next: baseline, changes }, auditContext);
 
   return {
     effective: baseline,
@@ -482,7 +514,7 @@ export async function getUserPermissionOverrides(actor, userId) {
   };
 }
 
-export async function updateUserPermissionOverrides(actor, userId, body) {
+export async function updateUserPermissionOverrides(actor, userId, body, auditContext = {}) {
   assertCanManageRbac(actor);
   assertCanEditTargetOverrides(actor, userId);
 
@@ -548,7 +580,7 @@ export async function updateUserPermissionOverrides(actor, userId, body) {
     userId: String(userId),
     previous,
     next: overrides,
-  });
+  }, auditContext);
 
   return {
     userId: userJson.id,
@@ -567,13 +599,10 @@ export async function clearUserPermissionOverrides(actor, userId) {
   return updateUserPermissionOverrides(actor, userId, { overrides: {} });
 }
 
-export async function listAuditLog(actor, query = {}) {
-  assertCanManageRbac(actor);
+export async function listAuditLog(actor, query = {}, { permissionContext, impersonation } = {}) {
+  await assertEffectivePermission(actor, 'audit.view', permissionContext, impersonation);
 
-  const filter = {};
-  if (query.category) filter.category = query.category;
-  if (query.action) filter.action = query.action;
-  if (query.targetUserId) filter.targetUser = query.targetUserId;
+  const filter = buildAuditLogFilter(query);
 
   const page = await paginate(RbacAuditLog, filter, {
     page: query.page,
@@ -581,6 +610,7 @@ export async function listAuditLog(actor, query = {}) {
     sortBy: query.sortBy || 'createdAt:desc',
     populate: [
       { path: 'actor', select: 'name email' },
+      { path: 'initiator', select: 'name email' },
       { path: 'targetUser', select: 'name email' },
     ],
   });
@@ -592,4 +622,27 @@ export async function listAuditLog(actor, query = {}) {
     totalPages: page.totalPages,
     totalResults: page.totalResults,
   };
+}
+
+export async function exportAuditLog(actor, query = {}, { permissionContext, impersonation } = {}) {
+  await assertEffectivePermission(actor, 'audit.view', permissionContext, impersonation);
+
+  const filter = buildAuditLogFilter(query);
+  const sortBy = query.sortBy || 'createdAt:desc';
+  const [sortField, sortDir] = sortBy.split(':');
+  const sort = { [sortField || 'createdAt']: sortDir === 'asc' ? 1 : -1 };
+  const limit = Math.min(Number(query.limit) || 5000, 5000);
+
+  const rows = await RbacAuditLog.find(filter)
+    .sort(sort)
+    .limit(limit)
+    .populate([
+      { path: 'actor', select: 'name email' },
+      { path: 'initiator', select: 'name email' },
+      { path: 'targetUser', select: 'name email' },
+    ]);
+
+  const header = 'createdAt,category,action,actor,initiator,target,details';
+  const body = rows.map((doc) => auditRowToCsv(serialiseAuditRow(doc)));
+  return `${header}\n${body.join('\n')}\n`;
 }

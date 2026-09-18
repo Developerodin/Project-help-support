@@ -1,17 +1,27 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   NOTIFICATION_EVENTS,
   DEFAULT_NOTIFICATION_PREFS,
   notificationEventLabel,
 } from '@pms/shared';
-import { updateNotificationPrefs } from '@/shared/api/users.js';
+import { resetNotificationPrefs, updateNotificationPrefs } from '@/shared/api/users.js';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import ConfirmDialog from '@/shared/components/confirm-dialog.jsx';
 import FormError from '@/shared/components/form-error.jsx';
 import { normalizeApiError } from '@/shared/lib/api-error.js';
+import { mutateNotifications } from '@/shared/lib/notification-swr.js';
 import { showToast } from '@/shared/lib/toast.js';
+
+const HIGH_IMPACT_EVENTS = new Set([
+  'TICKET_CREATED',
+  'TICKET_ASSIGNED',
+  'TICKET_STAGE_CHANGED',
+  'TICKET_REOPENED',
+  'TICKET_CLOSED',
+  'TICKET_MENTIONED',
+]);
 
 function buildPrefs(user) {
   return {
@@ -24,39 +34,81 @@ function channelLabel(channel) {
   return channel === 'inApp' ? 'in-app' : 'email';
 }
 
+function wouldDisableAllChannels(prefs, channel, event, enabled) {
+  if (enabled) return false;
+  const otherChannel = channel === 'inApp' ? 'email' : 'inApp';
+  return !prefs[otherChannel][event];
+}
+
+function toggleNeedsConfirm(prefs, channel, event, enabled) {
+  if (enabled) return false;
+  if (wouldDisableAllChannels(prefs, channel, event, enabled)) return true;
+  return HIGH_IMPACT_EVENTS.has(event);
+}
+
 export default function NotificationSettingsPage() {
   const { user, refreshUser } = useAuth();
   const [prefs, setPrefs] = useState(() => buildPrefs(user));
   const [error, setError] = useState(null);
   const [pendingToggle, setPendingToggle] = useState(null);
   const [saveBusy, setSaveBusy] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
 
   useEffect(() => {
     setPrefs(buildPrefs(user));
   }, [user]);
 
-  function requestToggle(channel, event) {
-    setPendingToggle({ channel, event, enabled: !prefs[channel][event] });
-  }
-
-  async function confirmToggle() {
-    if (!pendingToggle) return;
-    const { channel, event, enabled } = pendingToggle;
+  const applyToggle = useCallback(async (channel, event, enabled) => {
     setSaveBusy(true);
     setError(null);
     try {
       const updated = await updateNotificationPrefs({ [channel]: { [event]: enabled } });
       await refreshUser(updated);
       setPrefs(buildPrefs(updated));
+      await mutateNotifications();
       showToast(`${enabled ? 'Enabled' : 'Disabled'} ${channelLabel(channel)} for ${notificationEventLabel(event)}`);
-      setPendingToggle(null);
     } catch (err) {
       setError(err);
       showToast(normalizeApiError(err)?.message || 'Could not save preference');
     } finally {
       setSaveBusy(false);
     }
+  }, [refreshUser]);
+
+  function requestToggle(channel, event) {
+    const enabled = !prefs[channel][event];
+    if (toggleNeedsConfirm(prefs, channel, event, enabled)) {
+      setPendingToggle({ channel, event, enabled });
+      return;
+    }
+    applyToggle(channel, event, enabled);
   }
+
+  async function confirmToggle() {
+    if (!pendingToggle) return;
+    const { channel, event, enabled } = pendingToggle;
+    setPendingToggle(null);
+    await applyToggle(channel, event, enabled);
+  }
+
+  async function handleRestoreDefaults() {
+    setResetBusy(true);
+    setError(null);
+    try {
+      const updated = await resetNotificationPrefs();
+      await refreshUser(updated);
+      setPrefs(buildPrefs(updated));
+      await mutateNotifications();
+      showToast('Notification preferences restored to defaults');
+    } catch (err) {
+      setError(err);
+      showToast(normalizeApiError(err)?.message || 'Could not restore defaults');
+    } finally {
+      setResetBusy(false);
+    }
+  }
+
+  const busy = saveBusy || resetBusy;
 
   return (
     <>
@@ -65,6 +117,14 @@ export default function NotificationSettingsPage() {
           <h1>Notification preferences</h1>
           <p className="sub">Choose which events reach you by email and in the app.</p>
         </div>
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={handleRestoreDefaults}
+          disabled={busy}
+        >
+          Restore defaults
+        </button>
       </div>
       <FormError error={error} />
 
@@ -82,7 +142,7 @@ export default function NotificationSettingsPage() {
                     type="checkbox"
                     aria-label={`${notificationEventLabel(event)} in app`}
                     checked={prefs.inApp[event]}
-                    disabled={saveBusy}
+                    disabled={busy}
                     onChange={() => requestToggle('inApp', event)}
                   />
                 </td>
@@ -91,7 +151,7 @@ export default function NotificationSettingsPage() {
                     type="checkbox"
                     aria-label={`${notificationEventLabel(event)} email`}
                     checked={prefs.email[event]}
-                    disabled={saveBusy}
+                    disabled={busy}
                     onChange={() => requestToggle('email', event)}
                   />
                 </td>

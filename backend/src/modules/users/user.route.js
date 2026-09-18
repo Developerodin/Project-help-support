@@ -17,6 +17,7 @@ export default function userRoutes(config, deliverInvite) {
   router.patch('/me', validate(updateMeSchema), controller.updateMe);
   router.patch('/me/notification-prefs',
     validate(notificationPrefsSchema), controller.notificationPrefs);
+  router.post('/me/notification-prefs/reset', controller.notificationPrefsReset);
   router.get('/me/ticket-preferences', controller.ticketPreferencesGet);
   router.patch('/me/ticket-preferences',
     validate(ticketPreferencesSchema), controller.ticketPreferencesUpdate);

@@ -1,9 +1,12 @@
 'use client';
 
 import Link from 'next/link';
+import { can } from '@pms/shared';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
+import { usePermissionContext } from '@/shared/hooks/use-permission-context.js';
 import Icon from '@/shared/components/icons.jsx';
 import { canAccessAdminPanel } from '@/shared/lib/profile-utils.js';
+import { permissionContextForUi } from '@/shared/lib/permission-context-ui.js';
 
 const ADMIN_DESTINATIONS = [
   {
@@ -25,16 +28,20 @@ const ADMIN_DESTINATIONS = [
     description: 'Organize members and link teams to projects.',
     icon: 'teams',
   },
-  {
-    href: '/settings/notifications',
-    label: 'Notification settings',
-    description: 'Configure workspace notification defaults and delivery.',
-    icon: 'sliders',
-  },
 ];
+
+const AUDIT_DESTINATION = {
+  href: '/audit-log',
+  label: 'RBAC audit',
+  description: 'Review policy and scoped access changes across the workspace.',
+  icon: 'list',
+};
 
 export default function AdminPage() {
   const { user } = useAuth();
+  const { permissionContext } = usePermissionContext();
+  const permCtx = permissionContextForUi(permissionContext);
+  const canViewAudit = Boolean(user && can(user, 'audit.view', permCtx ?? undefined));
 
   if (!user) return null;
 
@@ -63,6 +70,10 @@ export default function AdminPage() {
     );
   }
 
+  const destinations = canViewAudit
+    ? [...ADMIN_DESTINATIONS, AUDIT_DESTINATION]
+    : ADMIN_DESTINATIONS;
+
   return (
     <div className="admin-page">
       <nav className="crumb" aria-label="Breadcrumb">
@@ -77,7 +88,7 @@ export default function AdminPage() {
       </div>
 
       <div className="admin-hub" role="region" aria-label="Admin destinations">
-        {ADMIN_DESTINATIONS.map((destination) => (
+        {destinations.map((destination) => (
           <Link
             key={destination.href}
             href={destination.href}

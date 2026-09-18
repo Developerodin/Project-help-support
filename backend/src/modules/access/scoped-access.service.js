@@ -242,8 +242,8 @@ async function saveAssignmentWithOptionalIfMatch(assignmentId, ifMatch, setField
   return doc;
 }
 
-async function auditScopedAccessChange(actor, action, details) {
-  await recordRbacAudit(actor, action, details);
+async function auditScopedAccessChange(actor, action, details, auditContext = {}) {
+  await recordRbacAudit(actor, action, details, auditContext);
 }
 
 export async function loadScopedAssignmentsForUser(userId, { status = 'active', effectivelyActive = true } = {}) {
@@ -273,7 +273,7 @@ export async function listUserScopedAssignments(actor, userId) {
   };
 }
 
-export async function createScopedAssignment(actor, userId, body) {
+export async function createScopedAssignment(actor, userId, body, auditContext = {}) {
   assertCanManageScopedAccess(actor);
   assertDelegation(actor, body.role, userId);
 
@@ -327,10 +327,10 @@ export async function createScopedAssignment(actor, userId, body) {
       role: body.role,
       clientId,
       projectId,
-    });
+    }, auditContext);
 
     if (body.role === ROLE_IDS.CLIENT_TESTER && clientId && !projectId) {
-      await propagateCompanyWideClientTesterGrant(actor, clientId, userId);
+      await propagateCompanyWideClientTesterGrant(actor, clientId, userId, auditContext);
     }
 
     return serialiseAssignment(doc);
@@ -346,7 +346,7 @@ export async function createScopedAssignment(actor, userId, body) {
   }
 }
 
-export async function updateScopedAssignment(actor, assignmentId, body) {
+export async function updateScopedAssignment(actor, assignmentId, body, auditContext = {}) {
   assertCanManageScopedAccess(actor);
 
   const existing = await AccessAssignment.findById(assignmentId);
@@ -394,14 +394,15 @@ export async function updateScopedAssignment(actor, assignmentId, body) {
 
   await auditScopedAccessChange(actor, 'scoped_assignment.update', {
     assignmentId: String(doc._id),
+    userId: targetUserId,
     previous,
     next: serialiseAssignment(doc),
-  });
+  }, auditContext);
 
   return serialiseAssignment(doc);
 }
 
-export async function revokeScopedAssignment(actor, assignmentId, body = {}) {
+export async function revokeScopedAssignment(actor, assignmentId, body = {}, auditContext = {}) {
   assertCanManageScopedAccess(actor);
 
   const existing = await AccessAssignment.findById(assignmentId);
@@ -428,16 +429,17 @@ export async function revokeScopedAssignment(actor, assignmentId, body = {}) {
 
   await auditScopedAccessChange(actor, 'scoped_assignment.revoke', {
     assignmentId: String(doc._id),
+    userId: String(existing.user),
     previous,
     next: serialiseAssignment(doc),
-  });
+  }, auditContext);
 
   if (
     existing.role === ROLE_IDS.CLIENT_TESTER
     && existing.client
     && !existing.project
   ) {
-    await propagateCompanyWideClientTesterRevoke(existing.client, existing.user);
+    await propagateCompanyWideClientTesterRevoke(existing.client, existing.user, actor, auditContext);
   }
 
   return serialiseAssignment(doc);

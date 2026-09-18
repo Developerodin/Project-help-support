@@ -3,6 +3,7 @@ import { ApiError } from '../../platform/errors.js';
 import { resolveEffectiveBrandingForUser } from '../../platform/branding.js';
 import User from '../users/user.model.js';
 import * as authService from './auth.service.js';
+import { recordRbacAudit, auditContextFromRequest } from '../rbac/rbac-audit.js';
 
 export const REFRESH_COOKIE = 'prowplus_refreshToken';
 export const IMPERSONATION_ADMIN_COOKIE = 'prowplus_impersonation_admin';
@@ -126,6 +127,12 @@ export const impersonate = (config) => catchAsync(async (req, res) => {
     req.user, req.params.id, adminRefresh, config, requestMeta(req),
   );
 
+  await recordRbacAudit(req.user, 'security.impersonation.start', {
+    targetUserId: req.params.id,
+    adminId: String(req.user._id),
+    targetId: req.params.id,
+  }, auditContextFromRequest(req));
+
   const adminCookieExpiry = new Date(Date.now() + config.jwt.refreshExpirationDays * 86400000);
   res.cookie(
     IMPERSONATION_ADMIN_COOKIE,
@@ -150,6 +157,11 @@ export const stopImpersonation = (config) => catchAsync(async (req, res) => {
   const result = await authService.stopImpersonation(
     targetRefresh, adminRefresh, config, requestMeta(req),
   );
+
+  await recordRbacAudit(req.user, 'security.impersonation.stop', {
+    targetUserId: String(req.user._id),
+    adminId: String(req.impersonation.by),
+  }, auditContextFromRequest(req));
 
   res.cookie(REFRESH_COOKIE, result.refreshToken, refreshCookieOptions(config, result.refreshExpiresAt));
   const { expires, ...clearOptions } = refreshCookieOptions(config, new Date(0));

@@ -135,8 +135,13 @@ export default function NotificationsPage() {
               Unread
             </button>
           </div>
-          {unreadCount > 0 && (
-            <button type="button" className="btn btn-sm" onClick={handleMarkAllRead}>
+          {unreadCount > 0 && projectId && (
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={handleMarkAllRead}
+              title="Marks all notifications read for the selected project"
+            >
               Mark all read
             </button>
           )}

@@ -15,6 +15,16 @@ import {
 } from './accessAssignment.queries.js';
 import User from '../users/user.model.js';
 import Project from '../projects/project.model.js';
+import { recordRbacAudit } from '../rbac/rbac-audit.js';
+
+function sampleIds(ids, limit = 10) {
+  return (ids || []).slice(0, limit);
+}
+
+async function auditBulkScopedAccess(actor, action, details, auditContext = {}) {
+  if (!actor) return;
+  await recordRbacAudit(actor, action, details, auditContext);
+}
 
 export const COMPANY_WIDE_AUTO_ASSIGN_REASON = 'company_wide_auto_assign';
 
@@ -252,13 +262,13 @@ export async function assertExternalRoleTarget(user, expectedRole) {
 }
 
 /** Company-wide client_tester grants inherit to every active project in the company. */
-export async function propagateCompanyWideClientTesterGrant(actor, clientId, userId) {
-  await autoAssignCompanyWideTestersToProjects(actor, clientId, [String(userId)]);
+export async function propagateCompanyWideClientTesterGrant(actor, clientId, userId, auditContext = {}) {
+  await autoAssignCompanyWideTestersToProjects(actor, clientId, [String(userId)], null, auditContext);
 }
 
 /** Revoke auto-inherited project rows when company-wide client_tester access is removed. */
-export async function propagateCompanyWideClientTesterRevoke(clientId, userId) {
-  await revokeAutoAssignedProjectTesters(clientId, [String(userId)]);
+export async function propagateCompanyWideClientTesterRevoke(clientId, userId, actor = null, auditContext = {}) {
+  await revokeAutoAssignedProjectTesters(clientId, [String(userId)], actor, auditContext);
 }
 
 /**
@@ -266,8 +276,13 @@ export async function propagateCompanyWideClientTesterRevoke(clientId, userId) {
  * Company-wide rows for the old client are left untouched — they stop applying
  * naturally once Project.client changes.
  */
-export async function revokeProjectExternalAssignmentsOnClientChange(projectId, oldClientId) {
-  await AccessAssignment.updateMany(
+export async function revokeProjectExternalAssignmentsOnClientChange(
+  projectId,
+  oldClientId,
+  actor = null,
+  auditContext = {},
+) {
+  const result = await AccessAssignment.updateMany(
     {
       client: oldClientId,
       project: projectId,
@@ -281,6 +296,15 @@ export async function revokeProjectExternalAssignmentsOnClientChange(projectId, 
       },
     },
   );
+
+  if (result.modifiedCount > 0) {
+    await auditBulkScopedAccess(actor, 'scoped_assignment.bulk_revoke', {
+      clientId: String(oldClientId),
+      projectId: String(projectId),
+      revokedCount: result.modifiedCount,
+      reason: 'project_client_changed',
+    }, auditContext);
+  }
 }
 
 /** Stage moves come from stageHistory; every other action describes internal handling. */
@@ -477,12 +501,18 @@ async function activeProjectIdsForClient(clientId) {
   return Project.find({ client: clientId, status: 'active' }).distinct('_id');
 }
 
-async function autoAssignCompanyWideTestersToProjects(actor, clientId, userIds, projectIds = null) {
+async function autoAssignCompanyWideTestersToProjects(
+  actor,
+  clientId,
+  userIds,
+  projectIds = null,
+  auditContext = {},
+) {
   const testerIds = [...new Set((userIds || []).map(String))];
-  if (!testerIds.length) return;
+  if (!testerIds.length) return 0;
 
   const targets = projectIds ?? await activeProjectIdsForClient(clientId);
-  if (!targets.length) return;
+  if (!targets.length) return 0;
 
   const existing = await AccessAssignment.find(activeNotExpiredFilter({
     user: { $in: testerIds },
@@ -520,15 +550,25 @@ async function autoAssignCompanyWideTestersToProjects(actor, clientId, userIds, 
         projectId: row.project,
       });
     }
-    await AccessAssignment.insertMany(toCreate);
+    const created = await AccessAssignment.insertMany(toCreate);
+    await auditBulkScopedAccess(actor, 'scoped_assignment.bulk_create', {
+      clientId: String(clientId),
+      createdCount: created.length,
+      projectCount: targets.length,
+      userIdsSample: sampleIds(testerIds),
+      assignmentIdsSample: sampleIds(created.map((row) => String(row._id))),
+      reason: COMPANY_WIDE_AUTO_ASSIGN_REASON,
+    }, auditContext);
+    return created.length;
   }
+  return 0;
 }
 
-async function revokeAutoAssignedProjectTesters(clientId, userIds) {
+async function revokeAutoAssignedProjectTesters(clientId, userIds, actor = null, auditContext = {}) {
   const testerIds = [...new Set((userIds || []).map(String))];
-  if (!testerIds.length) return;
+  if (!testerIds.length) return 0;
 
-  await AccessAssignment.updateMany(
+  const result = await AccessAssignment.updateMany(
     {
       user: { $in: testerIds },
       client: clientId,
@@ -544,10 +584,25 @@ async function revokeAutoAssignedProjectTesters(clientId, userIds) {
       },
     },
   );
+
+  if (result.modifiedCount > 0) {
+    await auditBulkScopedAccess(actor, 'scoped_assignment.bulk_revoke', {
+      clientId: String(clientId),
+      revokedCount: result.modifiedCount,
+      userIdsSample: sampleIds(testerIds),
+      reason: 'company_external_access_updated',
+    }, auditContext);
+  }
+  return result.modifiedCount;
 }
 
 /** Auto-assign all company-wide client testers to a single new project. */
-export async function assignCompanyWideClientTestersToProject(actor, clientId, projectId) {
+export async function assignCompanyWideClientTestersToProject(
+  actor,
+  clientId,
+  projectId,
+  auditContext = {},
+) {
   const companyWideTesters = await AccessAssignment.find(activeNotExpiredFilter({
     client: clientId,
     project: null,
@@ -561,10 +616,11 @@ export async function assignCompanyWideClientTestersToProject(actor, clientId, p
     clientId,
     companyWideTesters.map(String),
     [projectId],
+    auditContext,
   );
 }
 
-async function syncCompanyRoleAssignments(actor, clientId, role, userIds) {
+async function syncCompanyRoleAssignments(actor, clientId, role, userIds, auditContext = {}) {
   const desired = [...new Set((userIds || []).map(String))];
   await assertExternalUsers(desired, role);
 
@@ -608,20 +664,36 @@ async function syncCompanyRoleAssignments(actor, clientId, role, userIds) {
 
   if (role === ROLE_IDS.CLIENT_TESTER) {
     if (removedUserIds.length) {
-      await revokeAutoAssignedProjectTesters(clientId, removedUserIds);
+      await revokeAutoAssignedProjectTesters(clientId, removedUserIds, actor, auditContext);
     }
     if (addedUserIds.length) {
-      await autoAssignCompanyWideTestersToProjects(actor, clientId, addedUserIds);
+      await autoAssignCompanyWideTestersToProjects(actor, clientId, addedUserIds, null, auditContext);
     }
+  }
+
+  if (addedUserIds.length || removedUserIds.length) {
+    await auditBulkScopedAccess(actor, 'scoped_assignment.company_sync', {
+      clientId: String(clientId),
+      role,
+      addedCount: addedUserIds.length,
+      revokedCount: removedUserIds.length,
+      addedUserIdsSample: sampleIds(addedUserIds),
+      revokedUserIdsSample: sampleIds(removedUserIds),
+    }, auditContext);
   }
 }
 
-export async function syncCompanyExternalAccess(actor, clientId, { clientUserIds, clientTesterIds } = {}) {
+export async function syncCompanyExternalAccess(
+  actor,
+  clientId,
+  { clientUserIds, clientTesterIds } = {},
+  auditContext = {},
+) {
   if (clientUserIds !== undefined) {
-    await syncCompanyRoleAssignments(actor, clientId, ROLE_IDS.CLIENT, clientUserIds);
+    await syncCompanyRoleAssignments(actor, clientId, ROLE_IDS.CLIENT, clientUserIds, auditContext);
   }
   if (clientTesterIds !== undefined) {
-    await syncCompanyRoleAssignments(actor, clientId, ROLE_IDS.CLIENT_TESTER, clientTesterIds);
+    await syncCompanyRoleAssignments(actor, clientId, ROLE_IDS.CLIENT_TESTER, clientTesterIds, auditContext);
   }
   return getCompanyExternalAccess(clientId);
 }

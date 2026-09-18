@@ -13,11 +13,21 @@ export const AUDIT_ACTION_LABELS = Object.freeze({
   'scoped_assignment.create': 'Access granted',
   'scoped_assignment.update': 'Access updated',
   'scoped_assignment.revoke': 'Access revoked',
+  'scoped_assignment.bulk_create': 'Bulk access granted',
+  'scoped_assignment.bulk_revoke': 'Bulk access revoked',
+  'scoped_assignment.company_sync': 'Company access synced',
+  'scoped_assignment.project_testers_sync': 'Project testers updated',
+  'security.impersonation.start': 'Impersonation started',
+  'security.impersonation.stop': 'Impersonation ended',
+  'user.update': 'User updated',
+  'user.delete': 'User deleted',
+  'user.reactivate': 'User reactivated',
 });
 
 export const AUDIT_CATEGORY_LABELS = Object.freeze({
   policy: 'Policy',
   access: 'Access',
+  security: 'Security',
 });
 
 /** Unknown enums still read as prose rather than as a raw identifier. */
@@ -32,6 +42,34 @@ export function formatAuditActor(actor) {
   if (!actor) return '—';
   if (typeof actor === 'string') return actor;
   return actor.name || actor.email || actor.id || '—';
+}
+
+export function auditInitiatorId(row) {
+  const initiator = row?.initiator;
+  if (!initiator) return null;
+  if (typeof initiator === 'string') return initiator;
+  return initiator.id || null;
+}
+
+export function auditActorId(row) {
+  const actor = row?.actor;
+  if (!actor) return null;
+  if (typeof actor === 'string') return actor;
+  return actor.id || null;
+}
+
+/** Show initiator only when it differs from the session actor (impersonation). */
+export function formatAuditActorWithInitiator(row) {
+  const actorLabel = formatAuditActor(row?.actor);
+  const initiatorId = auditInitiatorId(row);
+  const actorId = auditActorId(row);
+  if (!initiatorId || (actorId && String(initiatorId) === String(actorId))) {
+    return { actor: actorLabel, initiator: null };
+  }
+  return {
+    actor: actorLabel,
+    initiator: formatAuditActor(row.initiator),
+  };
 }
 
 function roleLabel(role) {
@@ -69,6 +107,15 @@ function describeScope(details) {
   return scope.length ? scope.join(' + ') : 'global scope';
 }
 
+function describeBulkCounts(details) {
+  const parts = [];
+  if (details.createdCount != null) parts.push(`${details.createdCount} created`);
+  if (details.revokedCount != null) parts.push(`${details.revokedCount} revoked`);
+  if (details.addedCount != null) parts.push(`${details.addedCount} added`);
+  if (details.reason) parts.push(details.reason.replace(/_/g, ' '));
+  return parts.length ? parts.join(' · ') : 'Bulk assignment change';
+}
+
 /**
  * One human sentence per row. Never dumps raw JSON into the table — an
  * unrecognised shape falls back to the field names that changed.
@@ -77,6 +124,30 @@ export function summariseAuditDetails(row) {
   const details = row?.details || {};
   const action = row?.action;
 
+  if (action === 'security.impersonation.start' || action === 'security.impersonation.stop') {
+    const target = details.targetId || details.targetUserId;
+    return target ? `Target user ${target}` : 'Impersonation session';
+  }
+  if (action === 'user.update' || action === 'user.reactivate' || action === 'user.delete') {
+    const from = details.previous?.status;
+    const to = details.next?.status;
+    if (from && to && from !== to) return `Status ${from} → ${to}`;
+    if (details.previous?.roles || details.next?.roles) {
+      return describePermissionDelta(details.previous?.roles, details.next?.roles);
+    }
+    return 'User record changed';
+  }
+  if (
+    action === 'scoped_assignment.bulk_create'
+    || action === 'scoped_assignment.bulk_revoke'
+    || action === 'scoped_assignment.company_sync'
+    || action === 'scoped_assignment.project_testers_sync'
+  ) {
+    return describeBulkCounts(details);
+  }
+  if (details.matrixOmitted && details.changeCount != null) {
+    return plural(details.changeCount, 'matrix field change');
+  }
   if (Array.isArray(details.changes) && details.changes.length) {
     return describeMatrixChanges(details.changes);
   }

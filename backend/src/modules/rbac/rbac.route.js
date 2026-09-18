@@ -1,6 +1,6 @@
 import express from 'express';
 import { ADMIN_ROLES } from '@pms/shared';
-import { auth, requirePermission, requireRole } from '../../platform/auth.js';
+import { auth, requirePermission, requirePermissionOrImpersonationInitiator, requireRole } from '../../platform/auth.js';
 import { validate } from '../../platform/validate.js';
 import * as controller from './rbac.controller.js';
 import {
@@ -76,9 +76,22 @@ export default function rbacRoutes(config) {
 
   router.get(
     '/audit-log',
-    requireRbacAdmin,
+    requirePermissionOrImpersonationInitiator('audit.view'),
     validate(listAuditLogSchema),
     controller.getAuditLog,
+  );
+
+  router.get(
+    '/audit-log/export',
+    requirePermissionOrImpersonationInitiator('audit.view'),
+    validate(listAuditLogSchema),
+    controller.exportAuditLog,
+  );
+
+  router.get(
+    '/audit-log/outbox-stats',
+    requirePermissionOrImpersonationInitiator('audit.view'),
+    controller.getAuditOutboxStats,
   );
 
   return router;

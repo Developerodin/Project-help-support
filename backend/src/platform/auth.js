@@ -4,6 +4,7 @@ import User from '../modules/users/user.model.js';
 import { verifyAccessToken } from '../modules/auth/token.service.js';
 import { hasAnyRole, can, canInScope } from '@pms/shared';
 import { loadPermissionContextForUser, createDenyByDefaultPermissionContext } from '../modules/rbac/rbac.service.js';
+import { hasEffectivePermission } from './effective-permission.js';
 
 const unauthenticated = () => new ApiError(401, 'UNAUTHENTICATED', 'Authentication required');
 
@@ -88,6 +89,27 @@ export function requirePermission(permission) {
       return next(new ApiError(403, 'FORBIDDEN', `Requires permission: ${permission}`));
     }
     return next();
+  };
+}
+
+/** Like requirePermission, but allows read when the impersonation initiator holds the grant. */
+export function requirePermissionOrImpersonationInitiator(permission) {
+  return async function checkPermission(req, _res, next) {
+    if (!req.user) return next(new ApiError(401, 'UNAUTHENTICATED', 'Authentication required'));
+    try {
+      const allowed = await hasEffectivePermission(
+        req.user,
+        permission,
+        req.permissionContext,
+        req.impersonation,
+      );
+      if (!allowed) {
+        return next(new ApiError(403, 'FORBIDDEN', `Requires permission: ${permission}`));
+      }
+      return next();
+    } catch (err) {
+      return next(err);
+    }
   };
 }
 

@@ -49,7 +49,7 @@ async function enrichClient(config, clientDoc, projectCount = null) {
   return attachLogoUrl(config, { ...json, projectCount: count });
 }
 
-export async function createClient(actor, body, config, permissionContext = null) {
+export async function createClient(actor, body, config, permissionContext = null, auditContext = {}) {
   const name = String(body.name || '').trim();
   if (!name) throw new ApiError(400, 'CLIENT_NAME_REQUIRED', 'Company name is required');
 
@@ -74,7 +74,7 @@ export async function createClient(actor, body, config, permissionContext = null
     await syncCompanyExternalAccess(actor, client._id, {
       clientUserIds: body.clientUserIds,
       clientTesterIds: body.clientTesterIds,
-    });
+    }, auditContext);
   }
 
   const enriched = await enrichClient(config, client, 0);
@@ -157,7 +157,7 @@ export async function getClient(id, config, actor = null, permissionContext = nu
   return enriched;
 }
 
-export async function updateClient(actor, id, body, config, permissionContext = null) {
+export async function updateClient(actor, id, body, config, permissionContext = null, auditContext = {}) {
   const client = await Client.findById(id);
   if (!client) throw new ApiError(404, 'CLIENT_NOT_FOUND', 'Company not found');
 
@@ -185,7 +185,7 @@ export async function updateClient(actor, id, body, config, permissionContext = 
     await syncCompanyExternalAccess(actor, client._id, {
       clientUserIds: body.clientUserIds,
       clientTesterIds: body.clientTesterIds,
-    });
+    }, auditContext);
   }
 
   const enriched = await enrichClient(config, client);

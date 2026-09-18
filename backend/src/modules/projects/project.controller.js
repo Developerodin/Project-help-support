@@ -1,5 +1,6 @@
 import catchAsync from '../../platform/catchAsync.js';
 import { ApiError } from '../../platform/errors.js';
+import { auditContextFromRequest } from '../rbac/rbac-audit.js';
 import * as projectService from './project.service.js';
 import * as uiQaService from './ui-qa.service.js';
 import { listAssignableTeamsForProject } from '../teams/team.service.js';
@@ -25,8 +26,15 @@ export const list = catchAsync(async (req, res) => {
   res.json(await projectService.listProjects(req.query, req.user, req.permissionContext));
 });
 
+const auditCtx = (req) => auditContextFromRequest(req);
+
 export const create = catchAsync(async (req, res) => {
-  res.status(201).json(await projectService.createProject(req.user, req.body, req.permissionContext));
+  res.status(201).json(await projectService.createProject(
+    req.user,
+    req.body,
+    req.permissionContext,
+    auditCtx(req),
+  ));
 });
 
 export const get = catchAsync(async (req, res) => {
@@ -34,7 +42,13 @@ export const get = catchAsync(async (req, res) => {
 });
 
 export const update = catchAsync(async (req, res) => {
-  res.json(await projectService.updateProject(req.params.id, req.body, req.user, req.permissionContext));
+  res.json(await projectService.updateProject(
+    req.params.id,
+    req.body,
+    req.user,
+    req.permissionContext,
+    auditCtx(req),
+  ));
 });
 
 export const modules = catchAsync(async (req, res) => {
@@ -137,6 +151,10 @@ export const clientTesters = catchAsync(async (req, res) => {
 
 export const replaceClientTesters = catchAsync(async (req, res) => {
   res.json(await projectService.setProjectClientTesters(
-    req.user, req.params.id, req.body.userIds, req.permissionContext,
+    req.user,
+    req.params.id,
+    req.body.userIds,
+    req.permissionContext,
+    auditCtx(req),
   ));
 });

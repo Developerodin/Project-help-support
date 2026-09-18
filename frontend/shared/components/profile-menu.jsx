@@ -11,7 +11,7 @@ import { canAccessAdminPanel } from '@/shared/lib/profile-utils.js';
 const PERSONAL_INFORMATION_HREF = '/profile#profile-personal-information';
 const ADMIN_PANEL_HOME = '/admin';
 const USER_PANEL_HOME = '/profile';
-const ADMIN_PANEL_PATHS = ['/admin', '/users', '/projects', '/teams', '/settings/notifications'];
+const ADMIN_PANEL_PATHS = ['/admin', '/users', '/projects', '/teams'];
 
 function isAdminPanelPath(pathname) {
   if (!pathname) return false;

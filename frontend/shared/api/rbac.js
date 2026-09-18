@@ -1,4 +1,4 @@
-import { apiFetch } from './client.js';
+import { apiFetch, apiFetchResponse } from './client.js';
 
 export const getRoleMatrix = () => apiFetch('/rbac/role-matrix');
 
@@ -42,4 +42,14 @@ export const listAuditLog = (params = {}) => {
     Object.entries(params).filter(([, v]) => v !== undefined && v !== ''),
   ).toString();
   return apiFetch(`/rbac/audit-log${search ? `?${search}` : ''}`);
+};
+
+export const getAuditOutboxStats = () => apiFetch('/rbac/audit-log/outbox-stats');
+
+export const exportAuditLogCsv = async (params = {}) => {
+  const search = new URLSearchParams(
+    Object.entries(params).filter(([, v]) => v !== undefined && v !== ''),
+  ).toString();
+  const response = await apiFetchResponse(`/rbac/audit-log/export${search ? `?${search}` : ''}`);
+  return response.text();
 };

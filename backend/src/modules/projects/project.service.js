@@ -7,6 +7,7 @@ import User from '../users/user.model.js';
 import Project, { RESERVED_PROJECT_KEYS } from './project.model.js';
 import Team from '../teams/team.model.js';
 import { assertActiveUsers, assertTeamUsable } from '../teams/team.service.js';
+import { recordRbacAudit } from '../rbac/rbac-audit.js';
 import {
   assertExternalProjectAccess,
   assignCompanyWideClientTestersToProject,
@@ -185,7 +186,7 @@ async function attachTeamContextBatch(projectJsons) {
   });
 }
 
-export async function createProject(actor, body, permissionContext = null) {
+export async function createProject(actor, body, permissionContext = null, auditContext = {}) {
   const clientId = body.clientId || body.client;
   if (!clientId) {
     throw new ApiError(400, 'CLIENT_REQUIRED', 'Company is required');
@@ -224,11 +225,11 @@ export async function createProject(actor, body, permissionContext = null) {
     createdBy: actor._id,
   });
 
-  await assignCompanyWideClientTestersToProject(actor, client._id, project._id);
+  await assignCompanyWideClientTestersToProject(actor, client._id, project._id, auditContext);
 
   const clientTesterIds = body.clientTesterIds || [];
   if (clientTesterIds.length) {
-    await setProjectClientTesters(actor, project._id, clientTesterIds, permissionContext);
+    await setProjectClientTesters(actor, project._id, clientTesterIds, permissionContext, auditContext);
   }
 
   if (project.team) {
@@ -321,7 +322,7 @@ export async function getProject(id, actor = null, permissionContext = null) {
   return attachTeamContext(project.toJSON());
 }
 
-export async function updateProject(id, body, actor = null, permissionContext = null) {
+export async function updateProject(id, body, actor = null, permissionContext = null, auditContext = {}) {
   const existing = await Project.findById(id).select('client');
   if (!existing) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
 
@@ -354,7 +355,12 @@ export async function updateProject(id, body, actor = null, permissionContext = 
   ).populate(['team', 'client']);
 
   if (patch.client && String(patch.client) !== String(existing.client)) {
-    await revokeProjectExternalAssignmentsOnClientChange(id, existing.client);
+    await revokeProjectExternalAssignmentsOnClientChange(
+      id,
+      existing.client,
+      actor,
+      auditContext,
+    );
   }
 
   if (body.defaultAssignee || body.defaultTester || body.defaultTeam) {
@@ -432,7 +438,13 @@ export async function getProjectClientTesters(id, actor = null, permissionContex
   };
 }
 
-export async function setProjectClientTesters(actor, projectId, userIds, permissionContext = null) {
+export async function setProjectClientTesters(
+  actor,
+  projectId,
+  userIds,
+  permissionContext = null,
+  auditContext = {},
+) {
   const project = await Project.findById(projectId).select('client');
   if (!project) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
   await assertScopedPermissionWhenConstrained(
@@ -487,12 +499,16 @@ export async function setProjectClientTesters(actor, projectId, userIds, permiss
     desiredIds.filter((userId) => !companyWideIds.has(userId)),
   );
 
+  let revokedCount = 0;
+  let addedCount = 0;
+
   for (const row of projectScoped) {
     const userId = String(row.user);
     if (!desiredProjectScoped.has(userId)) {
       row.status = 'revoked';
       row.reason = 'project_client_testers_updated';
       await row.save();
+      revokedCount += 1;
     }
   }
 
@@ -507,6 +523,16 @@ export async function setProjectClientTesters(actor, projectId, userIds, permiss
       project: projectId,
       grantedBy: actor._id,
     });
+    addedCount += 1;
+  }
+
+  if (revokedCount || addedCount) {
+    await recordRbacAudit(actor, 'scoped_assignment.project_testers_sync', {
+      projectId: String(projectId),
+      clientId: String(project.client),
+      addedCount,
+      revokedCount,
+    }, auditContext);
   }
 
   return getProjectClientTesters(projectId);

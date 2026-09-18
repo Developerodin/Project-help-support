@@ -3,6 +3,7 @@ import {
   ROLE_IDS,
   ROLES,
   NOTIFICATION_EVENTS,
+  DEFAULT_NOTIFICATION_PREFS,
   DEFAULT_TICKET_PREFERENCES,
   mergeTicketPreferences,
   defaultTicketPreferencesForUser,
@@ -14,6 +15,7 @@ import {
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
 import { revokeAllRefreshTokens, hashToken } from '../auth/token.service.js';
+import { recordRbacAudit } from '../rbac/rbac-audit.js';
 
 /** Keep in sync with auth.service.js INVITE_TTL_HOURS. */
 const INVITE_TTL_HOURS = 72;
@@ -148,7 +150,7 @@ export async function getUser(actor, id) {
   return user.toJSON();
 }
 
-export async function updateUser(actor, id, body) {
+export async function updateUser(actor, id, body, auditContext = {}) {
   if (String(actor._id) === String(id) && (body.role || body.roles || body.status)) {
     throw new ApiError(400, 'CANNOT_MODIFY_SELF', 'You cannot change your own role or status');
   }
@@ -169,7 +171,24 @@ export async function updateUser(actor, id, body) {
     throw new ApiError(400, 'USER_DELETED', 'Deleted users cannot be modified');
   }
 
+  const previous = {
+    status: existing.status,
+    role: existing.role,
+    roles: existing.roles ? [...existing.roles] : [],
+  };
+
   const user = await User.findByIdAndUpdate(id, { $set: nextBody }, { new: true, runValidators: true });
+
+  await recordRbacAudit(actor, 'user.update', {
+    userId: String(id),
+    previous,
+    next: {
+      status: user.status,
+      role: user.role,
+      roles: user.roles ? [...user.roles] : [],
+    },
+  }, auditContext);
+
   return user.toJSON();
 }
 
@@ -195,6 +214,17 @@ export async function updateNotificationPrefs(actor, { email = {}, inApp = {} })
     }
   }
 
+  await user.save();
+  return user.toJSON();
+}
+
+export async function resetNotificationPrefs(actor) {
+  const user = await User.findById(actor._id);
+  if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found');
+
+  user.notificationPrefs.email = new Map(Object.entries(DEFAULT_NOTIFICATION_PREFS.email));
+  user.notificationPrefs.inApp = new Map(Object.entries(DEFAULT_NOTIFICATION_PREFS.inApp));
+  user.markModified('notificationPrefs');
   await user.save();
   return user.toJSON();
 }
@@ -263,7 +293,7 @@ export async function resetTicketPreferences(actor) {
   return user.toJSON();
 }
 
-export async function deleteUser(actor, id) {
+export async function deleteUser(actor, id, auditContext = {}) {
   if (String(actor._id) === String(id)) {
     throw new ApiError(400, 'CANNOT_DELETE_SELF', 'You cannot delete your own account');
   }
@@ -310,6 +340,12 @@ export async function deleteUser(actor, id) {
   user.consumedRefreshTokens = [];
   await user.save();
 
+  await recordRbacAudit(actor, 'user.delete', {
+    userId: String(id),
+    previous: { status: 'active' },
+    next: { status: 'deleted' },
+  }, auditContext);
+
   return { status: 'deleted' };
 }
 
@@ -317,7 +353,7 @@ export async function deleteUser(actor, id) {
  * Restores a soft-deleted user. Preserved password → active immediately; revoked
  * password (legacy deletes) → invited with a setup link reusing accept-invite.
  */
-export async function reactivateUser(actor, id) {
+export async function reactivateUser(actor, id, auditContext = {}) {
   if (String(actor._id) === String(id)) {
     throw new ApiError(400, 'CANNOT_MODIFY_SELF', 'You cannot reactivate your own account');
   }
@@ -345,6 +381,11 @@ export async function reactivateUser(actor, id) {
     user.inviteTokenHash = hashToken(inviteToken);
     user.inviteTokenExpiresAt = new Date(Date.now() + INVITE_TTL_HOURS * 3600000);
     await user.save();
+    await recordRbacAudit(actor, 'user.reactivate', {
+      userId: String(id),
+      previous: { status: 'deleted' },
+      next: { status: 'invited', requiresPassword: true },
+    }, auditContext);
     return { user: user.toJSON(), inviteToken, requiresPassword: true };
   }
 
@@ -352,5 +393,10 @@ export async function reactivateUser(actor, id) {
   user.inviteTokenHash = undefined;
   user.inviteTokenExpiresAt = undefined;
   await user.save();
+  await recordRbacAudit(actor, 'user.reactivate', {
+    userId: String(id),
+    previous: { status: 'deleted' },
+    next: { status: 'active' },
+  }, auditContext);
   return { user: user.toJSON(), requiresPassword: false };
 }

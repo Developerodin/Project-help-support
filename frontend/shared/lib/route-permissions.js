@@ -111,6 +111,7 @@ export const NAV_GROUPS = [
       { href: '/tickets', id: 'tickets', label: 'Tickets', icon: 'ticket' },
       { href: '/tickets/analytics', id: 'analytics', label: 'Analytics', icon: 'chart' },
       { href: '/notifications', id: 'inbox', label: 'Notifications', icon: 'bell' },
+      { href: '/settings/notifications', id: 'notif-settings', label: 'Notification settings', icon: 'sliders' },
       { href: '/ui-qa', id: 'ui-qa', label: 'UI & QA', icon: 'eye' },
     ],
   },
@@ -120,9 +121,8 @@ export const NAV_GROUPS = [
       { href: '/projects', id: 'projects', label: 'Projects', icon: 'layers' },
       { href: '/teams', id: 'teams', label: 'Teams', icon: 'teams' },
       { href: '/users', id: 'people', label: 'People', icon: 'user' },
-      { href: '/audit-log', id: 'audit-log', label: 'Audit log', icon: 'list' },
+      { href: '/audit-log', id: 'audit-log', label: 'RBAC audit', icon: 'list' },
       { href: '/settings/rbac-preview/matrix', id: 'rbac-preview', label: 'User roles', icon: 'lock' },
-      { href: '/settings/notifications', id: 'settings', label: 'Notification settings', icon: 'sliders' },
     ],
   },
 ];

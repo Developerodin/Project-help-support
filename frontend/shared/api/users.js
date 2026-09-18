@@ -7,6 +7,8 @@ export const listUsers = (params = {}) => {
   return apiFetch(`/users${search ? `?${search}` : ''}`);
 };
 
+export const getUser = (id) => apiFetch(`/users/${id}`);
+
 export const inviteUser = (body) => apiFetch('/users', { method: 'POST', body });
 export const patchUser = (id, body) => apiFetch(`/users/${id}`, { method: 'PATCH', body });
 export const deleteUser = (id) => apiFetch(`/users/${id}`, { method: 'DELETE' });
@@ -15,6 +17,9 @@ export const reactivateUser = (id) => apiFetch(`/users/${id}/reactivate`, { meth
 export const updateMe = (body) => apiFetch('/users/me', { method: 'PATCH', body });
 export const updateNotificationPrefs = (body) =>
   apiFetch('/users/me/notification-prefs', { method: 'PATCH', body });
+
+export const resetNotificationPrefs = () =>
+  apiFetch('/users/me/notification-prefs/reset', { method: 'POST' });
 
 export const getTicketPreferences = () => apiFetch('/users/me/ticket-preferences');
 

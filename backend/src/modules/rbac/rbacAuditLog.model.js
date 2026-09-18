@@ -6,8 +6,9 @@ const objectId = mongoose.Schema.Types.ObjectId;
 const rbacAuditLogSchema = new mongoose.Schema(
   {
     action: { type: String, required: true, index: true },
-    category: { type: String, enum: ['policy', 'access'], required: true, index: true },
+    category: { type: String, enum: ['policy', 'access', 'security'], required: true, index: true },
     actor: { type: objectId, ref: 'User', required: true, index: true },
+    initiator: { type: objectId, ref: 'User', default: null, index: true },
     targetUser: { type: objectId, ref: 'User', default: null, index: true },
     assignment: { type: objectId, ref: 'AccessAssignment', default: null },
   // ponytail: append-only blob — no query layer, just replay what changed.

@@ -1,9 +1,12 @@
 import catchAsync from '../../platform/catchAsync.js';
 import { ApiError } from '../../platform/errors.js';
 import * as userService from './user.service.js';
+import { auditContextFromRequest } from '../rbac/rbac-audit.js';
 import { createInvite, reissueInvite } from '../auth/auth.service.js';
 import User from './user.model.js';
 import { TransactionalEmailDeliveryError } from '../notifications/email.service.js';
+
+const auditCtx = (req) => auditContextFromRequest(req);
 
 function deliveryFailure(message, err) {
   const logId = err instanceof TransactionalEmailDeliveryError ? err.logId : null;
@@ -37,7 +40,7 @@ export const get = catchAsync(async (req, res) => {
 });
 
 export const update = catchAsync(async (req, res) => {
-  res.json(await userService.updateUser(req.user, req.params.id, req.body));
+  res.json(await userService.updateUser(req.user, req.params.id, req.body, auditCtx(req)));
 });
 
 export const resendInvite = (deliverInvite) => catchAsync(async (req, res) => {
@@ -73,6 +76,10 @@ export const notificationPrefs = catchAsync(async (req, res) => {
   res.json(await userService.updateNotificationPrefs(req.user, req.body));
 });
 
+export const notificationPrefsReset = catchAsync(async (req, res) => {
+  res.json(await userService.resetNotificationPrefs(req.user));
+});
+
 export const ticketPreferencesGet = catchAsync(async (req, res) => {
   res.json(await userService.getTicketPreferences(req.user));
 });
@@ -86,11 +93,11 @@ export const ticketPreferencesReset = catchAsync(async (req, res) => {
 });
 
 export const remove = catchAsync(async (req, res) => {
-  res.json(await userService.deleteUser(req.user, req.params.id));
+  res.json(await userService.deleteUser(req.user, req.params.id, auditCtx(req)));
 });
 
 export const reactivate = (deliverInvite) => catchAsync(async (req, res) => {
-  const result = await userService.reactivateUser(req.user, req.params.id);
+  const result = await userService.reactivateUser(req.user, req.params.id, auditCtx(req));
   let sent = false;
   if (result.inviteToken && deliverInvite) {
     try {

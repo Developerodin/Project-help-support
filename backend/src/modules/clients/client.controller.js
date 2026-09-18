@@ -1,5 +1,8 @@
 import catchAsync from '../../platform/catchAsync.js';
+import { auditContextFromRequest } from '../rbac/rbac-audit.js';
 import * as clientService from './client.service.js';
+
+const auditCtx = (req) => auditContextFromRequest(req);
 
 export const list = (config) => catchAsync(async (req, res) => {
   res.json(await clientService.listClients(req.query, config, req.user, req.permissionContext));
@@ -7,7 +10,7 @@ export const list = (config) => catchAsync(async (req, res) => {
 
 export const create = (config) => catchAsync(async (req, res) => {
   res.status(201).json(
-    await clientService.createClient(req.user, req.body, config, req.permissionContext),
+    await clientService.createClient(req.user, req.body, config, req.permissionContext, auditCtx(req)),
   );
 });
 
@@ -17,7 +20,7 @@ export const get = (config) => catchAsync(async (req, res) => {
 
 export const update = (config) => catchAsync(async (req, res) => {
   res.json(await clientService.updateClient(
-    req.user, req.params.id, req.body, config, req.permissionContext,
+    req.user, req.params.id, req.body, config, req.permissionContext, auditCtx(req),
   ));
 });
 

@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   PEOPLE_ASSIGNABLE_ROLES,
   ROLE_IDS,
@@ -30,15 +30,20 @@ import { normalizeApiError } from '@/shared/lib/api-error.js';
 import { getDefaultRedirect } from '@/shared/lib/route-permissions.js';
 import { filterEffectivelyActiveAssignments } from '@/shared/lib/rbac-preview/matrix-utils.js';
 import { commitAccessMutation } from '@/shared/lib/rbac-preview/people-access-mutations.js';
+import {
+  DEFAULT_PEOPLE_LIMIT,
+  PEOPLE_FILTER_STATUSES,
+  PEOPLE_PAGE_SIZES,
+  parsePeopleListParams,
+} from '@/shared/lib/people-list-query.js';
 import { windowedPageNumbers } from '@/shared/lib/ticket-list-query.js';
 import { useDebouncedValue } from '@/shared/lib/use-debounced-value.js';
+import { useHistorySearch } from '@/shared/lib/use-history-search.js';
 import { showToast } from '@/shared/lib/toast.js';
 import { capRoles } from '@/shared/lib/profile-utils.js';
 import '../../rbac-access.css';
 
 const SCRUBBED_EMAIL = /^deleted\+[a-f0-9]{24}@internal$/i;
-const PEOPLE_PAGE_SIZES = Object.freeze([25, 50, 100]);
-const PEOPLE_FILTER_STATUSES = Object.freeze(['invited', 'active', 'inactive', 'deleted']);
 const PEOPLE_FILTER_ROLES = Object.freeze([...PEOPLE_ASSIGNABLE_ROLES, ROLE_IDS.SUPER_ADMIN]);
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -139,6 +144,12 @@ function ActionButton({
 
 export default function UsersPage() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchString = useHistorySearch();
+  const { page, limit, urlSearch, role: roleFilter, status: statusFilter } = useMemo(
+    () => parsePeopleListParams(searchString),
+    [searchString],
+  );
   const { user: currentUser, startImpersonation } = useAuth();
   const canImpersonate = hasAnyRole(currentUser, ...IMPERSONATION_INITIATOR_ROLES);
   const assignableRoles = PEOPLE_ASSIGNABLE_ROLES;
@@ -147,14 +158,12 @@ export default function UsersPage() {
     totalResults: 0,
     totalPages: 1,
     page: 1,
-    limit: PEOPLE_PAGE_SIZES[0],
+    limit: DEFAULT_PEOPLE_LIMIT,
   });
-  const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(PEOPLE_PAGE_SIZES[0]);
-  const [roleFilter, setRoleFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [searchInput, setSearchInput] = useState('');
+  const [searchInput, setSearchInput] = useState(urlSearch);
+  const debouncedSearch = useDebouncedValue(searchInput, SEARCH_DEBOUNCE_MS);
   const [loadingUsers, setLoadingUsers] = useState(false);
+  const hasLoadedOnce = useRef(false);
   const [draft, setDraft] = useState({ email: '', roles: [ROLE_IDS.UNASSIGNED] });
   const [error, setError] = useState(null);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -180,7 +189,39 @@ export default function UsersPage() {
   const [revokeBusyId, setRevokeBusyId] = useState(null);
   const [revokeTarget, setRevokeTarget] = useState(null);
   const [revokeReason, setRevokeReason] = useState('');
-  const debouncedSearchInput = useDebouncedValue(searchInput, SEARCH_DEBOUNCE_MS);
+
+  useEffect(() => {
+    setSearchInput(urlSearch);
+  }, [urlSearch]);
+
+  const writePeopleSearch = useCallback((next) => {
+    const params = new URLSearchParams(window.location.search);
+    if (next.search) params.set('search', next.search);
+    else params.delete('search');
+    params.delete('q');
+    if (next.page) params.set('page', String(next.page));
+    else params.delete('page');
+    if (next.limit) params.set('limit', String(next.limit));
+    else params.delete('limit');
+    if (next.role) params.set('role', next.role);
+    else params.delete('role');
+    if (next.status) params.set('status', next.status);
+    else params.delete('status');
+    const qs = params.toString();
+    const url = qs ? `${pathname}?${qs}` : pathname;
+    window.history.replaceState(null, '', url);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (debouncedSearch === urlSearch) return;
+    writePeopleSearch({
+      search: debouncedSearch,
+      page: 1,
+      limit,
+      role: roleFilter,
+      status: statusFilter,
+    });
+  }, [debouncedSearch, urlSearch, writePeopleSearch, limit, roleFilter, statusFilter]);
 
   const reload = useCallback(async () => {
     setLoadingUsers(true);
@@ -188,12 +229,18 @@ export default function UsersPage() {
       const params = { page, limit, includeSuperAdmins: true };
       if (roleFilter) params.role = roleFilter;
       if (statusFilter) params.status = statusFilter;
-      if (debouncedSearchInput.trim()) params.q = debouncedSearchInput.trim();
+      if (debouncedSearch.trim()) params.q = debouncedSearch.trim();
 
       const nextPage = await listUsers(params);
       const totalPages = Math.max(1, Number(nextPage?.totalPages) || 1);
       if (page > totalPages) {
-        setPage(totalPages);
+        writePeopleSearch({
+          search: urlSearch,
+          page: totalPages,
+          limit,
+          role: roleFilter,
+          status: statusFilter,
+        });
         return;
       }
 
@@ -210,10 +257,21 @@ export default function UsersPage() {
       setError(err);
     } finally {
       setLoadingUsers(false);
+      hasLoadedOnce.current = true;
     }
-  }, [debouncedSearchInput, limit, page, roleFilter, statusFilter]);
+  }, [
+    debouncedSearch,
+    limit,
+    page,
+    roleFilter,
+    statusFilter,
+    urlSearch,
+    writePeopleSearch,
+  ]);
 
   useEffect(() => { reload(); }, [reload]);
+
+  const listRefreshing = loadingUsers && hasLoadedOnce.current;
 
   const pageNumbers = useMemo(
     () => windowedPageNumbers(page, listPage.totalPages),
@@ -221,7 +279,7 @@ export default function UsersPage() {
   );
   const showingFrom = listPage.totalResults === 0 ? 0 : ((page - 1) * limit) + 1;
   const showingTo = Math.min(page * limit, listPage.totalResults || 0);
-  const listFiltersActive = Boolean(searchInput.trim() || roleFilter || statusFilter);
+  const listFiltersActive = Boolean(urlSearch.trim() || roleFilter || statusFilter);
 
   function setRowActionBusy(key, value) {
     setRowBusy((prev) => {
@@ -540,10 +598,13 @@ export default function UsersPage() {
 
   function clearListFilters() {
     setSearchInput('');
-    setRoleFilter('');
-    setStatusFilter('');
-    setLimit(PEOPLE_PAGE_SIZES[0]);
-    setPage(1);
+    writePeopleSearch({
+      search: '',
+      page: 1,
+      limit: DEFAULT_PEOPLE_LIMIT,
+      role: '',
+      status: '',
+    });
   }
 
   return (
@@ -582,17 +643,21 @@ export default function UsersPage() {
           className="filterin"
           placeholder="Search name or email"
           value={searchInput}
-          onChange={(event) => {
-            setSearchInput(event.target.value);
-            setPage(1);
-          }}
+          onChange={(event) => setSearchInput(event.target.value)}
           aria-label="Search people by name or email"
+          aria-busy={listRefreshing || undefined}
         />
         <select
           value={roleFilter}
+          disabled={loadingUsers}
           onChange={(event) => {
-            setRoleFilter(event.target.value);
-            setPage(1);
+            writePeopleSearch({
+              search: urlSearch,
+              page: 1,
+              limit,
+              role: event.target.value,
+              status: statusFilter,
+            });
           }}
           aria-label="Filter by role"
         >
@@ -603,9 +668,15 @@ export default function UsersPage() {
         </select>
         <select
           value={statusFilter}
+          disabled={loadingUsers}
           onChange={(event) => {
-            setStatusFilter(event.target.value);
-            setPage(1);
+            writePeopleSearch({
+              search: urlSearch,
+              page: 1,
+              limit,
+              role: roleFilter,
+              status: event.target.value,
+            });
           }}
           aria-label="Filter by status"
         >
@@ -621,8 +692,13 @@ export default function UsersPage() {
             value={limit}
             disabled={loadingUsers}
             onChange={(event) => {
-              setLimit(Number(event.target.value) || PEOPLE_PAGE_SIZES[0]);
-              setPage(1);
+              writePeopleSearch({
+                search: urlSearch,
+                page: 1,
+                limit: Number(event.target.value) || DEFAULT_PEOPLE_LIMIT,
+                role: roleFilter,
+                status: statusFilter,
+              });
             }}
             aria-label="Rows per page"
           >
@@ -635,20 +711,20 @@ export default function UsersPage() {
           type="button"
           className="btn btn-sm"
           onClick={clearListFilters}
-          disabled={!listFiltersActive && page === 1 && limit === PEOPLE_PAGE_SIZES[0]}
+          disabled={!listFiltersActive && page === 1 && limit === DEFAULT_PEOPLE_LIMIT}
         >
           Reset
         </button>
       </div>
       <p className="resultline" role="status" aria-live="polite">
-        {loadingUsers
+        {loadingUsers && !hasLoadedOnce.current
           ? 'Loading people…'
           : listPage.totalResults === 0
             ? 'No people found'
             : `${listPage.totalResults} people · showing ${showingFrom}-${showingTo}`}
       </p>
 
-      <div className="tablewrap">
+      <div className="tablewrap" aria-busy={listRefreshing || undefined}>
         <table>
           <thead>
             <tr>
@@ -663,7 +739,7 @@ export default function UsersPage() {
             {users.length === 0 ? (
               <tr>
                 <td colSpan={5} className="meta">
-                  {loadingUsers
+                  {loadingUsers && !hasLoadedOnce.current
                     ? 'Loading people…'
                     : listFiltersActive
                       ? 'No users match these filters.'
@@ -801,7 +877,13 @@ export default function UsersPage() {
             className="pagebtn"
             aria-label="Previous page"
             disabled={page <= 1 || loadingUsers}
-            onClick={() => setPage(page - 1)}
+            onClick={() => writePeopleSearch({
+              search: urlSearch,
+              page: page - 1,
+              limit,
+              role: roleFilter,
+              status: statusFilter,
+            })}
           >
             Prev
           </button>
@@ -816,7 +898,13 @@ export default function UsersPage() {
                   aria-label={`Page ${item}`}
                   aria-current={item === page ? 'page' : undefined}
                   disabled={loadingUsers}
-                  onClick={() => setPage(item)}
+                  onClick={() => writePeopleSearch({
+                    search: urlSearch,
+                    page: item,
+                    limit,
+                    role: roleFilter,
+                    status: statusFilter,
+                  })}
                 >
                   {item}
                 </button>
@@ -831,7 +919,13 @@ export default function UsersPage() {
             className="pagebtn"
             aria-label="Next page"
             disabled={page >= (listPage.totalPages || 1) || loadingUsers}
-            onClick={() => setPage(page + 1)}
+            onClick={() => writePeopleSearch({
+              search: urlSearch,
+              page: page + 1,
+              limit,
+              role: roleFilter,
+              status: statusFilter,
+            })}
           >
             Next
           </button>
