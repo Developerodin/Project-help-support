@@ -105,21 +105,32 @@ function isSystemComment(comment) {
   return Boolean(comment?.system || comment?.kind === 'system' || !comment?.commentedBy);
 }
 
-function isExternalCommentAuthor(comment) {
+/** Positively on the delivery team — unknown is not a yes, see bubbleAlign. */
+function isInternalCommentAuthor(comment) {
   const by = comment?.commentedBy;
   if (!by) return false;
-  if (typeof by.external === 'boolean') return by.external;
-  if (by.role || by.roles?.length) return isExternalUser(by);
+  if (typeof by.external === 'boolean') return !by.external;
+  if (by.role || by.roles?.length) return !isExternalUser(by);
   return false;
 }
 
+/**
+ * A ticket thread has two sides: the client who raised it and the team working
+ * it. The viewer's own side sits on the right, the other side on the left, so
+ * your own replies are always on the right and the thread still reads as a
+ * conversation when you wrote neither message. Aligning purely per-person would
+ * push every bubble left for anyone who is only watching the ticket.
+ */
 function bubbleAlign(comment, user) {
   if (isSystemComment(comment)) return 'stretch';
-  if (comment.internal) return 'start';
-  if (isExternalCommentAuthor(comment)) return 'end';
-  // Sanitized external API strips roles; own-comment fallback for external viewers.
-  if (user && isExternalUser(user) && isOwnComment(comment, user)) return 'end';
-  return 'start';
+  if (isOwnComment(comment, user)) return 'end';
+  // The external API strips roles, so a client cannot tell authors apart — and
+  // does not need to: for them, everyone else is the team.
+  if (isExternalUser(user)) return 'start';
+  // Claim a bubble for the viewer's side only when the author's side is known.
+  // An author we cannot place reads as the other party rather than as a
+  // teammate, which is the mistake that matters less.
+  return isInternalCommentAuthor(comment) ? 'end' : 'start';
 }
 
 function bubbleVariant(comment, user) {
@@ -849,6 +860,6 @@ export {
   commentAuthorId,
   commentAuthorKey,
   groupComments,
-  isExternalCommentAuthor,
+  isInternalCommentAuthor,
   isOwnComment,
 };

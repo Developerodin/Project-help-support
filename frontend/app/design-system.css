@@ -1028,14 +1028,33 @@ input[type="checkbox"]{ accent-color:var(--sig); width:14px; height:14px; cursor
 .message-list{
   display:flex; flex-direction:column; gap:14px;
   padding-bottom:8px;
+  /* Full width on purpose: the two sides of the thread are the layout, so any
+     cap or centring here stops a bubble reaching the edge it belongs to. The
+     readable measure is the bubble's job (max-width below), not the column's. */
+  width:100%;
 }
 .bubble-group{
   display:flex; flex-direction:column; gap:4px;
-  max-width:80%;
+  max-width:68%;
 }
-.bubble-group[data-align="start"]{ align-self:flex-start; align-items:flex-start; }
-.bubble-group[data-align="end"]{ align-self:flex-end; align-items:flex-end; }
-.bubble-group[data-align="stretch"]{ max-width:100%; align-self:stretch; align-items:stretch; }
+/* Auto margins, not align-self: each group is wrapped in a plain div, where
+   align-self does nothing and every group would anchor left. */
+.bubble-group[data-align="start"]{
+  align-self:flex-start; align-items:flex-start; margin-inline-end:auto;
+}
+.bubble-group[data-align="end"]{
+  align-self:flex-end; align-items:flex-end; margin-inline-start:auto;
+}
+.bubble-group[data-align="stretch"]{
+  max-width:100%; align-self:stretch; align-items:stretch; margin-inline:0;
+}
+/* Narrower panel, less room to give away to the opposite side. */
+@media (max-width:900px){
+  .bubble-group{ max-width:78%; }
+}
+@media (max-width:560px){
+  .bubble-group{ max-width:90%; }
+}
 .message{ display:flex; flex-direction:column; gap:4px; width:100%; }
 .message[data-align="end"]{ align-items:flex-end; }
 .message[data-align="start"]{ align-items:flex-start; }

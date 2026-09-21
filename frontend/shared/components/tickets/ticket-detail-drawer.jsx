@@ -572,6 +572,11 @@ export default function TicketDetailDrawer({
     }
   }, [ticketId]);
 
+  // Every refetch from inside the open drawer keeps the ticket on screen. Only
+  // the ticketId switch below blanks it; doing it for an in-place action slid
+  // the whole drawer out and back in on each status change.
+  const reload = useCallback(() => load({ quiet: true }), [load]);
+
   useEffect(() => () => loadAbortRef.current?.abort(), []);
 
   useEffect(() => { load().catch(setError); }, [load]);
@@ -667,7 +672,7 @@ export default function TicketDetailDrawer({
             ticketId={ticketId}
             onClose={onClose}
             onChanged={onChanged}
-            load={load}
+            load={reload}
             boardPolicy={boardPolicy}
             permissionContext={permissionContextForUi(permissionContext)}
             permissionsLoadFailed={permissionContext.loadFailed}
