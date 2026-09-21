@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Download,
   Eye,
+  Info,
   Layers,
   LayoutGrid,
   LineChart,
@@ -25,7 +26,25 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { isTicketOverdue } from '@pms/shared';
+import { isTicketOverdue, PRIORITIES } from '@pms/shared';
+
+const PRIORITY_BY_KEY = Object.fromEntries(
+  PRIORITIES.map((level) => [level.toLowerCase(), level]),
+);
+
+const PRIORITY_CHIP_CLASS = Object.freeze({
+  Urgent: 'chip chip-p1',
+  High: 'chip chip-p2',
+  Medium: 'chip chip-p3',
+  Low: 'chip chip-p4',
+});
+
+/** @returns {'Low'|'Medium'|'High'|'Urgent'|null} */
+export function normalizePriority(priority) {
+  if (priority == null || priority === '') return null;
+  const key = String(priority).trim().toLowerCase();
+  return PRIORITY_BY_KEY[key] ?? null;
+}
 
 /** @type {Record<string, import('lucide-react').LucideIcon>} */
 const ICONS = {
@@ -51,6 +70,7 @@ const ICONS = {
   send: Send,
   msg: MessageSquare,
   alert: AlertTriangle,
+  info: Info,
   back: ArrowLeft,
   more: MoreHorizontal,
   list: List,
@@ -89,17 +109,26 @@ export function initials(name = '') {
 }
 
 export function priorityChipClass(priority) {
-  if (priority === 'Urgent') return 'chip chip-p1';
-  if (priority === 'high') return 'chip chip-p2';
-  return 'chip chip-p3';
+  const canonical = normalizePriority(priority);
+  return PRIORITY_CHIP_CLASS[canonical] ?? 'chip chip-p3';
 }
 
 export function priorityLabel(priority) {
-  if (priority === 'Urgent') return 'P1';
-  if (priority === 'high') return 'P2';
-  if (priority === 'medium') return 'P3';
-  if (priority === 'low') return 'P4';
-  return priority || '—';
+  const canonical = normalizePriority(priority);
+  if (canonical) return canonical;
+  if (priority == null || priority === '') return '—';
+  return String(priority);
+}
+
+export function priorityCardClass(priority) {
+  const canonical = normalizePriority(priority);
+  if (!canonical) return '';
+  return `card-priority-${canonical.toLowerCase()}`;
+}
+
+export function priorityDataValue(priority) {
+  const canonical = normalizePriority(priority);
+  return canonical ? canonical.toLowerCase() : 'unknown';
 }
 
 export function isOverdue(ticket) {

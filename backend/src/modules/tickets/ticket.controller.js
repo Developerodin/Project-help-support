@@ -1,9 +1,14 @@
 import catchAsync from '../../platform/catchAsync.js';
 import { dispatchTicketEvent } from '../notifications/dispatch.js';
+import {
+  publishTicketCommentRealtime,
+  publishTicketUpdatedRealtime,
+} from '../realtime/realtime.service.js';
 import * as ticketService from './ticket.service.js';
 import * as transitionService from './transition.service.js';
 import * as commentService from './comment.service.js';
 import * as attachmentService from './attachment.service.js';
+import * as discussionReadService from './discussion-read.service.js';
 
 function normalizeEstimateDate(value) {
   if (!value) return null;
@@ -37,6 +42,7 @@ export const create = (config) => catchAsync(async (req, res) => {
     event: { type: 'TICKET_CREATED', requestId: req.id },
     ticket: doc, actor: req.user, config,
   });
+  publishTicketUpdatedRealtime(doc, req.user);
 });
 
 export const get = catchAsync(async (req, res) => {
@@ -52,7 +58,11 @@ export const patch = (config) => catchAsync(async (req, res) => {
   const ticket = await ticketService.patchTicket(req.user, req.params.id, req.body, req.permissionContext);
   res.json(ticket);
 
-  if (!estimatePatched) return;
+  if (!estimatePatched) {
+    const doc = await ticketService.resolveTicketDocForNotifications(ticket.id);
+    publishTicketUpdatedRealtime(doc, req.user);
+    return;
+  }
 
   const doc = await ticketService.resolveTicketDocForNotifications(ticket.id);
   if (!didEstimateFieldsChange(beforeDoc, doc)) return;
@@ -61,6 +71,7 @@ export const patch = (config) => catchAsync(async (req, res) => {
     event: { type: 'TICKET_ESTIMATE_SET', requestId: req.id },
     ticket: doc, actor: req.user, config,
   });
+  publishTicketUpdatedRealtime(doc, req.user);
 });
 
 export const assign = (config) => catchAsync(async (req, res) => {
@@ -72,6 +83,7 @@ export const assign = (config) => catchAsync(async (req, res) => {
     event: { type: 'TICKET_ASSIGNED', requestId: req.id },
     ticket: doc, actor: req.user, config,
   });
+  publishTicketUpdatedRealtime(doc, req.user);
 });
 
 export const watch = catchAsync(async (req, res) => {
@@ -107,6 +119,7 @@ export const bulk = (config) => catchAsync(async (req, res) => {
       event: { type: 'TICKET_ASSIGNED', requestId: req.id },
       ticket: doc, actor: req.user, config,
     });
+    publishTicketUpdatedRealtime(doc, req.user);
   }
 });
 
@@ -120,6 +133,7 @@ export const transition = (config) => catchAsync(async (req, res) => {
   await dispatchTicketEvent({
     event: { ...event, requestId: req.id }, ticket: doc, actor: req.user, config,
   });
+  publishTicketUpdatedRealtime(doc, req.user);
 });
 
 export const addComment = (config) => catchAsync(async (req, res) => {
@@ -133,6 +147,7 @@ export const addComment = (config) => catchAsync(async (req, res) => {
   await dispatchTicketEvent({
     event: { ...event, requestId: req.id }, ticket: doc, actor: req.user, config,
   });
+  publishTicketCommentRealtime(doc, req.user);
 });
 
 export const editComment = catchAsync(async (req, res) => {
@@ -153,6 +168,12 @@ export const reactToComment = catchAsync(async (req, res) => {
   ));
 });
 
+export const markDiscussionRead = catchAsync(async (req, res) => {
+  res.json(await discussionReadService.markDiscussionRead(
+    req.user, req.params.id, req.permissionContext,
+  ));
+});
+
 export const addAttachments = (config) => catchAsync(async (req, res) => {
   const { attachments, comment, commentCreated, event } = await attachmentService.addAttachments(
     req.user, req.params.id, req.files || [], config, {
@@ -170,6 +191,7 @@ export const addAttachments = (config) => catchAsync(async (req, res) => {
   await dispatchTicketEvent({
     event: { ...event, requestId: req.id }, ticket: doc, actor: req.user, config,
   });
+  publishTicketCommentRealtime(doc, req.user);
 });
 
 export const removeAttachment = (config) => catchAsync(async (req, res) => {
@@ -180,7 +202,7 @@ export const removeAttachment = (config) => catchAsync(async (req, res) => {
 });
 
 export const downloadAttachment = (config) => catchAsync(async (req, res) => {
-  const url = await attachmentService.downloadUrl(
+  const { url, filename } = await attachmentService.downloadUrl(
     req.user, req.params.id, req.params.attachmentId, config,
   );
 
@@ -188,7 +210,7 @@ export const downloadAttachment = (config) => catchAsync(async (req, res) => {
   // Location header — CORS does not expose it. JSON matches Dharwin's
   // mentor/employee download endpoints; redirect remains for direct navigation.
   if (req.headers.accept?.includes('application/json')) {
-    return res.json({ url });
+    return res.json({ url, filename });
   }
 
   res.redirect(302, url);

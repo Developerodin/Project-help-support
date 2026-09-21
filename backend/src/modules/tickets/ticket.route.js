@@ -65,6 +65,8 @@ export default function ticketRoutes(config) {
   router.post('/:id/block', requireInternalPermission('tickets.edit'), validate(setBlockedSchema), controller.setBlocked);
   router.delete('/:id/block', requireInternalPermission('tickets.edit'), validate(clearBlockedSchema), controller.clearBlocked);
 
+  router.post('/:id/discussion/read', requireTicketPermission('tickets.view'), validate(ticketIdSchema), controller.markDiscussionRead);
+
   router.post('/:id/comments', requireTicketPermission('tickets.view'), validate(addCommentSchema), controller.addComment(config));
   // Own-comment edit/delete for externals is enforced in comment.service; route gate matches add comment.
   router.patch('/:id/comments/:commentId', requireTicketPermission('tickets.view'), validate(editCommentSchema), controller.editComment);

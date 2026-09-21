@@ -1,6 +1,7 @@
 'use client';
 
-import { laneEntryStage, stageLabel } from '@pms/shared';
+import { useState } from 'react';
+import { laneEntryStage, laneOf, stageLabel } from '@pms/shared';
 import TicketCard from './ticket-card.jsx';
 
 const EMPTY = {
@@ -20,26 +21,61 @@ export default function BoardLane({
   canDrop = true,
   canDragTicket,
   onBlockedDrag,
+  draggingTicket = null,
+  getDropHint,
+  movingTicketId = null,
+  onDragStartTicket,
+  onDragEndTicket,
 }) {
+  const [dropHint, setDropHint] = useState(null);
+
   function handleDrop(event) {
     event.preventDefault?.();
     event.currentTarget.classList.remove('dropping');
+    setDropHint(null);
     if (!canDrop) return;
     const ticketId = event.dataTransfer.getData('text/plain');
     if (ticketId) onDropTicket(ticketId, laneEntryStage(lane.key));
   }
 
+  function resolveDropHint(ticket) {
+    if (!ticket) return null;
+    if (laneOf(ticket.status) === lane.key) return 'same-lane';
+    return getDropHint?.(ticket, laneEntryStage(lane.key)) ?? null;
+  }
+
+  function handleDragOver(event) {
+    if (!canDrop) return;
+    event.preventDefault();
+    const ticket = draggingTicket;
+    const hint = resolveDropHint(ticket);
+    setDropHint(hint);
+    if (hint === 'same-lane') {
+      event.currentTarget.classList.remove('dropping');
+      return;
+    }
+    event.currentTarget.classList.add('dropping');
+  }
+
+  function handleDragLeave(event) {
+    event.currentTarget.classList.remove('dropping');
+    setDropHint(null);
+  }
+
+  const laneDropClass = dropHint === 'valid'
+    ? ' lane-drop-valid'
+    : dropHint === 'invalid'
+      ? ' lane-drop-invalid'
+      : '';
+
   return (
     <section
-      className={`lane${canDrop ? '' : ' lane-locked'}`}
+      className={`lane${canDrop ? '' : ' lane-locked'}${laneDropClass}`}
       data-testid={`lane-${lane.key}`}
       aria-label={lane.label}
-      onDragOver={(e) => {
-        if (!canDrop) return;
-        e.preventDefault();
-        e.currentTarget.classList.add('dropping');
-      }}
-      onDragLeave={(e) => e.currentTarget.classList.remove('dropping')}
+      aria-busy={movingTicketId ? true : undefined}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
       <div className="lane-head">
@@ -55,11 +91,14 @@ export default function BoardLane({
               key={ticket.id || ticket.ticketId}
               ticket={ticket}
               onOpen={onOpen}
-              draggable={canDrop}
+              draggable={canDrop && movingTicketId !== ticket.ticketId}
               canDrag={canDragTicket ? canDragTicket(ticket) : true}
               onBlockedDrag={onBlockedDrag}
               moveTargets={getMoveTargets ? getMoveTargets(ticket) : []}
-              onMoveTo={canDrop ? onDropTicket : undefined}
+              onMoveTo={canDrop && movingTicketId !== ticket.ticketId ? onDropTicket : undefined}
+              busy={movingTicketId === ticket.ticketId}
+              onDragStart={() => onDragStartTicket?.(ticket)}
+              onDragEnd={() => onDragEndTicket?.()}
             />
           ))}
       </div>

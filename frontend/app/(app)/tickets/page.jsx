@@ -17,7 +17,12 @@ import { isAbortError } from '@/shared/api/client.js';
 import { AUTHENTICATED, useAuth } from '@/shared/contexts/auth-context.jsx';
 import { useProject } from '@/shared/contexts/project-context.jsx';
 import { useTicketPreferences } from '@/shared/contexts/ticket-preferences-context.jsx';
-import { ticketFromSearch, withTicketParam, withoutTicketParam } from '@/shared/lib/deep-link.js';
+import {
+  commentFromLocation,
+  ticketFromSearch,
+  withTicketParam,
+  withoutTicketParam,
+} from '@/shared/lib/deep-link.js';
 import {
   buildTicketListQuery,
   clampTicketListPage,
@@ -43,6 +48,9 @@ import { useDebouncedValue } from '@/shared/lib/use-debounced-value.js';
 import { useHistorySearch } from '@/shared/lib/use-history-search.js';
 import { normalizeApiError } from '@/shared/lib/api-error.js';
 import { showToast } from '@/shared/lib/toast.js';
+import { useNotificationPollInterval } from '@/shared/lib/notification-swr.js';
+import { REALTIME_BACKSTOP_MS } from '@/shared/hooks/use-ticket-realtime.js';
+import { useRealtime, useRealtimeEvent } from '@/shared/contexts/realtime-context.jsx';
 import TicketFilters from '@/shared/components/tickets/ticket-filters.jsx';
 import TicketTable from '@/shared/components/tickets/ticket-table.jsx';
 import TicketDetailDrawer from '@/shared/components/tickets/ticket-detail-drawer.jsx';
@@ -91,6 +99,10 @@ function TicketListPage() {
   const page = pageFromSearch(searchString);
   const limit = limitFromSearch(searchString, preferences.limit);
   const openTicketId = ticketFromSearch(searchString);
+  const highlightCommentId = useMemo(() => {
+    if (typeof window === 'undefined') return null;
+    return commentFromLocation(searchString, window.location.hash);
+  }, [searchString]);
 
   const roleDefaults = useMemo(() => defaultTicketPreferencesForUser(user), [user]);
 
@@ -282,6 +294,32 @@ function TicketListPage() {
   // One fetch path for everything, including the drawer's onChanged, so a
   // superseded request is always the one that gets aborted.
   const reload = useCallback(() => setReloadNonce((nonce) => nonce + 1), []);
+  const pollInterval = useNotificationPollInterval();
+
+  // The list toast is suppressed for the ticket whose drawer is open, so that
+  // drawer has to show the reply itself instead.
+  const [drawerRefreshNonce, setDrawerRefreshNonce] = useState(0);
+  const handleRealtimeEvent = useCallback((event) => {
+    if (!event?.type) return;
+    if (event.type !== 'ticket.comment' && event.type !== 'ticket.updated') return;
+    if (viewProjectId && event.projectId && event.projectId !== viewProjectId) return;
+    if (event.type === 'ticket.comment' && event.ticketId && event.ticketId === openTicketId) {
+      setDrawerRefreshNonce((nonce) => nonce + 1);
+    }
+    reload();
+  }, [reload, viewProjectId, openTicketId]);
+
+  const { connected: realtimeConnected } = useRealtime();
+  useRealtimeEvent(handleRealtimeEvent);
+
+  useEffect(() => {
+    if (initialPageLoading) return undefined;
+    const timer = window.setInterval(
+      () => reload(),
+      realtimeConnected ? REALTIME_BACKSTOP_MS : pollInterval,
+    );
+    return () => window.clearInterval(timer);
+  }, [initialPageLoading, pollInterval, reload, realtimeConnected]);
 
   useEffect(() => {
     if (initialPageLoading) return undefined;
@@ -557,7 +595,13 @@ function TicketListPage() {
       </nav>
 
       {openTicketId && (
-        <TicketDetailDrawer ticketId={openTicketId} onClose={close} onChanged={reload} />
+        <TicketDetailDrawer
+          ticketId={openTicketId}
+          onClose={close}
+          onChanged={reload}
+          highlightCommentId={highlightCommentId}
+          refreshNonce={drawerRefreshNonce}
+        />
       )}
     </>
   );

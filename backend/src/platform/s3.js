@@ -8,6 +8,24 @@ const PRESIGN_TTL_SECONDS = 300;
 
 let client = null;
 
+/**
+ * Header value for GetObject ResponseContentDisposition. `inline` keeps
+ * in-tab PDF preview; `filename` / `filename*` tell the browser the original
+ * name instead of the random storage key.
+ */
+export function inlineContentDisposition(filename) {
+  const safe = String(filename || '')
+    .replace(/[\r\n"]/g, '')
+    .replace(/[/\\]/g, '')
+    .replace(/\.\./g, '')
+    .trim() || 'download';
+  const ascii = safe.replace(/[^\x20-\x7E]/g, '_') || 'download';
+  const encoded = encodeURIComponent(safe).replace(/['()*]/g, (ch) => (
+    `%${ch.charCodeAt(0).toString(16).toUpperCase()}`
+  ));
+  return `inline; filename="${ascii}"; filename*=UTF-8''${encoded}`;
+}
+
 /** An absent capability group is a disabled feature, not a crash on first use. */
 export function assertStorageEnabled(config) {
   if (!config.features.attachments) {
@@ -48,10 +66,11 @@ export async function deleteObject(config, key) {
  * Short-TTL and never stored. The presigned URL is the RESULT of an
  * authorization decision made by the caller — never a substitute for one.
  */
-export async function presignGet(config, key, { ttlSeconds = PRESIGN_TTL_SECONDS } = {}) {
+export async function presignGet(config, key, { ttlSeconds = PRESIGN_TTL_SECONDS, filename } = {}) {
   const command = new GetObjectCommand({
     Bucket: config.storage.bucket,
     Key: key,
+    ...(filename ? { ResponseContentDisposition: inlineContentDisposition(filename) } : {}),
   });
   return getSignedUrl(getClient(config), command, { expiresIn: ttlSeconds });
 }

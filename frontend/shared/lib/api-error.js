@@ -1,3 +1,5 @@
+import { catalogLogLevelForError, lookupTransitionErrorCode } from './transition-error-catalog.js';
+
 /** Normalize API/client errors for display — keep support IDs out of primary UI. */
 
 function readMessage(error) {
@@ -42,11 +44,33 @@ export function normalizeApiError(error) {
 
 export const OWNERSHIP_REQUIRED_MESSAGE = 'Assign a team or person before moving to Ready for QA';
 
+export function shouldLogApiError(error) {
+  if (!error) return false;
+  if (error.log === false) return false;
+
+  const normalized = normalizeApiError(error);
+  if (!normalized) return false;
+  if (isTransitionValidationError(normalized)) return false;
+
+  const catalogLevel = catalogLogLevelForError(normalized);
+  if (catalogLevel === 'none' || catalogLevel === 'debug') return false;
+
+  const code = normalized.code;
+  const requestId = normalized.requestId;
+  if (!requestId && code && /^(CLIENT_|BOARD_)/.test(String(code))) return false;
+  if (code === 'SAME_STAGE') return false;
+
+  const entry = lookupTransitionErrorCode(code);
+  if (entry?.logLevel === 'none') return false;
+
+  return true;
+}
+
 export function logApiError(error, context) {
   const normalized = normalizeApiError(error);
   if (!normalized) return;
 
-  if (isTransitionValidationError(normalized)) return;
+  if (!shouldLogApiError(normalized)) return;
 
   // The Next dev overlay renders every plain object argument as "{}" — its
   // formatObject reads getOwnPropertyDescriptor(arg, 'key') instead of the loop

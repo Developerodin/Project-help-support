@@ -7,6 +7,7 @@ import compression from 'compression';
 import morgan from 'morgan';
 
 import { requestId } from './platform/requestId.js';
+import { redactSensitiveQuery } from './platform/logger.js';
 import { ApiError, errorConverter, errorHandler } from './platform/errors.js';
 import { isDbReady } from './platform/db.js';
 import { buildOriginMatcher } from './platform/origin-policy.js';
@@ -19,6 +20,7 @@ import userRoutes from './modules/users/user.route.js';
 import notificationRoutes from './modules/notifications/notification.route.js';
 import analyticsRoutes from './modules/tickets/analytics.route.js';
 import rbacRoutes from './modules/rbac/rbac.route.js';
+import realtimeRoutes from './modules/realtime/realtime.route.js';
 
 export function createApp(config, { deliverReset, deliverInvite } = {}) {
   const app = express();
@@ -44,7 +46,8 @@ export function createApp(config, { deliverReset, deliverInvite } = {}) {
   app.use(compression());
 
   if (config.nodeEnv !== 'test') {
-    app.use(morgan(':method :url :status :response-time ms - reqId=:res[x-request-id]'));
+    morgan.token('safeUrl', (req) => redactSensitiveQuery(req.originalUrl || req.url));
+    app.use(morgan(':method :safeUrl :status :response-time ms - reqId=:res[x-request-id]'));
   }
 
   // Liveness: is the process up. Readiness: can it actually serve. Without the
@@ -72,6 +75,7 @@ export function createApp(config, { deliverReset, deliverInvite } = {}) {
   app.use('/v1/notifications', notificationRoutes(config));
   app.use('/v1/analytics', analyticsRoutes(config));
   app.use('/v1/rbac', rbacRoutes(config));
+  app.use('/v1/realtime', realtimeRoutes(config));
 
   app.use('/v1', (_req, _res, next) => next(new ApiError(404, 'NOT_FOUND', 'Resource not found')));
 

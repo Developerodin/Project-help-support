@@ -130,6 +130,14 @@ export default function TicketFilters({
       >
         Reopened
       </button>
+      <button
+        type="button"
+        className={`btn btn-sm${filters.newReply ? ' chip-on' : ''}`}
+        aria-pressed={Boolean(filters.newReply)}
+        onClick={() => toggle('newReply')}
+      >
+        New reply
+      </button>
 
       {showReset && (
         <button

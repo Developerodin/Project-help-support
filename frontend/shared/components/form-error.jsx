@@ -1,16 +1,20 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { copyErrorId, logApiError, normalizeApiError } from '@/shared/lib/api-error.js';
+import { copyErrorId, logApiError, normalizeApiError, shouldLogApiError } from '@/shared/lib/api-error.js';
 import Icon from '@/shared/components/icons.jsx';
 
-export default function FormError({ error, onDismiss, title }) {
+export default function FormError({
+  error, onDismiss, title, variant: variantProp,
+}) {
   const [copied, setCopied] = useState(false);
   const normalized = normalizeApiError(error);
+  const variant = variantProp || error?.variant || 'error';
+  const isInfo = variant === 'info';
 
   useEffect(() => {
     if (!error) return undefined;
-    logApiError(error);
+    if (shouldLogApiError(error)) logApiError(error);
     setCopied(false);
     return undefined;
   }, [error]);
@@ -26,8 +30,12 @@ export default function FormError({ error, onDismiss, title }) {
   }
 
   return (
-    <div className="banner" role="alert" aria-live="assertive">
-      <Icon name="alert" size={16} aria-hidden="true" />
+    <div
+      className={`banner${isInfo ? ' banner--info' : ''}`}
+      role={isInfo ? 'status' : 'alert'}
+      aria-live={isInfo ? 'polite' : 'assertive'}
+    >
+      <Icon name={isInfo ? 'info' : 'alert'} size={16} aria-hidden="true" />
       <div className="banner-body">
         {title ? <b>{title}</b> : null}
         <div>{normalized.message}</div>

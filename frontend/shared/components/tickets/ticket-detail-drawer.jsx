@@ -6,24 +6,22 @@ import {
 } from '@pms/shared';
 import {
   getTicket, patchTicket, transitionTicket, addComment, editComment, deleteComment, uploadAttachments, deleteAttachment, assignTicket,
-  watchTicket, unwatchTicket, setBlocked, clearBlocked, deleteTicket,
+  watchTicket, unwatchTicket, setBlocked, clearBlocked, deleteTicket, markDiscussionRead,
 } from '@/shared/api/tickets.js';
 import { isAbortError } from '@/shared/api/client.js';
-import { showToast } from '@/shared/lib/toast.js';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import { useProject } from '@/shared/contexts/project-context.jsx';
 import Icon from '@/shared/components/icons.jsx';
 import FormError from '@/shared/components/form-error.jsx';
 import ValidationDialog from '@/shared/components/validation-dialog.jsx';
 import {
-  getTransitionFieldErrors,
-  getValidationDialogForTransitionError,
   getPatchFieldErrors,
   isPatchFieldError,
-  isTransitionValidationError,
   logApiError,
   normalizeApiError,
+  shouldLogApiError,
 } from '@/shared/lib/api-error.js';
+import { handleTransitionError } from '@/shared/lib/handle-transition-error.js';
 import TicketHeader from './ticket-header.jsx';
 import TicketDetailsTab from './ticket-details-tab.jsx';
 import TicketAttachmentsTab from './ticket-attachments-tab.jsx';
@@ -39,6 +37,7 @@ import { useBoardPolicy } from '@/shared/hooks/use-board-policy.js';
 import { usePermissionContext } from '@/shared/hooks/use-permission-context.js';
 import { permissionContextForUi } from '@/shared/lib/permission-context-ui.js';
 import AppLoader from '../app-loader.jsx';
+import { useProjectMentionCandidates } from '@/shared/hooks/use-project-mention-candidates.js';
 
 function nestedDialogOpen(drawerNode) {
   const layers = document.querySelectorAll('[role="dialog"], [role="alertdialog"]');
@@ -57,6 +56,7 @@ function TicketDrawerContent({
   permissionsLoadFailed,
   onRetryPermissions,
   projectBanner,
+  highlightCommentId = null,
 }) {
   const [error, setError] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -78,6 +78,44 @@ function TicketDrawerContent({
     history: historyRef,
     qa: qaRef,
   };
+
+  const mentionProjectId = ticket?.project?.id ?? ticket?.project?._id ?? null;
+  const mentionCandidates = useProjectMentionCandidates(mentionProjectId, {
+    enabled: Boolean(mentionProjectId),
+  });
+
+  // Identifies "this ticket, at this reply count". Marking read once per key
+  // both stops the effect re-firing on every `ticket` identity change and still
+  // re-marks when a newer reply lands while the tab is open.
+  const discussionKey = ticket ? `${ticketId}:${ticket.comments?.length ?? 0}` : null;
+  const [readMarkedKey, setReadMarkedKey] = useState(null);
+  // Clear the badge from what we just did rather than refetching the ticket:
+  // load() nulls `ticket` first, so a refetch here blanks the open drawer.
+  const discussionUnread = readMarkedKey === discussionKey
+    ? 0
+    : Number(ticket?.discussionUnreadCount) || 0;
+
+  useEffect(() => {
+    if (tab !== 'discussion' || !discussionKey) return undefined;
+    if (readMarkedKey === discussionKey) return undefined;
+    // Nothing unread means nothing to mark — and the server no-ops this for
+    // anyone outside the raiser/tester audience anyway. Skipping spares a POST
+    // and a whole list refetch on every ticket the drawer opens.
+    if (discussionUnread <= 0) return undefined;
+
+    let cancelled = false;
+    markDiscussionRead(ticket.ticketId)
+      .then(() => {
+        if (cancelled) return;
+        setReadMarkedKey(discussionKey);
+        // The list still has to refetch — its row chip is server-rendered.
+        onChanged?.();
+      })
+      .catch((err) => {
+        if (!isAbortError(err)) logApiError(normalizeApiError(err), { ticketId, operation: 'markDiscussionRead' });
+      });
+    return () => { cancelled = true; };
+  }, [tab, ticket, ticketId, discussionKey, readMarkedKey, discussionUnread, onChanged]);
 
   const selectTab = useCallback((next) => {
     setTab(next);
@@ -118,22 +156,25 @@ function TicketDrawerContent({
       onChanged?.();
     } catch (err) {
       const apiError = normalizeApiError(err);
-      logApiError(apiError, { ticketId, operation: operation.name || 'ticketAction' });
-
-      if (isTransitionValidationError(apiError)) {
-        setFieldErrors(getTransitionFieldErrors(apiError, ticket) || {});
-        setValidationDialog(getValidationDialogForTransitionError(apiError, ticket));
-      } else if (isPatchFieldError(apiError)) {
+      if (isPatchFieldError(apiError)) {
+        if (shouldLogApiError(apiError)) {
+          logApiError(apiError, { ticketId, operation: operation.name || 'ticketAction' });
+        }
         setFieldErrors(getPatchFieldErrors(apiError) || {});
       } else {
-        setError(apiError);
+        await handleTransitionError(err, {
+          ticket,
+          onReload: async () => {
+            await load();
+            onChanged?.();
+          },
+          setError,
+          setFieldErrors,
+          setValidationDialog,
+          logContext: { ticketId, operation: operation.name || 'ticketAction', surface: 'drawer' },
+        });
       }
-
-      if (apiError.status === 409) {
-        await load();
-        showToast('This ticket changed elsewhere — showing the latest version.');
-      }
-      if (rethrow) throw apiError;
+      if (rethrow) throw apiError ?? err;
     }
   };
 
@@ -249,6 +290,11 @@ function TicketDrawerContent({
           >
             Discussion
             <span className="n">{ticket.comments?.length || 0}</span>
+            {discussionUnread > 0 && (
+              <span className="tab-unread" aria-label={`, ${discussionUnread} new ${discussionUnread === 1 ? 'reply' : 'replies'}`}>
+                · {discussionUnread} new
+              </span>
+            )}
           </button>
           <button
             type="button" className="tab" role="tab" id="tab-details"
@@ -308,6 +354,10 @@ function TicketDrawerContent({
                 <TicketComments
                   ticket={ticket}
                   user={user}
+                  mentionCandidates={mentionCandidates}
+                  discussionLastReadAt={ticket.discussionLastReadAt}
+                  scrollToFirstUnread={tab === 'discussion'}
+                  highlightCommentId={highlightCommentId}
                   canComment={canComment}
                   canEditComments={canManageOwnComments}
                   canDeleteComments={canManageOwnComments}
@@ -486,7 +536,9 @@ function TicketDrawerContent({
   );
 }
 
-export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
+export default function TicketDetailDrawer({
+  ticketId, onClose, onChanged, highlightCommentId = null, refreshNonce = 0,
+}) {
   const { user } = useAuth();
   const { policy: boardPolicy } = useBoardPolicy();
   const { permissionContext, retryPermissions } = usePermissionContext();
@@ -498,12 +550,15 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
   const [ticket, setTicket] = useState(null);
   const [error, setError] = useState(null);
 
-  const load = useCallback(async () => {
+  // `quiet` keeps the currently rendered ticket on screen while refetching. The
+  // normal path blanks it first so a switch between tickets never shows the old
+  // one; a background refresh has no such switch and must not flash the loader.
+  const load = useCallback(async ({ quiet = false } = {}) => {
     loadAbortRef.current?.abort();
     const controller = new AbortController();
     loadAbortRef.current = controller;
     const seq = ++loadSeqRef.current;
-    setTicket(null);
+    if (!quiet) setTicket(null);
     try {
       const next = await getTicket(ticketId, { signal: controller.signal });
       if (seq !== loadSeqRef.current || controller.signal.aborted) return null;
@@ -520,6 +575,13 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
   useEffect(() => () => loadAbortRef.current?.abort(), []);
 
   useEffect(() => { load().catch(setError); }, [load]);
+
+  // A live comment on the open ticket. Errors stay silent: the drawer is still
+  // showing a good ticket, and the next load reports any real problem.
+  useEffect(() => {
+    if (!refreshNonce) return;
+    load({ quiet: true }).catch(() => {});
+  }, [refreshNonce, load]);
 
   const ticketProjectId = ticket?.project?.id || ticket?.project?._id;
   const projectMismatch = Boolean(
@@ -611,6 +673,7 @@ export default function TicketDetailDrawer({ ticketId, onClose, onChanged }) {
             permissionsLoadFailed={permissionContext.loadFailed}
             onRetryPermissions={retryPermissions}
             projectBanner={projectBanner}
+            highlightCommentId={highlightCommentId}
           />
         )}
       </aside>

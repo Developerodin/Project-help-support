@@ -14,6 +14,8 @@ import NotificationBell from '@/shared/components/notification-bell.jsx';
 import ThemeToggle from '@/shared/components/theme-toggle.jsx';
 import AppSidebar from '@/shared/components/app-sidebar.jsx';
 import ExternalWorkspaceNotice from '@/shared/components/external-workspace-notice.jsx';
+import TicketCommentToasts from '@/shared/components/ticket-comment-toasts.jsx';
+import { RealtimeProvider } from '@/shared/contexts/realtime-context.jsx';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/shared/components/ui/sidebar';
 import { FOCUS_TICKET_SEARCH_KEY, focusTicketSearch } from '@/shared/lib/ticket-search-focus.js';
 import { readNavCollapsed, storeNavCollapsed } from '@/shared/lib/nav-preference.js';
@@ -155,7 +157,10 @@ export default function AppLayout({ children }) {
         <AuthGuard>
           <RouteGuard>
             <ProjectProvider>
-              <AppShell>{children}</AppShell>
+              <RealtimeProvider>
+                <TicketCommentToasts />
+                <AppShell>{children}</AppShell>
+              </RealtimeProvider>
             </ProjectProvider>
           </RouteGuard>
         </AuthGuard>

@@ -1,38 +1,61 @@
 'use client';
 
 import { stageLabel } from '@pms/shared';
-import Icon, { initials, isOverdue, priorityChipClass, priorityLabel } from '../icons.jsx';
+import Icon, {
+  initials,
+  isOverdue,
+  priorityCardClass,
+  priorityChipClass,
+  priorityDataValue,
+  priorityLabel,
+} from '../icons.jsx';
 
 export default function TicketCard({
   ticket, onOpen, draggable = true, canDrag = true, onBlockedDrag,
-  moveTargets = [], onMoveTo,
+  moveTargets = [], onMoveTo, busy = false, onDragStart, onDragEnd,
 }) {
   const late = isOverdue(ticket);
+  const unread = Number(ticket.discussionUnreadCount) || 0;
+  const hasNewReply = Boolean(ticket.hasNewReply) || unread > 0;
   const assigneeName = ticket.assignedTo?.name;
   const allowedMoves = moveTargets.filter((target) => !target.blocked);
   const showMove = Boolean(onMoveTo) && allowedMoves.length > 0;
 
   return (
-    <div className="card-shell">
+    <div className="card-shell" aria-busy={busy || undefined}>
       <button
         type="button"
-        className={`card${canDrag ? '' : ' card-locked'}`}
-        draggable={draggable}
-        aria-label={`Open ticket ${ticket.ticketId}: ${ticket.title}`}
+        className={`card${canDrag ? '' : ' card-locked'}${busy ? ' card-busy' : ''} ${priorityCardClass(ticket.priority)}`.trim()}
+        data-priority={priorityDataValue(ticket.priority)}
+        draggable={draggable && !busy}
+        aria-busy={busy || undefined}
+        aria-label={`Open ticket ${ticket.ticketId}: ${ticket.title}${hasNewReply ? `, ${unread} new ${unread === 1 ? 'reply' : 'replies'} in discussion` : ''}`}
         onDragStart={(e) => {
-          if (!canDrag) {
+          if (!canDrag || busy) {
             e.preventDefault();
-            onBlockedDrag?.(ticket);
+            if (!busy) onBlockedDrag?.(ticket);
             return;
           }
           e.dataTransfer.setData('text/plain', ticket.ticketId);
           e.currentTarget.classList.add('dragging');
+          onDragStart?.(ticket);
         }}
-        onDragEnd={(e) => e.currentTarget.classList.remove('dragging')}
+        onDragEnd={(e) => {
+          e.currentTarget.classList.remove('dragging');
+          onDragEnd?.();
+        }}
         onClick={() => onOpen(ticket.ticketId)}
       >
         <div className="card-top">
           <span className="card-id">{ticket.ticketId}</span>
+          {hasNewReply && (
+            <span
+              className="chip chip-new-reply card-reply-chip"
+              aria-label={`${unread} new ${unread === 1 ? 'reply' : 'replies'} in discussion`}
+            >
+              New reply{unread > 1 ? ` (${unread})` : ''}
+            </span>
+          )}
           <span className="spacer" />
           <span className={priorityChipClass(ticket.priority)}>{priorityLabel(ticket.priority)}</span>
         </div>
@@ -66,6 +89,7 @@ export default function TicketCard({
           <span className="sr">Move {ticket.ticketId} to lane</span>
           <select
             className="card-move-select"
+            disabled={busy}
             defaultValue=""
             onClick={(e) => e.stopPropagation()}
             onChange={(e) => {

@@ -1,8 +1,21 @@
 export const TICKET_PARAM = 'ticket';
+export const COMMENT_PARAM = 'comment';
 export const UI_QA_PARAM = 'uiQa';
 
 export function ticketFromSearch(search) {
   return new URLSearchParams(search).get(TICKET_PARAM);
+}
+
+export function commentFromSearch(search) {
+  return new URLSearchParams(search).get(COMMENT_PARAM);
+}
+
+/** Supports `#comment-<id>` deep links when search params omit comment. */
+export function commentFromLocation(search, hash = '') {
+  const fromQuery = commentFromSearch(search);
+  if (fromQuery) return fromQuery;
+  const match = String(hash || '').match(/^#comment-(.+)$/);
+  return match?.[1] || null;
 }
 
 export function withTicketParam(search, ticketId) {

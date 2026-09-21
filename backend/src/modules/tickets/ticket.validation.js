@@ -25,6 +25,7 @@ export const listTicketsSchema = {
     blocked: Joi.boolean().truthy('true').falsy('false'),
     overdue: Joi.boolean().truthy('true').falsy('false'),
     reopened: Joi.boolean().truthy('true').falsy('false'),
+    newReply: Joi.boolean().truthy('true').falsy('false'),
     sortBy: Joi.string().max(80),
     page: Joi.number().integer().min(1),
     limit: Joi.number().integer().min(1).max(100),

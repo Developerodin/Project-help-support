@@ -376,8 +376,8 @@ export async function downloadUiQaAttachment(projectId, entity, attachmentId, co
   ensureModuleKeys(project.modules);
   const { target } = resolveEntity(project.modules, entity);
   const attachment = findAttachment(target, attachmentId);
-  const url = await storage.presignGet(config, attachment.key);
-  return { url, attachment };
+  const url = await storage.presignGet(config, attachment.key, { filename: attachment.name });
+  return { url, filename: attachment.name, attachment };
 }
 
 export function assertValidQaStatus(status) {

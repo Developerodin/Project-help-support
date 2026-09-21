@@ -38,6 +38,7 @@ export function buildTicketListQuery({
   if (filters.blocked) query.blocked = true;
   if (filters.overdue) query.overdue = true;
   if (filters.reopened) query.reopened = true;
+  if (filters.newReply) query.newReply = true;
 
   const sortBy = buildTicketListSortBy(sort);
   if (sortBy) query.sortBy = sortBy;
@@ -145,7 +146,7 @@ const URL_FILTER_KEYS = Object.freeze([
   'q', 'status', 'priority', 'category', 'severity', 'scope', 'assignedTo',
   'module', 'environment', 'label',
 ]);
-const URL_FLAG_KEYS = Object.freeze(['blocked', 'overdue', 'reopened']);
+const URL_FLAG_KEYS = Object.freeze(['blocked', 'overdue', 'reopened', 'newReply']);
 
 export function hasFilterParams(search) {
   const params = new URLSearchParams(search);

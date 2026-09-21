@@ -114,7 +114,7 @@ export const uiQaRemoveAttachment = catchAsync(async (req, res) => {
 
 export const uiQaDownloadAttachment = (config) => catchAsync(async (req, res) => {
   const entity = parseUiQaJsonField(req.query?.entity, 'entity');
-  const { url } = await uiQaService.downloadUiQaAttachment(
+  const { url, filename } = await uiQaService.downloadUiQaAttachment(
     req.params.id,
     entity,
     req.params.attachmentId,
@@ -122,7 +122,7 @@ export const uiQaDownloadAttachment = (config) => catchAsync(async (req, res) =>
     req.user,
     req.permissionContext,
   );
-  res.json({ url });
+  res.json({ url, filename });
 });
 
 export const teamMembers = catchAsync(async (req, res) => {

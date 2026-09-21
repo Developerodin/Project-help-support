@@ -38,6 +38,9 @@ export const setBlocked = (id, body) =>
 export const clearBlocked = (id, body) =>
   apiFetch(`/tickets/${encodeURIComponent(id)}/block`, { method: 'DELETE', body });
 
+export const markDiscussionRead = (id) =>
+  apiFetch(`/tickets/${encodeURIComponent(id)}/discussion/read`, { method: 'POST' });
+
 export const addComment = (id, body) =>
   apiFetch(`/tickets/${encodeURIComponent(id)}/comments`, { method: 'POST', body });
 

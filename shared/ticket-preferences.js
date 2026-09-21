@@ -5,6 +5,7 @@ export const TICKET_SORT_COLUMNS = Object.freeze([
   'owner',
   'inStage',
   'estimatedDone',
+  'discussionUnread',
 ]);
 
 import { isExternalUser } from './permissions.js';
@@ -27,6 +28,7 @@ export const DEFAULT_TICKET_PREFERENCES = Object.freeze({
     blocked: false,
     overdue: false,
     reopened: false,
+    newReply: false,
   }),
   sort: Object.freeze({
     column: 'ticketId',
@@ -78,6 +80,7 @@ const SORT_FIELD_MAP = Object.freeze({
   owner: 'assignedTo',
   inStage: 'currentStageEnteredAt',
   estimatedDone: 'estimatedResolutionAt',
+  discussionUnread: 'discussionUnreadCount',
 });
 
 const FIELD_TO_SORT_COLUMN = Object.freeze(
@@ -142,6 +145,7 @@ export function activeTicketFilterLabels(filters = {}, defaults = DEFAULT_TICKET
   if (filters.blocked) labels.push('Blocked');
   if (filters.overdue) labels.push('Overdue');
   if (filters.reopened) labels.push('Reopened');
+  if (filters.newReply) labels.push('New reply');
   return labels;
 }
 
@@ -157,6 +161,7 @@ export function hasActiveTicketFilters(filters = {}, defaults = DEFAULT_TICKET_P
     || Boolean(filters.blocked)
     || Boolean(filters.overdue)
     || Boolean(filters.reopened)
+    || Boolean(filters.newReply)
   );
 }
 

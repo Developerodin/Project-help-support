@@ -285,6 +285,6 @@ export async function downloadUrl(actor, idOrKey, attachmentId, config, opts = {
   }
 
   const attachment = findAttachment(ticket, attachmentId);
-
-  return storage.presignGet(config, attachment.key);
+  const url = await storage.presignGet(config, attachment.key, { filename: attachment.name });
+  return { url, filename: attachment.name };
 }

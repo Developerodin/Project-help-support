@@ -36,6 +36,14 @@ import {
   resolvePermissionContext,
 } from '../access/scope-enforcement.js';
 import Ticket from './ticket.model.js';
+import {
+  discussionNewReplyFilterStages,
+  discussionUnreadByTicketIds,
+  discussionUnreadSortStages,
+  attachDiscussionUnreadToTicketJson,
+  discussionLastReadAtForTicket,
+  isDiscussionUnreadAudience,
+} from './discussion-read.service.js';
 
 const EXTERNAL_ACCESS_ASSIGNMENT_PERMISSIONS = new Set(['tickets.view', 'tickets.create']);
 const STAGE_SORT_BRANCHES = STAGE_KEYS.map((key, index) => ({
@@ -152,9 +160,19 @@ const DETAIL_POPULATE = [
 function restoreNestedPopulatedUsers(ticketDoc, ticketJson) {
   const comments = ticketJson.comments || [];
   comments.forEach((commentJson, index) => {
-    const author = ticketDoc.comments[index]?.commentedBy;
+    const source = ticketDoc.comments[index];
+    const author = source?.commentedBy;
     if (author && typeof author.toJSON === 'function') {
       commentJson.commentedBy = author.toJSON();
+    }
+    const mentionDocs = source?.mentions;
+    if (Array.isArray(mentionDocs) && Array.isArray(commentJson.mentions)) {
+      commentJson.mentions = mentionDocs.map((mention, mentionIndex) => {
+        if (mention && typeof mention.toJSON === 'function') {
+          return mention.toJSON();
+        }
+        return commentJson.mentions[mentionIndex];
+      });
     }
   });
 }
@@ -220,7 +238,26 @@ export async function getTicket(actor, idOrKey, permissionContext = null) {
   await assertCanViewTicket(actor, ticket, permissionContext);
   const json = ticket.toJSON();
   restoreNestedPopulatedUsers(ticket, json);
-  return isPureExternalActor(actor) ? sanitizeExternalTicket(json, { viewerId: actor._id }) : json;
+  const base = isPureExternalActor(actor)
+    ? sanitizeExternalTicket(json, { viewerId: actor._id })
+    : json;
+
+  // Everyone else always scores zero, so don't pay for the aggregate to find out.
+  if (!isDiscussionUnreadAudience(ticket, actor)) {
+    return attachDiscussionUnreadToTicketJson(base, null);
+  }
+
+  const unreadMap = await discussionUnreadByTicketIds(actor, [ticket._id]);
+  const withUnread = attachDiscussionUnreadToTicketJson(
+    base,
+    unreadMap.get(String(ticket._id)),
+  );
+  const lastReadAt = await discussionLastReadAtForTicket(actor, ticket);
+  if (!lastReadAt) return withUnread;
+  return {
+    ...withUnread,
+    discussionLastReadAt: lastReadAt.toISOString(),
+  };
 }
 
 function scopeFilter(scope, actorId) {
@@ -381,8 +418,12 @@ function normalizeFilterForAggregate(filter) {
   return normalized;
 }
 
-function aggregateSortStages(sortBy) {
+function aggregateSortStages(sortBy, actor) {
   const direction = sortBy.endsWith(':asc') ? 1 : -1;
+  if (sortBy.startsWith('discussionUnreadCount:')) {
+    if (!actor) return null;
+    return discussionUnreadSortStages(actor, direction);
+  }
   if (sortBy.startsWith('ticketId:')) {
     return [
       {
@@ -447,10 +488,28 @@ function aggregateSortStages(sortBy) {
   return null;
 }
 
+/**
+ * Plain `field:dir` sort for the aggregate path, matching paginate()'s parser.
+ * Without it, a sortBy aggregateSortStages() does not special-case (priority,
+ * estimatedResolutionAt, ...) combined with the newReply filter spreads null.
+ */
+function defaultAggregateSortStages(sortBy) {
+  const sort = {};
+  for (const part of String(sortBy || '').split(',')) {
+    const [field, direction] = part.split(':');
+    if (field?.trim()) sort[field.trim()] = direction?.trim() === 'desc' ? -1 : 1;
+  }
+  if (Object.keys(sort).length === 0) sort.createdAt = -1;
+  return [{ $sort: sort }];
+}
+
 async function paginateTickets(model, filter, options = {}) {
   const sortBy = options.sortBy;
-  const sortStages = sortBy ? aggregateSortStages(sortBy) : null;
-  if (!sortStages) {
+  const sortStages = sortBy ? aggregateSortStages(sortBy, options.actor) : null;
+  const newReplyOnly = options.newReplyOnly === true;
+  const actor = options.actor;
+
+  if (!sortStages && !newReplyOnly) {
     return paginate(model, filter, options);
   }
 
@@ -458,17 +517,32 @@ async function paginateTickets(model, filter, options = {}) {
   const limit = Math.min(100, Math.max(1, Number(options.limit) || 20));
   const skip = (page - 1) * limit;
   const matchFilter = normalizeFilterForAggregate(filter);
+  const resolvedSortStages = sortStages ?? defaultAggregateSortStages(sortBy);
+  const discussionStages = newReplyOnly && actor ? discussionNewReplyFilterStages(actor) : [];
 
-  const [totalResults, idRows] = await Promise.all([
-    model.countDocuments(filter).exec(),
+  const countPipeline = [
+    { $match: matchFilter },
+    ...discussionStages,
+    { $count: 'total' },
+  ];
+
+  const [countResult, idRows] = await Promise.all([
+    discussionStages.length
+      ? model.aggregate(countPipeline)
+      : model.countDocuments(filter).exec(),
     model.aggregate([
       { $match: matchFilter },
-      ...sortStages,
+      ...discussionStages,
+      ...resolvedSortStages,
       { $skip: skip },
       { $limit: limit },
       { $project: { _id: 1 } },
     ]),
   ]);
+
+  const totalResults = discussionStages.length
+    ? (countResult[0]?.total ?? 0)
+    : countResult;
 
   const ids = idRows.map((row) => row._id);
   if (ids.length === 0) {
@@ -508,6 +582,10 @@ function categoryTotalsFromRows(rows = []) {
   return totals;
 }
 
+function wantsNewReplyFilter(query = {}) {
+  return query.newReply === 'true' || query.newReply === true;
+}
+
 export async function listTickets(actor, query = {}, permissionContext = null) {
   const ctx = await resolvePermissionContext(actor, permissionContext);
   await assertHasTicketPermission(actor, 'tickets.view', ctx);
@@ -515,6 +593,7 @@ export async function listTickets(actor, query = {}, permissionContext = null) {
   const summaryQuery = { ...query };
   delete summaryQuery.status;
   const allStageFilter = await buildTicketFilter(actor, summaryQuery, ctx);
+  const newReplyOnly = wantsNewReplyFilter(query);
 
   const [page, categoryRows] = await Promise.all([
     paginateTickets(Ticket, listFilter, {
@@ -522,6 +601,8 @@ export async function listTickets(actor, query = {}, permissionContext = null) {
       limit: query.limit,
       sortBy: query.sortBy || 'createdAt:desc',
       populate: LIST_POPULATE,
+      newReplyOnly,
+      actor,
       // The list never needs the embedded arrays; excluding them keeps a 50-row
       // page from carrying every comment on every ticket.
       select: '-comments -activityLog -stageHistory',
@@ -534,16 +615,30 @@ export async function listTickets(actor, query = {}, permissionContext = null) {
           status: { $in: CATEGORY_CARD_STAGE_WINDOW },
         }),
       },
+      // The category cards report the same rows the list does, so the newReply
+      // chip has to narrow them too — as blocked/overdue/reopened already do.
+      ...(newReplyOnly ? discussionNewReplyFilterStages(actor) : []),
       { $group: { _id: '$category', count: { $sum: 1 } } },
     ]),
   ]);
+
+  const unreadMap = await discussionUnreadByTicketIds(
+    actor,
+    page.results.map((t) => t._id),
+  );
 
   return {
     ...page,
     categoryTotals: categoryTotalsFromRows(categoryRows),
     results: page.results.map((t) => {
       const json = t.toJSON();
-      return isPureExternalActor(actor) ? sanitizeExternalTicket(json, { viewerId: actor._id }) : json;
+      const sanitized = isPureExternalActor(actor)
+        ? sanitizeExternalTicket(json, { viewerId: actor._id })
+        : json;
+      return attachDiscussionUnreadToTicketJson(
+        sanitized,
+        unreadMap.get(String(t._id)),
+      );
     }),
   };
 }

@@ -51,11 +51,11 @@ export function findComment(ticket, commentId) {
  */
 export async function addComment(actor, idOrKey, { content, mentions = [], clientRef, internal = false }, permissionContext = null) {
   const ticket = await resolveTicketDoc(idOrKey);
+  // Replying is a read-level act, not an edit: the route guards this with
+  // tickets.view, external users have always been exempt from the edit check,
+  // and a watcher or team member who can open a ticket must be able to answer
+  // on it. Editing or deleting a comment still goes through the edit guard.
   await assertCanViewTicket(actor, ticket, permissionContext);
-
-  if (!isExternalUser(actor)) {
-    await assertCanEditTicket(actor, ticket, permissionContext);
-  }
 
   if (isExternalUser(actor) && internal === true) {
     throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this ticket');

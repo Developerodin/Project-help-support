@@ -23,17 +23,27 @@ import { useProject } from '@/shared/contexts/project-context.jsx';
 import { useTicketPreferences } from '@/shared/contexts/ticket-preferences-context.jsx';
 import { buildTicketListQuery, boardMineFromSearch, withBoardMineParam } from '@/shared/lib/ticket-list-query.js';
 import { normalizeApiError } from '@/shared/lib/api-error.js';
+import { handleBoardBlockReason, handleTransitionError } from '@/shared/lib/handle-transition-error.js';
 import { showToast } from '@/shared/lib/toast.js';
 import AppLoader from '@/shared/components/app-loader.jsx';
 import { useBoardPolicy } from '@/shared/hooks/use-board-policy.js';
 import { usePermissionContext } from '@/shared/hooks/use-permission-context.js';
-import { ticketFromSearch, withTicketParam, withoutTicketParam } from '@/shared/lib/deep-link.js';
-import { friendlyTransitionError, OWNERSHIP_REQUIRED_MESSAGE } from '@/shared/lib/api-error.js';
+import {
+  commentFromLocation,
+  ticketFromSearch,
+  withTicketParam,
+  withoutTicketParam,
+} from '@/shared/lib/deep-link.js';
+import { OWNERSHIP_REQUIRED_MESSAGE } from '@/shared/lib/api-error.js';
 import BoardLane from '@/shared/components/tickets/board-lane.jsx';
 import TicketDetailDrawer from '@/shared/components/tickets/ticket-detail-drawer.jsx';
 import FormError from '@/shared/components/form-error.jsx';
+import ValidationDialog from '@/shared/components/validation-dialog.jsx';
 import RemarkDialog from '@/shared/components/remark-dialog.jsx';
 import Icon from '@/shared/components/icons.jsx';
+import { REALTIME_BACKSTOP_MS } from '@/shared/hooks/use-ticket-realtime.js';
+import { useRealtime, useRealtimeEvent } from '@/shared/contexts/realtime-context.jsx';
+import { useNotificationPollInterval } from '@/shared/lib/notification-swr.js';
 
 function BoardPage() {
   const pathname = usePathname();
@@ -51,13 +61,24 @@ function BoardPage() {
   const [boardTruncated, setBoardTruncated] = useState(false);
   const [boardTotalResults, setBoardTotalResults] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(null);
+  const [movingTicketId, setMovingTicketId] = useState(null);
+  const [draggingTicket, setDraggingTicket] = useState(null);
+  const [validationDialog, setValidationDialog] = useState(null);
+  const [validationTicketId, setValidationTicketId] = useState(null);
   const searchString = useHistorySearch();
   const openTicketId = ticketFromSearch(searchString);
+  const highlightCommentId = useMemo(() => {
+    if (typeof window === 'undefined') return null;
+    return commentFromLocation(searchString, window.location.hash);
+  }, [searchString]);
   const [error, setError] = useState(null);
   const [readOnlyNoticeDismissed, setReadOnlyNoticeDismissed] = useState(false);
   const loadController = useRef(null);
   const normalizedBoardMineUrl = useRef(false);
+  const ticketCountRef = useRef(0);
+  ticketCountRef.current = tickets.length;
 
   const writeSearch = useCallback((nextSearch, { push = false } = {}) => {
     const url = `${pathname}${nextSearch}`;
@@ -101,7 +122,9 @@ function BoardPage() {
     loadController.current?.abort();
     const controller = new AbortController();
     loadController.current = controller;
-    setLoading(true);
+    const softReload = ticketCountRef.current > 0;
+    if (softReload) setRefreshing(true);
+    else setLoading(true);
     setLoadError(null);
 
     const BOARD_PAGE_CAP = 10;
@@ -146,11 +169,40 @@ function BoardPage() {
         showToast(message);
       })
       .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!controller.signal.aborted) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       });
   }, [ready, preferences, savedBoardMine, activeProjectId]);
 
   useEffect(() => () => loadController.current?.abort(), []);
+
+  const pollInterval = useNotificationPollInterval();
+  // The list toast is suppressed for the ticket whose drawer is open, so that
+  // drawer has to show the reply itself instead.
+  const [drawerRefreshNonce, setDrawerRefreshNonce] = useState(0);
+  const handleRealtimeEvent = useCallback((event) => {
+    if (!event?.type) return;
+    if (event.type !== 'ticket.comment' && event.type !== 'ticket.updated') return;
+    if (activeProjectId && event.projectId && event.projectId !== activeProjectId) return;
+    if (event.type === 'ticket.comment' && event.ticketId && event.ticketId === openTicketId) {
+      setDrawerRefreshNonce((nonce) => nonce + 1);
+    }
+    reload();
+  }, [reload, activeProjectId, openTicketId]);
+
+  const { connected: realtimeConnected } = useRealtime();
+  useRealtimeEvent(handleRealtimeEvent);
+
+  useEffect(() => {
+    if (!ready) return undefined;
+    const timer = window.setInterval(
+      () => reload(),
+      realtimeConnected ? REALTIME_BACKSTOP_MS : pollInterval,
+    );
+    return () => window.clearInterval(timer);
+  }, [ready, reload, pollInterval, realtimeConnected]);
 
   useEffect(() => {
     if (ready) reload();
@@ -175,13 +227,18 @@ function BoardPage() {
   );
 
   function showMoveError(blockReason) {
-    setError({
-      code: blockReason.code,
-      message: blockReason.message,
-      title: blockReason.title,
-    });
-    setReadOnlyNoticeDismissed(true);
+    const result = handleBoardBlockReason(blockReason, { setError, showInfoToast: true });
+    if (result.kind !== 'noop') setReadOnlyNoticeDismissed(true);
   }
+
+  const getDropHint = useCallback((ticket, toStage) => {
+    const block = getBoardMoveBlockReason(
+      user, ticket, toStage, boardPolicy, permissionContext,
+    );
+    if (!block) return 'valid';
+    if (block.code === 'SAME_STAGE') return 'invalid';
+    return 'invalid';
+  }, [user, boardPolicy, permissionContext]);
 
   async function performTransition(ticketId, to, revision, extra = {}) {
     await transitionTicket(ticketId, { to, revision, ...extra });
@@ -190,6 +247,7 @@ function BoardPage() {
 
   async function onDropTicket(ticketId, to) {
     setError(null);
+    setDraggingTicket(null);
 
     try {
       const cached = ticketById[ticketId];
@@ -204,11 +262,10 @@ function BoardPage() {
       }
 
       if (wouldFailOwnershipGuard(to, current)) {
-        setError({
-          status: 400,
+        handleBoardBlockReason({
           code: 'OWNERSHIP_REQUIRED',
           message: OWNERSHIP_REQUIRED_MESSAGE,
-        });
+        }, { setError });
         return;
       }
 
@@ -226,10 +283,30 @@ function BoardPage() {
         return;
       }
 
-      await performTransition(ticketId, to, current.revision);
+      setMovingTicketId(ticketId);
+      try {
+        await performTransition(ticketId, to, current.revision);
+      } catch (err) {
+        await handleTransitionError(err, {
+          ticket: current,
+          onReload: reload,
+          setError,
+          setValidationDialog: (dialog) => {
+            setValidationDialog(dialog);
+            setValidationTicketId(ticketId);
+          },
+          onOpenTicketForValidation: () => open(ticketId),
+          logContext: { ticketId, surface: 'board' },
+        });
+      } finally {
+        setMovingTicketId(null);
+      }
     } catch (err) {
-      setError(friendlyTransitionError(err));
-      reload();
+      await handleTransitionError(err, {
+        onReload: reload,
+        setError,
+        logContext: { ticketId, surface: 'board' },
+      });
     }
   }
 
@@ -246,14 +323,27 @@ function BoardPage() {
       setPendingAction(null);
       setRemarkText('');
     } catch (err) {
-      setError(friendlyTransitionError(err));
-      reload();
+      await handleTransitionError(err, {
+        onReload: reload,
+        setError,
+        logContext: { ticketId: pendingAction?.ticketId, surface: 'board' },
+      });
     } finally {
       setRemarkBusy(false);
     }
   }
 
   function onBlockedDrag(ticket) {
+    if (ticket?.blocked) {
+      showMoveError({
+        code: 'TICKET_BLOCKED',
+        message: ticket.blockerReason
+          ? `This ticket is blocked: ${ticket.blockerReason}`
+          : 'This ticket is blocked. Clear the blocker before moving it.',
+        blockerReason: ticket.blockerReason,
+      });
+      return;
+    }
     const blockReason = getBoardDragBlockReason(
       user, ticket, boardPolicy, permissionContext,
     );
@@ -311,7 +401,8 @@ function BoardPage() {
 
       <FormError
         error={error}
-        title={error?.title || (error?.code === 'CLIENT_BOARD_MOVE_FORBIDDEN' ? 'Cannot move this ticket' : undefined)}
+        title={error?.title}
+        variant={error?.variant}
         onDismiss={error ? () => setError(null) : undefined}
       />
 
@@ -334,7 +425,7 @@ function BoardPage() {
       {loading && tickets.length === 0 ? (
         <AppLoader inline label="Loading board…" />
       ) : (
-        <div className={`board-wrap${showReadOnlyOverlay ? ' board-wrap--locked' : ''}${loading && tickets.length === 0 ? ' board-wrap--busy' : ''}`} aria-busy={loading || undefined}>
+        <div className={`board-wrap${showReadOnlyOverlay ? ' board-wrap--locked' : ''}${refreshing ? ' board-wrap--refreshing' : ''}${loading && tickets.length === 0 ? ' board-wrap--busy' : ''}`} aria-busy={loading || movingTicketId || undefined}>
         {showReadOnlyOverlay && (
           <div
             className="board-lock-overlay"
@@ -374,10 +465,18 @@ function BoardPage() {
                 user, ticket, boardPolicy, permissionContext,
               )}
               canDrop={boardInteractive}
-              canDragTicket={(ticket) => canDragTicket(
-                user, ticket, boardPolicy, permissionContext,
-              )}
+              canDragTicket={(ticket) => {
+                if (ticket?.blocked) return false;
+                return canDragTicket(
+                  user, ticket, boardPolicy, permissionContext,
+                );
+              }}
               onBlockedDrag={onBlockedDrag}
+              draggingTicket={draggingTicket}
+              getDropHint={getDropHint}
+              movingTicketId={movingTicketId}
+              onDragStartTicket={setDraggingTicket}
+              onDragEndTicket={() => setDraggingTicket(null)}
             />
           ))}
         </div>
@@ -385,8 +484,26 @@ function BoardPage() {
       )}
 
       {openTicketId && (
-        <TicketDetailDrawer ticketId={openTicketId} onClose={close} onChanged={reload} />
+        <TicketDetailDrawer
+          ticketId={openTicketId}
+          onClose={close}
+          onChanged={reload}
+          highlightCommentId={highlightCommentId}
+          refreshNonce={drawerRefreshNonce}
+        />
       )}
+
+      <ValidationDialog
+        open={Boolean(validationDialog)}
+        title={validationDialog?.title}
+        message={validationDialog?.message}
+        items={validationDialog?.items || []}
+        onClose={() => {
+          setValidationDialog(null);
+          if (validationTicketId) open(validationTicketId);
+          setValidationTicketId(null);
+        }}
+      />
 
       <RemarkDialog
         open={Boolean(pendingAction)}

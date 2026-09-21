@@ -11,4 +11,19 @@ const logger = winston.createLogger({
   transports: [new winston.transports.Console()],
 });
 
+/**
+ * EventSource cannot send an Authorization header, so /v1/realtime/stream takes
+ * its access token in the query string. Nothing may write that URL verbatim —
+ * an access token is a bearer credential and a log line is a copy of it.
+ *
+ * ponytail: our own access log only. Any reverse proxy in front of this still
+ * logs the raw request line, so REALTIME_SSE notes in .env.example tell the
+ * operator to redact it there too. Upgrade path: mint a short-lived SSE ticket
+ * from an authenticated POST and keep the access token out of URLs entirely.
+ */
+export function redactSensitiveQuery(url) {
+  if (!url || !url.includes('access_token=')) return url;
+  return url.replace(/([?&]access_token=)[^&]*/g, '$1REDACTED');
+}
+
 export default logger;

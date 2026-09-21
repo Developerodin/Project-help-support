@@ -252,6 +252,10 @@ export function loadConfig(env = process.env) {
       adminEmail: seed.SEED_ADMIN_EMAIL,
       adminPassword: seed.SEED_ADMIN_PASSWORD,
     },
+    realtime: {
+      enabled: readBoolean(env, 'REALTIME_SSE_ENABLED', true),
+      sseHeartbeatMs: readPositiveInt(env, 'REALTIME_SSE_HEARTBEAT_MS', 25_000),
+    },
     branding: {
       neutralName: 'ProwPlus',
       neutralLogoUrl: present(env.NEUTRAL_BRAND_LOGO_URL)

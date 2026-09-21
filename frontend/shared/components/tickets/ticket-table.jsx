@@ -31,6 +31,7 @@ const SORTABLE_COLUMNS = [
   { key: 'owner', label: 'Owner' },
   { key: 'inStage', label: 'In stage' },
   { key: 'estimatedDone', label: 'Est. done' },
+  { key: 'discussionUnread', label: 'Replies' },
 ];
 
 function SortHeader({ column, sort, onSort }) {
@@ -50,6 +51,9 @@ function SortHeader({ column, sort, onSort }) {
 }
 
 export default function TicketTable({ tickets, onOpen, sort, onSort, busy = false }) {
+  const showRepliesColumn = sort?.column === 'discussionUnread'
+    || tickets.some((ticket) => (Number(ticket.discussionUnreadCount) || 0) > 0);
+
   return (
     <div className="tablewrap" data-busy={busy ? 'true' : undefined} aria-busy={busy || undefined}>
       <table>
@@ -62,12 +66,19 @@ export default function TicketTable({ tickets, onOpen, sort, onSort, busy = fals
             <SortHeader column={SORTABLE_COLUMNS[3]} sort={sort} onSort={onSort} />
             <SortHeader column={SORTABLE_COLUMNS[4]} sort={sort} onSort={onSort} />
             <SortHeader column={SORTABLE_COLUMNS[5]} sort={sort} onSort={onSort} />
+            {showRepliesColumn ? (
+              <SortHeader column={SORTABLE_COLUMNS[6]} sort={sort} onSort={onSort} />
+            ) : null}
           </tr>
         </thead>
         <tbody>
           {tickets.map((ticket) => {
             const late = isTicketOverdue(ticket);
-            const rowLabel = `Open ticket ${ticket.ticketId}: ${ticket.title}`;
+            const unread = Number(ticket.discussionUnreadCount) || 0;
+            const newReplyLabel = unread > 0
+              ? `, ${unread} new ${unread === 1 ? 'reply' : 'replies'} in discussion`
+              : '';
+            const rowLabel = `Open ticket ${ticket.ticketId}: ${ticket.title}${newReplyLabel}`;
             const ownerName = ticket.assignedTo?.name;
             return (
               <tr
@@ -86,8 +97,16 @@ export default function TicketTable({ tickets, onOpen, sort, onSort, busy = fals
                 <td className="t-id">{ticket.ticketId}</td>
                 <td className="t-title">
                   <span className="titleflex">
-                    {(ticket.blocked || late || ticket.reopenCount > 0) && (
+                    {(ticket.blocked || late || ticket.reopenCount > 0 || unread > 0) && (
                       <span className="rowflags">
+                        {unread > 0 && (
+                          <span
+                            className="chip chip-new-reply"
+                            aria-label={`${unread} new ${unread === 1 ? 'reply' : 'replies'} in discussion`}
+                          >
+                            New reply{unread > 1 ? ` (${unread})` : ''}
+                          </span>
+                        )}
                         {ticket.blocked && <span className="chip chip-blocked">Blocked</span>}
                         {late && <span className="chip chip-late">Overdue</span>}
                         {ticket.reopenCount > 0 && <span className="chip chip-reopen">Reopened</span>}
@@ -116,6 +135,20 @@ export default function TicketTable({ tickets, onOpen, sort, onSort, busy = fals
                     )
                     : <span className="dash">—</span>}
                 </td>
+                {showRepliesColumn ? (
+                  <td className="t-num t-replies">
+                    {unread > 0 ? (
+                      <span
+                        className="chip chip-new-reply chip-compact"
+                        aria-label={`${unread} unread ${unread === 1 ? 'reply' : 'replies'}`}
+                      >
+                        {unread}
+                      </span>
+                    ) : (
+                      <span className="dash" aria-hidden="true">—</span>
+                    )}
+                  </td>
+                ) : null}
               </tr>
             );
           })}
