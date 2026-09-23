@@ -4827,8 +4827,11 @@ a.button3{ display:block; text-align:center; text-decoration:none; cursor:pointe
    Sits under the scrim/drawer (z 40/41) so opening a ticket from a reply
    covers the chat instead of fighting it. */
 body:has(.assistant-fab) .page{ padding-bottom:96px; } /* keep the pager clear of the button */
-.assistant-fab{
+.assistant-fabs{
   position:fixed; right:20px; bottom:calc(20px + env(safe-area-inset-bottom, 0px)); z-index:39;
+  display:flex; flex-direction:column; align-items:center; gap:10px;
+}
+.assistant-fab{
   display:grid; place-items:center; width:52px; height:52px; border-radius:50%;
   background:var(--sig); color:var(--sig-ink); border:0; cursor:pointer;
   box-shadow:0 6px 18px oklch(0.245 0.014 262 / 0.22);
@@ -4837,6 +4840,10 @@ body:has(.assistant-fab) .page{ padding-bottom:96px; } /* keep the pager clear o
 .assistant-fab:hover{ background:var(--sig-hi); }
 .assistant-fab:active{ transform:scale(0.96); }
 .assistant-fab:focus-visible{ outline:2px solid var(--sig); outline-offset:3px; }
+/* Voice mode's own entry: secondary to the chat button, so lighter and smaller. */
+.assistant-fab.is-voice{ width:44px; height:44px; background:var(--paper); color:var(--sig);
+  border:1px solid var(--rule); box-shadow:0 4px 12px oklch(0.245 0.014 262 / 0.16); }
+.assistant-fab.is-voice:hover{ background:var(--sig-wash); }
 
 .assistant-panel{
   position:fixed; right:20px; bottom:calc(20px + env(safe-area-inset-bottom, 0px)); z-index:39;
@@ -4915,11 +4922,39 @@ body:has(.assistant-fab) .page{ padding-bottom:96px; } /* keep the pager clear o
 }
 .assistant-compose textarea:focus{ outline:none; border-color:var(--sig); box-shadow:0 0 0 3px var(--sig-wash); }
 .assistant-send:not(:disabled){ color:var(--sig); }
-.assistant-mic.is-recording{ color:var(--alarm); background:var(--alarm-wash); }
-@media (prefers-reduced-motion: no-preference){
-  .assistant-mic.is-recording{ animation:assistant-pulse 1.4s ease-in-out infinite; }
+/* Talking rings: the mic follows your voice (--mic-level), the speaker follows
+   the reply being read aloud (--out-level). Both are 0–1, set every frame. A
+   ring is a shadow, not a size change, so nothing around it moves. */
+.assistant-mic.is-recording{
+  color:var(--alarm); background:var(--alarm-wash);
+  box-shadow:0 0 0 calc(2px + var(--mic-level, 0) * 9px) color-mix(in oklch, var(--alarm) 22%, transparent);
+  transition:box-shadow 80ms linear;
 }
-@keyframes assistant-pulse{ 0%, 100%{ box-shadow:0 0 0 0 var(--alarm-wash); } 50%{ box-shadow:0 0 0 6px var(--alarm-wash); } }
+.assistant-speaker.is-speaking{
+  box-shadow:0 0 0 calc(2px + var(--out-level, 0) * 9px) var(--sig-wash);
+  transition:box-shadow 80ms linear;
+}
+
+/* ---- Motion: ease-out entrances, quicker exits, nothing for reduced-motion users. */
+@media (prefers-reduced-motion: no-preference){
+  /* The panel grows out of the chat button's corner, and folds back into it. */
+  .assistant-panel{ transform-origin:bottom right; animation:assistant-panel-in 260ms cubic-bezier(0.16, 1, 0.3, 1); }
+  .assistant-panel.is-closing{ animation:assistant-panel-out 160ms cubic-bezier(0.4, 0, 1, 1) forwards; pointer-events:none; }
+  /* Corner buttons pop back in: chat first, then voice just after. */
+  .assistant-fabs > .assistant-fab{ animation:assistant-pop-in 280ms cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+  .assistant-fabs > .assistant-fab.is-voice{ animation-delay:70ms; }
+  /* New messages rise into place from their own side; a draft card follows its reply. */
+  .assistant-msg.is-new{ animation:assistant-msg-in 240ms cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+  .assistant-msg.is-user.is-new{ transform-origin:bottom right; }
+  .assistant-msg.is-assistant.is-new{ transform-origin:bottom left; }
+  .assistant-msg.is-new .assistant-action,
+  .assistant-msg.is-new .assistant-files{ animation:assistant-msg-in 260ms cubic-bezier(0.16, 1, 0.3, 1) 90ms backwards; }
+  .assistant-typing{ animation:assistant-msg-in 200ms cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+}
+@keyframes assistant-panel-in{ from{ opacity:0; transform:translateY(14px) scale(0.94); } }
+@keyframes assistant-panel-out{ to{ opacity:0; transform:translateY(10px) scale(0.96); } }
+@keyframes assistant-pop-in{ from{ opacity:0; transform:scale(0.6); } }
+@keyframes assistant-msg-in{ from{ opacity:0; transform:translateY(10px) scale(0.97); } }
 
 /* Editable ticket draft inside a confirmation card. */
 .assistant-draft{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
@@ -4942,16 +4977,6 @@ body:has(.assistant-fab) .page{ padding-bottom:96px; } /* keep the pager clear o
 .assistant-file{ display:inline-flex; align-items:center; gap:5px; max-width:100%; min-height:32px; }
 .assistant-file span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
-/* Hands-free: replaces the composer while a spoken conversation runs. */
-.assistant-handsfree{ display:flex; align-items:center; gap:8px; min-height:56px; padding:8px 12px;
-  border-top:1px solid var(--rule); font-size:0.875rem; color:var(--ink-2); }
-.assistant-handsfree .spacer{ flex:1; }
-.assistant-handsfree-hint{ font-size:0.75rem; color:var(--ink-3); }
-.assistant-handsfree-dot{ width:10px; height:10px; border-radius:50%; background:var(--ink-3); flex:none; }
-.assistant-handsfree-dot.is-live{ background:var(--alarm); }
-@media (prefers-reduced-motion: no-preference){
-  .assistant-handsfree-dot.is-live{ animation:assistant-pulse 1.4s ease-in-out infinite; }
-}
 .assistant-empty kbd{ font-family:var(--mono); font-size:0.75rem; padding:1px 5px; border:1px solid var(--rule);
   border-bottom-width:2px; border-radius:var(--r); background:var(--panel); color:var(--ink); }
 
@@ -4960,5 +4985,110 @@ body:has(.assistant-fab) .page{ padding-bottom:96px; } /* keep the pager clear o
   .assistant-panel{ right:0; bottom:0; width:100vw; height:min(88dvh, 100dvh - 56px);
     border-radius:var(--r-lg) var(--r-lg) 0 0; padding-bottom:env(safe-area-inset-bottom, 0px); }
   .assistant-compose textarea{ font-size:1rem; }
-  .assistant-fab{ right:16px; bottom:calc(16px + env(safe-area-inset-bottom, 0px)); }
+  .assistant-fabs{ right:16px; bottom:calc(16px + env(safe-area-inset-bottom, 0px)); }
+}
+
+/* ============================================================ Voice mode
+   Docked where the assistant buttons live, so the page stays usable. The orb
+   swells with --vm-level (0–1), written every frame from the live audio level.
+   Inside it two blurred colour clouds drift like weather; the edge morphs
+   slowly. All ambient motion stops for reduced-motion users. */
+body:has(.voice-dock) .page{ padding-bottom:120px; }
+.voice-dock{
+  position:fixed; right:20px; bottom:calc(20px + env(safe-area-inset-bottom, 0px)); z-index:39;
+  display:flex; align-items:flex-end; gap:12px;
+}
+
+.voice-orb{
+  --vm-level:0;
+  --orb-a:oklch(0.8 0.12 225);
+  --orb-b:oklch(0.62 0.17 268);
+  --orb-c:oklch(0.9 0.07 200);
+  position:relative; flex:none; width:64px; height:64px;
+}
+.voice-orb-halo{
+  position:absolute; inset:-14px; border-radius:50%;
+  background:radial-gradient(circle, color-mix(in oklch, var(--orb-a) 70%, transparent) 0%, transparent 68%);
+  opacity:calc(0.35 + var(--vm-level) * 0.65);
+  transform:scale(calc(0.85 + var(--vm-level) * 0.55));
+  transition:transform 90ms linear, opacity 90ms linear;
+}
+.voice-orb-body{
+  position:absolute; inset:0; overflow:hidden; isolation:isolate;
+  border-radius:47% 53% 51% 49% / 52% 48% 52% 48%;
+  background:radial-gradient(circle at 50% 60%, var(--orb-b), color-mix(in oklch, var(--orb-b) 70%, black) 100%);
+  box-shadow:0 6px 20px oklch(0.4 0.16 268 / 0.35), inset 0 -6px 14px oklch(0.3 0.15 272 / 0.45);
+  transform:scale(calc(0.92 + var(--vm-level) * 0.3));
+  transition:transform 90ms linear;
+}
+.voice-orb-cloud{ position:absolute; inset:-30%; border-radius:50%; filter:blur(7px); mix-blend-mode:screen; }
+.voice-orb-cloud.is-a{
+  background:
+    radial-gradient(circle at 30% 35%, var(--orb-c) 0 18%, transparent 42%),
+    radial-gradient(circle at 70% 60%, var(--orb-a) 0 20%, transparent 45%);
+}
+.voice-orb-cloud.is-b{
+  background:
+    radial-gradient(circle at 60% 25%, var(--orb-a) 0 16%, transparent 40%),
+    radial-gradient(circle at 35% 75%, color-mix(in oklch, var(--orb-c) 80%, white) 0 12%, transparent 36%);
+  opacity:0.8;
+}
+.voice-dock.is-idle .voice-orb,
+.voice-dock.is-transcribing .voice-orb{ opacity:0.85; }
+/* The assistant's own voice reads warmer, so "who is talking" shows at a glance. */
+.voice-dock.is-speaking .voice-orb{ --orb-a:oklch(0.8 0.11 205); --orb-b:oklch(0.6 0.15 250); }
+
+.voice-card{
+  display:flex; flex-direction:column; gap:6px;
+  width:min(300px, calc(100vw - 40px - 76px)); padding:10px 12px 8px;
+  background:var(--paper); border:1px solid var(--rule); border-radius:var(--r-lg);
+  box-shadow:0 8px 24px oklch(0.245 0.014 262 / 0.16);
+}
+.voice-card p{ margin:0; }
+.voice-card-phase{ display:flex; align-items:center; gap:6px; font-size:0.75rem; font-weight:600; color:var(--ink-2); }
+.voice-card-dot{ width:7px; height:7px; border-radius:50%; background:var(--ink-3); }
+.voice-dock.is-listening .voice-card-dot{ background:var(--alarm); }
+.voice-dock.is-speaking .voice-card-dot{ background:var(--sig); }
+.voice-card-captions{ display:flex; flex-direction:column; gap:4px; }
+.voice-card-heard{ font-size:0.8125rem; color:var(--ink-3); }
+.voice-card-reply{ font-size:0.875rem; line-height:1.45; color:var(--ink);
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.voice-card-draft{ font-size:0.75rem; padding:5px 8px; border-radius:var(--r); background:var(--sig-wash); color:var(--ink); }
+.voice-card-actions{ display:flex; justify-content:flex-end; gap:4px; }
+.voice-card-btn{
+  display:inline-grid; place-items:center; width:36px; height:36px; border:0; border-radius:50%;
+  background:var(--panel-2); color:var(--ink-2); cursor:pointer; transition:background 120ms ease-out;
+}
+.voice-card-btn:hover{ background:var(--rule); color:var(--ink); }
+.voice-card-btn.is-end{ background:var(--alarm-wash); color:var(--alarm); }
+.voice-card-btn.is-end:hover{ background:var(--alarm); color:var(--sig-ink); }
+.voice-card-btn:focus-visible{ outline:2px solid var(--sig); outline-offset:2px; }
+
+@media (prefers-reduced-motion: no-preference){
+  /* The orb swells out of the voice button's spot; the card slides in after it. */
+  .voice-orb{ transform-origin:center; animation:vm-orb-in 420ms cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+  .voice-card{ transform-origin:bottom right; animation:vm-card-in 280ms cubic-bezier(0.16, 1, 0.3, 1) 120ms backwards; }
+  .voice-orb-body{ animation:vm-morph 6s ease-in-out infinite; }
+  .voice-orb-cloud.is-a{ animation:vm-spin 7s linear infinite; }
+  .voice-orb-cloud.is-b{ animation:vm-spin 11s linear infinite reverse; }
+  /* Listening and speaking stir the clouds; thinking has no voice, so it breathes. */
+  .voice-dock:is(.is-listening, .is-speaking) .voice-orb-cloud.is-a{ animation-duration:3.5s; }
+  .voice-dock:is(.is-listening, .is-speaking) .voice-orb-cloud.is-b{ animation-duration:5s; }
+  .voice-dock:is(.is-thinking, .is-transcribing) .voice-orb-body{ animation:vm-morph 6s ease-in-out infinite, vm-breathe 1.4s ease-in-out infinite; }
+}
+@media (prefers-reduced-motion: reduce){
+  /* No movement: the level shows as halo brightness only. */
+  .voice-orb-body, .voice-orb-halo{ transform:none; transition:none; }
+}
+@keyframes vm-orb-in{ from{ opacity:0; transform:scale(0.55); } }
+@keyframes vm-card-in{ from{ opacity:0; transform:translateX(12px) scale(0.97); } }
+@keyframes vm-spin{ to{ rotate:360deg; } }
+@keyframes vm-breathe{ 0%, 100%{ scale:0.94; } 50%{ scale:1.04; } }
+@keyframes vm-morph{
+  0%, 100%{ border-radius:47% 53% 51% 49% / 52% 48% 52% 48%; }
+  33%{ border-radius:53% 47% 46% 54% / 47% 54% 46% 53%; }
+  66%{ border-radius:49% 51% 55% 45% / 54% 46% 50% 50%; }
+}
+@media (max-width:560px){
+  .voice-dock{ right:16px; bottom:calc(16px + env(safe-area-inset-bottom, 0px)); }
 }

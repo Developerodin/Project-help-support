@@ -1,6 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback, useEffect, useLayoutEffect, useRef, useState,
+} from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -18,9 +20,12 @@ import { createProject } from '@/shared/api/projects.js';
 import { createTeam } from '@/shared/api/teams.js';
 import { friendlyTransitionError, normalizeApiError } from '@/shared/lib/api-error.js';
 import { useVoiceRecorder, voiceErrorMessage } from './use-voice-recorder.js';
+import VoiceMode, { useLevelVar } from './voice-mode.jsx';
 
 /** Turns sent per request; the server caps at 30. */
 const HISTORY_LIMIT = 20;
+/** Matches the panel's exit animation in design-system.css. */
+const PANEL_EXIT_MS = 160;
 const SPEAK_KEY = 'assistant.speak';
 const TICKET_ID = /\b([A-Z][A-Z0-9]{1,9}-\d+)\b/g;
 const SUGGESTIONS = ['What is overdue right now?', 'Open the board', 'How do I move a ticket to QA?'];
@@ -497,7 +502,20 @@ export default function AssistantWidget() {
   const [speaking, setSpeaking] = useState(false);
   const [speakOn, setSpeakOn] = useState(false);
   const [handsFree, setHandsFree] = useState(false);
-  const { recording, record, stop: stopRecording } = useVoiceRecorder();
+  const {
+    recording, record, stop: stopRecording, level: micLevel,
+  } = useVoiceRecorder();
+  const outputLevel = useRef(0);
+  const outputContext = useRef(null);
+  const [heard, setHeard] = useState('');
+  const [closing, setClosing] = useState(false);
+  // Messages from this index on arrived while the panel was open, so they animate in;
+  // older ones (restored, or from before a reopen) just appear.
+  const [enterFrom, setEnterFrom] = useState(0);
+  const micButtonRef = useRef(null);
+  const returnFocus = useRef(false);
+  const speakButtonRef = useRef(null);
+  const [lastReply, setLastReply] = useState('');
 
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
@@ -531,9 +549,37 @@ export default function AssistantWidget() {
     if (log) log.scrollTop = log.scrollHeight;
   }, [messages, busy]);
 
+  // After closing, focus goes back to the chat button once it is on screen again.
+  useEffect(() => {
+    if (open || !returnFocus.current) return;
+    returnFocus.current = false;
+    fabRef.current?.focus();
+  }, [open]);
+
+  // Before paint, so reopening the panel doesn't replay every message's entrance.
+  useLayoutEffect(() => {
+    if (open) setEnterFrom(messagesRef.current.length);
+  }, [open]);
+
+  // Live rings: the mic follows your voice while recording, the speaker follows the reply.
+  useLevelVar(micButtonRef, '--mic-level', () => micLevel.current, recording && !handsFree);
+  useLevelVar(speakButtonRef, '--out-level', () => outputLevel.current, speaking && !handsFree);
+
   useEffect(() => {
     if (open && !handsFree) inputRef.current?.focus();
   }, [open, handsFree]);
+
+  /**
+   * Browsers start audio contexts muted unless created in a click. This one
+   * meters replies for the orb and the speaker button, so it is made (once)
+   * from the click that turns voice on.
+   */
+  const unlockOutputAudio = useCallback(() => {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    outputContext.current ??= new AudioCtx();
+    outputContext.current.resume().catch(() => {});
+  }, []);
 
   const stopAudio = useCallback(() => {
     const audio = audioRef.current;
@@ -542,7 +588,10 @@ export default function AssistantWidget() {
     audio.onended?.(); // settles a waiting speak() and frees the blob URL
   }, []);
 
-  useEffect(() => stopAudio, [stopAudio]);
+  useEffect(() => () => {
+    stopAudio();
+    outputContext.current?.close().catch(() => {});
+  }, [stopAudio]);
 
   /** Reads text aloud; resolves when playback ends, is stopped, or fails. */
   const speak = useCallback(async (text) => {
@@ -556,11 +605,32 @@ export default function AssistantWidget() {
     if (!speakOnRef.current && !handsFreeRef.current) return; // switched off meanwhile
     const audio = new Audio(URL.createObjectURL(blob));
     audioRef.current = audio;
+    // Meter the reply's loudness for the voice-mode blob. Only through a context
+    // started by a user gesture (voice mode's); a suspended one would mute it.
+    let meter = null;
+    const context = outputContext.current;
+    if (context?.state === 'running') {
+      try {
+        const analyser = context.createAnalyser();
+        analyser.fftSize = 1024;
+        context.createMediaElementSource(audio).connect(analyser);
+        analyser.connect(context.destination);
+        const samples = new Float32Array(analyser.fftSize);
+        meter = window.setInterval(() => {
+          analyser.getFloatTimeDomainData(samples);
+          let sum = 0;
+          for (const sample of samples) sum += sample * sample;
+          outputLevel.current = Math.sqrt(sum / samples.length);
+        }, 50);
+      } catch { /* play it unmetered */ }
+    }
     setSpeaking(true);
     await new Promise((resolve) => {
       audio.onended = () => {
         audio.onended = null;
         audio.onerror = null;
+        window.clearInterval(meter);
+        outputLevel.current = 0;
         if (audioRef.current === audio) audioRef.current = null;
         URL.revokeObjectURL(audio.src);
         setSpeaking(false);
@@ -616,7 +686,7 @@ export default function AssistantWidget() {
       if (destination) {
         router.push(destination.href);
         // On a phone the sheet covers the page, so get out of the way (unless talking hands-free).
-        if (!handsFreeRef.current && window.matchMedia?.('(max-width: 560px)').matches) setOpen(false);
+        if (!handsFreeRef.current && window.matchMedia?.('(max-width: 560px)')?.matches) setOpen(false);
       }
       return answer;
     } catch (err) {
@@ -711,30 +781,46 @@ export default function AssistantWidget() {
     handsFreeRef.current = true;
     setHandsFree(true);
     setError(null);
+    setHeard('');
+    setLastReply('');
     stopAudio();
+    unlockOutputAudio();
+    let problem = null;
     while (handsFreeRef.current) {
       let blob;
       try {
         // Sequential on purpose: each turn waits for the previous answer.
         blob = await record({ autoStop: true });
       } catch (err) {
-        setError(voiceErrorMessage(err));
+        problem = voiceErrorMessage(err);
         break;
       }
       if (!handsFreeRef.current) break;
       if (!blob) {
-        setError('Hands-free ended because I didn\'t hear anything.');
+        problem = 'Voice mode ended because I didn\'t hear anything.';
         break;
       }
       const text = await transcribe(blob);
-      if (text === null) break;
+      if (text === null) {
+        problem = ''; // transcribe() already set the message
+        break;
+      }
       if (!text || !handsFreeRef.current) continue;
+      setHeard(text);
+      setLastReply('');
       const answer = await handleUtterance(text);
       if (answer === 'stop' || answer === null) break;
+      setLastReply(answer);
       // Listening resumes only after playback ends, so the mic never hears the reply.
       if (handsFreeRef.current) await speak(answer);
     }
+    const endedByUser = !handsFreeRef.current;
     endHandsFree();
+    // Voice mode may have been started without the chat open; show why it stopped.
+    if (!endedByUser && problem !== null) {
+      if (problem) setError(problem);
+      setOpen(true);
+    }
   }, [endHandsFree, handleUtterance, record, speak, stopAudio, transcribe]);
 
   // Push-to-talk from anywhere in the app: hold Space, release to send.
@@ -782,6 +868,7 @@ export default function AssistantWidget() {
   const toggleSpeak = () => {
     const next = !speakOn;
     setSpeakOn(next);
+    if (next) unlockOutputAudio();
     if (!next && !handsFreeRef.current) stopAudio();
     try {
       window.localStorage.setItem(SPEAK_KEY, next ? '1' : '0');
@@ -791,8 +878,17 @@ export default function AssistantWidget() {
   const close = () => {
     endHandsFree();
     stopRecording();
-    setOpen(false);
-    window.setTimeout(() => fabRef.current?.focus(), 0);
+    const finish = () => {
+      returnFocus.current = true;
+      setClosing(false);
+      setOpen(false);
+    };
+    // Play the exit animation first, unless the user prefers no motion.
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) finish();
+    else {
+      setClosing(true);
+      window.setTimeout(finish, PANEL_EXIT_MS);
+    }
   };
 
   const startNewChat = () => {
@@ -806,18 +902,57 @@ export default function AssistantWidget() {
 
   if (!enabled) return null;
 
+  const pendingDraft = messages.flatMap((message) => message.actions || [])
+    .find((action) => action.status === 'pending');
+  const voicePhase = recording ? 'listening'
+    : transcribing ? 'transcribing'
+      : busy ? 'thinking'
+        : speaking ? 'speaking'
+          : 'idle';
+  const voiceMode = handsFree ? (
+    <VoiceMode
+      phase={voicePhase}
+      heard={heard}
+      reply={lastReply}
+      draftHeading={pendingDraft ? describeAction(pendingDraft).heading : null}
+      micLevel={micLevel}
+      outputLevel={outputLevel}
+      onEnd={endHandsFree}
+      onShowChat={() => {
+        endHandsFree();
+        setOpen(true);
+      }}
+    />
+  ) : null;
+
   if (!open) {
     return (
-      <button
-        ref={fabRef}
-        type="button"
-        className="assistant-fab"
-        aria-label="Open assistant"
-        title="Assistant (hold Space to talk)"
-        onClick={() => setOpen(true)}
-      >
-        <Icon name="chat" size={22} aria-hidden="true" />
-      </button>
+      <>
+        {voiceMode}
+        {handsFree ? null : (
+          <div className="assistant-fabs">
+            <button
+              type="button"
+              className="assistant-fab is-voice"
+              aria-label="Start voice mode"
+              title="Voice mode: talk with the assistant"
+              onClick={startHandsFree}
+            >
+              <Icon name="voice" size={20} aria-hidden="true" />
+            </button>
+            <button
+              ref={fabRef}
+              type="button"
+              className="assistant-fab"
+              aria-label="Open assistant"
+              title="Assistant (hold Space to talk)"
+              onClick={() => setOpen(true)}
+            >
+              <Icon name="chat" size={22} aria-hidden="true" />
+            </button>
+          </div>
+        )}
+      </>
     );
   }
 
@@ -831,109 +966,111 @@ export default function AssistantWidget() {
       : 'Ask about tickets, or say where to go';
 
   return (
-    <section
-      className="assistant-panel"
-      role="dialog"
-      aria-modal="false"
-      aria-labelledby="assistant-title"
-      onKeyDown={(event) => { if (event.key === 'Escape') close(); }}
-    >
-      <header className="assistant-head">
-        <div className="assistant-title">
-          <h2 id="assistant-title">Assistant</h2>
-          <span className="assistant-status" aria-live="polite">{activity || (handsFree ? 'Hands-free' : '')}</span>
-        </div>
-        <span className="spacer" />
-        <button
-          type="button"
-          className="assistant-icon-btn"
-          aria-label="New chat"
-          title="New chat"
-          disabled={!messages.length || busy}
-          onClick={startNewChat}
-        >
-          <Icon name="new-chat" size={18} aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          className="assistant-icon-btn"
-          aria-pressed={handsFree}
-          aria-label="Hands-free conversation"
-          title={handsFree ? 'End hands-free' : 'Hands-free: talk back and forth without tapping'}
-          disabled={!handsFree && (busy || transcribing || recording)}
-          onClick={() => (handsFree ? endHandsFree() : startHandsFree())}
-        >
-          <Icon name="handsfree" size={18} aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          className="assistant-icon-btn"
-          aria-pressed={speakOn}
-          aria-label="Read replies aloud"
-          title={speakOn ? 'Reading replies aloud' : 'Read replies aloud'}
-          onClick={toggleSpeak}
-        >
-          <Icon name={speakOn ? 'volume' : 'volume-off'} size={18} aria-hidden="true" />
-        </button>
-        <button type="button" className="assistant-icon-btn" aria-label="Close assistant" onClick={close}>
-          <Icon name="x" size={18} aria-hidden="true" />
-        </button>
-      </header>
+    <>
+      {voiceMode}
+      <section
+        className={`assistant-panel${closing ? ' is-closing' : ''}`}
+        role="dialog"
+        aria-modal="false"
+        aria-labelledby="assistant-title"
+        onKeyDown={(event) => { if (event.key === 'Escape') close(); }}
+      >
+        <header className="assistant-head">
+          <div className="assistant-title">
+            <h2 id="assistant-title">Assistant</h2>
+            <span className="assistant-status" aria-live="polite">{activity || (handsFree ? 'Hands-free' : '')}</span>
+          </div>
+          <span className="spacer" />
+          <button
+            type="button"
+            className="assistant-icon-btn"
+            aria-label="New chat"
+            title="New chat"
+            disabled={!messages.length || busy}
+            onClick={startNewChat}
+          >
+            <Icon name="new-chat" size={18} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="assistant-icon-btn"
+            aria-pressed={handsFree}
+            aria-label="Voice mode"
+            title="Voice mode: talk back and forth without tapping"
+            disabled={!handsFree && (busy || transcribing || recording)}
+            onClick={() => {
+            if (handsFree) {
+              endHandsFree();
+              return;
+            }
+            // The voice dock lives in the same corner as this panel; hand over to it.
+            setOpen(false);
+            startHandsFree();
+          }}
+          >
+            <Icon name="voice" size={18} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            ref={speakButtonRef}
+            className={`assistant-icon-btn assistant-speaker${speaking ? ' is-speaking' : ''}`}
+            aria-pressed={speakOn}
+            aria-label="Read replies aloud"
+            title={speakOn ? 'Reading replies aloud' : 'Read replies aloud'}
+            onClick={toggleSpeak}
+          >
+            <Icon name={speakOn ? 'volume' : 'volume-off'} size={18} aria-hidden="true" />
+          </button>
+          <button type="button" className="assistant-icon-btn" aria-label="Close assistant" onClick={close}>
+            <Icon name="x" size={18} aria-hidden="true" />
+          </button>
+        </header>
 
-      <div className="assistant-log" ref={logRef} aria-live="polite">
-        {messages.length === 0 ? (
-          <div className="assistant-empty">
-            <p>
-              Ask about your tickets, file a new one, or say where to go, like &ldquo;open the board&rdquo; or
-              &ldquo;show overdue tickets&rdquo;. Tap the mic to talk, or hold <kbd>Space</kbd> anywhere outside a text box.
-            </p>
-            <div className="assistant-suggestions">
-              {SUGGESTIONS.map((suggestion) => (
-                <button key={suggestion} type="button" className="btn btn-sm" onClick={() => handleUtterance(suggestion)}>
-                  {suggestion}
-                </button>
+        <div className="assistant-log" ref={logRef} aria-live="polite">
+          {messages.length === 0 ? (
+            <div className="assistant-empty">
+              <p>
+                Ask about your tickets, file a new one, or say where to go, like &ldquo;open the board&rdquo; or
+                &ldquo;show overdue tickets&rdquo;. Tap the mic to talk, or hold <kbd>Space</kbd> anywhere outside a text box.
+              </p>
+              <div className="assistant-suggestions">
+                {SUGGESTIONS.map((suggestion) => (
+                  <button key={suggestion} type="button" className="btn btn-sm" onClick={() => handleUtterance(suggestion)}>
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {messages.map((message, index) => (
+            // Index keys are fine: the log only ever appends.
+            <div key={index} className={`assistant-msg is-${message.role}${index >= enterFrom ? ' is-new' : ''}`}>
+              <div className="assistant-bubble"><MessageText text={message.content} /></div>
+              {message.files?.length ? (
+                <div className="assistant-files">
+                  {message.files.map((file) => <FileButton key={file.id} file={file} />)}
+                </div>
+              ) : null}
+              {message.actions?.map((action) => (
+                <ActionCard
+                  key={action.id}
+                  action={action}
+                  onConfirm={() => resolveDraft(action, true)}
+                  onDismiss={() => resolveDraft(action, false)}
+                  onChange={(patch) => updateAction(action.id, patch)}
+                />
               ))}
             </div>
-          </div>
-        ) : null}
-        {messages.map((message, index) => (
-          // Index keys are fine: the log only ever appends.
-          <div key={index} className={`assistant-msg is-${message.role}`}>
-            <div className="assistant-bubble"><MessageText text={message.content} /></div>
-            {message.files?.length ? (
-              <div className="assistant-files">
-                {message.files.map((file) => <FileButton key={file.id} file={file} />)}
-              </div>
-            ) : null}
-            {message.actions?.map((action) => (
-              <ActionCard
-                key={action.id}
-                action={action}
-                onConfirm={() => resolveDraft(action, true)}
-                onDismiss={() => resolveDraft(action, false)}
-                onChange={(patch) => updateAction(action.id, patch)}
-              />
-            ))}
-          </div>
-        ))}
-        {busy ? (
-          <div className="assistant-msg is-assistant assistant-typing" role="status" aria-label="Assistant is thinking">
-            <span /><span /><span />
-          </div>
-        ) : null}
-      </div>
-
-      {error ? <p className="assistant-error" role="alert">{error}</p> : null}
-
-      {handsFree ? (
-        <div className="assistant-handsfree" role="status">
-          <span className={`assistant-handsfree-dot${recording ? ' is-live' : ''}`} aria-hidden="true" />
-          <span>{activity || 'Hands-free'}</span>
-          <span className="spacer" />
-          <span className="assistant-handsfree-hint">Say &ldquo;stop&rdquo; to end</span>
-          <button type="button" className="btn btn-sm" onClick={endHandsFree}>End</button>
+          ))}
+          {busy ? (
+            <div className="assistant-msg is-assistant assistant-typing" role="status" aria-label="Assistant is thinking">
+              <span /><span /><span />
+            </div>
+          ) : null}
         </div>
-      ) : (
+
+        {error ? <p className="assistant-error" role="alert">{error}</p> : null}
+
         <form
           className="assistant-compose"
           onSubmit={(event) => {
@@ -943,6 +1080,7 @@ export default function AssistantWidget() {
         >
           <button
             type="button"
+            ref={micButtonRef}
             className={`assistant-icon-btn assistant-mic${recording ? ' is-recording' : ''}`}
             aria-pressed={recording}
             aria-label={recording ? 'Stop recording and send' : 'Speak your message'}
@@ -972,7 +1110,7 @@ export default function AssistantWidget() {
             <Icon name="send" size={18} aria-hidden="true" />
           </button>
         </form>
-      )}
-    </section>
+      </section>
+    </>
   );
 }

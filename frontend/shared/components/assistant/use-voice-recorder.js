@@ -42,6 +42,8 @@ export function useVoiceRecorder() {
   // stop() can arrive while the mic is still starting (a quick key release);
   // remember it so the recording ends as soon as it begins.
   const stopRequested = useRef(false);
+  /** Current mic loudness (RMS, roughly 0–0.3), for visuals. A ref so reading it never re-renders. */
+  const level = useRef(0);
 
   const stop = useCallback(() => {
     if (active.current?.state === 'recording') active.current.stop();
@@ -77,13 +79,16 @@ export function useVoiceRecorder() {
         window.clearInterval(poll);
         audioContext?.close().catch(() => {});
         stream.getTracks().forEach((track) => track.stop());
+        level.current = 0;
         active.current = null;
         setRecording(false);
         const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
         resolve(heard && blob.size >= MIN_BYTES ? blob : null);
       };
 
-      if (autoStop && AudioCtx) {
+      // The analyser serves two jobs: a live loudness for visuals (level), and,
+      // with autoStop, hearing when the speaker has finished.
+      if (AudioCtx) {
         audioContext = new AudioCtx();
         const analyser = audioContext.createAnalyser();
         analyser.fftSize = 2048;
@@ -95,14 +100,17 @@ export function useVoiceRecorder() {
           analyser.getFloatTimeDomainData(samples);
           let sum = 0;
           for (const sample of samples) sum += sample * sample;
+          const rms = Math.sqrt(sum / samples.length);
+          level.current = rms;
+          if (!autoStop) return;
           const now = Date.now();
-          if (Math.sqrt(sum / samples.length) > SPEECH_LEVEL) {
+          if (rms > SPEECH_LEVEL) {
             heard = true;
             lastSpeech = now;
           }
           const done = heard ? now - lastSpeech > END_SILENCE_MS : now - started > NO_SPEECH_MS;
           if (done && recorder.state === 'recording') recorder.stop();
-        }, 100);
+        }, 50);
       }
 
       active.current = recorder;
@@ -115,5 +123,7 @@ export function useVoiceRecorder() {
   // Never leave the mic open after the widget unmounts.
   useEffect(() => stop, [stop]);
 
-  return { recording, record, stop };
+  return {
+    recording, record, stop, level,
+  };
 }

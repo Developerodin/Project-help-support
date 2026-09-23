@@ -1,0 +1,116 @@
+'use client';
+
+import { useEffect, useRef } from 'react';
+import Icon from '../icons.jsx';
+
+const PHASE_LABEL = {
+  listening: 'Listening',
+  transcribing: 'Got it…',
+  thinking: 'Thinking…',
+  speaking: 'Speaking',
+  idle: 'Starting…',
+};
+
+/** Loudness (RMS, ~0–0.3) to a 0–1 visual level; quiet speech still moves the orb. */
+const toVisual = (rms) => Math.min(1, Math.sqrt(Math.max(0, rms) * 6));
+
+/**
+ * Writes a live audio level into a CSS variable on an element every frame,
+ * eased so it doesn't jitter. `pickLevel()` returns the raw RMS to follow right
+ * now (0 to rest). No React state, so 60 updates a second cost no re-renders.
+ */
+export function useLevelVar(elementRef, cssVar, pickLevel, active = true) {
+  const pick = useRef(pickLevel);
+  pick.current = pickLevel;
+  useEffect(() => {
+    if (!active) {
+      elementRef.current?.style.setProperty(cssVar, '0');
+      return undefined;
+    }
+    let frame = 0;
+    let shown = 0;
+    const tick = () => {
+      shown += (toVisual(pick.current()) - shown) * 0.25;
+      elementRef.current?.style.setProperty(cssVar, shown.toFixed(3));
+      frame = window.requestAnimationFrame(tick);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [elementRef, cssVar, active]);
+}
+
+/**
+ * Voice conversation docked in the corner where the assistant buttons live:
+ * a living orb that swells with whoever is talking, plus a small caption card.
+ * It never covers the page, so people keep working while they talk. The
+ * conversation loop itself lives in the widget; this only shows it.
+ */
+export default function VoiceMode({
+  phase, heard, reply, draftHeading, micLevel, outputLevel, onEnd, onShowChat,
+}) {
+  const orbRef = useRef(null);
+  const endRef = useRef(null);
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
+
+  // The button that started voice mode is gone now; keep keyboard focus nearby.
+  useEffect(() => {
+    endRef.current?.focus();
+  }, []);
+
+  // Esc ends it from anywhere, since the dock doesn't hold focus.
+  useEffect(() => {
+    const onKey = (event) => { if (event.key === 'Escape') onEnd(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onEnd]);
+
+  // The orb follows whoever is talking: the mic while listening, the reply while speaking.
+  useLevelVar(orbRef, '--vm-level', () => (phaseRef.current === 'listening' ? micLevel.current
+    : phaseRef.current === 'speaking' ? outputLevel.current
+      : 0));
+
+  return (
+    <section className={`voice-dock is-${phase}`} aria-label="Voice mode">
+      <div className="voice-card">
+        <p className="voice-card-phase" role="status" aria-live="polite">
+          <span className="voice-card-dot" aria-hidden="true" />
+          {PHASE_LABEL[phase] || PHASE_LABEL.idle}
+        </p>
+        <div className="voice-card-captions" aria-live="polite">
+          {heard ? <p className="voice-card-heard">&ldquo;{heard}&rdquo;</p> : null}
+          {reply ? <p className="voice-card-reply">{reply}</p> : null}
+          {!heard && !reply ? <p className="voice-card-heard">Ask about a ticket, or say where to go.</p> : null}
+        </div>
+        {draftHeading ? (
+          <p className="voice-card-draft">
+            <strong>{draftHeading}</strong> is ready. Say &ldquo;confirm&rdquo; or &ldquo;cancel&rdquo;.
+          </p>
+        ) : null}
+        <div className="voice-card-actions">
+          <button type="button" className="voice-card-btn" onClick={onShowChat} aria-label="Show chat" title="Continue in chat">
+            <Icon name="chat" size={16} aria-hidden="true" />
+          </button>
+          <button
+            ref={endRef}
+            type="button"
+            className="voice-card-btn is-end"
+            onClick={onEnd}
+            aria-label="End voice mode"
+            title="End (Esc, or say “stop”)"
+          >
+            <Icon name="x" size={16} aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+
+      <div className="voice-orb" ref={orbRef} aria-hidden="true">
+        <span className="voice-orb-halo" />
+        <span className="voice-orb-body">
+          <span className="voice-orb-cloud is-a" />
+          <span className="voice-orb-cloud is-b" />
+        </span>
+      </div>
+    </section>
+  );
+}
