@@ -1,4 +1,4 @@
-import { EXTERNAL_ROLES } from './enums.js';
+import { EXTERNAL_ROLES, ROLE_IDS } from './enums.js';
 import { can } from './permissions.js';
 import { PERMISSIONS } from './role-permission-bundles.js';
 import { matrixHasPermission } from './permission-resolution.js';
@@ -130,6 +130,22 @@ export const PERMISSION_FEATURE_MATRIX = Object.freeze([
       },
     ],
   },
+  {
+    label: 'AI assistant',
+    features: [
+      {
+        // One switch: see the assistant and use it (chat and voice).
+        key: 'assistant',
+        label: 'AI assistant (chat and voice)',
+        actions: {
+          view: ['assistant.use'],
+          create: [],
+          edit: [],
+          delete: [],
+        },
+      },
+    ],
+  },
 ]);
 
 export const ALL_FEATURE_PERMISSIONS = Object.freeze(
@@ -167,9 +183,16 @@ export function isMatrixActionSupported(role, actionKeys) {
   return actionPermissionKeys(actionKeys) != null;
 }
 
+/** Grants admins always keep (the server enforces it too), so their cells are read-only. */
+const ADMIN_LOCKED_PERMISSIONS = Object.freeze(['assistant.use']);
+
 /** Whether the matrix cell should render an editable checkbox (editor mode only). */
 export function isMatrixActionEditable(role, actionKeys, isEditMode = false) {
   if (!isEditMode) return false;
+  if ((role === ROLE_IDS.ADMIN || role === ROLE_IDS.SUPER_ADMIN)
+    && (actionKeys || []).some((permission) => ADMIN_LOCKED_PERMISSIONS.includes(permission))) {
+    return false;
+  }
   return isMatrixActionSupported(role, actionKeys);
 }
 

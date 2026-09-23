@@ -15,6 +15,9 @@ export const PERMISSIONS = Object.freeze([
   'users.view', 'users.manage',
   'access.view', 'access.grant', 'access.revoke',
   'audit.view',
+  // The in-app AI assistant (chat and voice). Admins always keep it; every other
+  // role, external ones included, can be switched on or off in the role matrix.
+  'assistant.use',
 ]);
 
 /** Old ticket permission keys → simplified model (used when loading stored matrix/overrides). */
@@ -66,6 +69,7 @@ const VIEW_ONLY = Object.freeze([
 const FULL_ADMIN_BUNDLE = PERMISSIONS;
 
 const PROJECT_ADMIN = Object.freeze([
+  'assistant.use',
   'clients.view', 'projects.view', 'projects.manage',
   'teams.view', 'teams.create', 'teams.edit', 'teams.delete',
   'boards.view', 'boards.use',
@@ -75,17 +79,19 @@ const PROJECT_ADMIN = Object.freeze([
 ]);
 
 const DEVELOPER = Object.freeze([
-  ...VIEW_ONLY, 'boards.use', 'tickets.create', 'tickets.edit', 'ui_qa.edit',
+  ...VIEW_ONLY, 'assistant.use', 'boards.use', 'tickets.create', 'tickets.edit', 'ui_qa.edit',
 ]);
 const TESTER = Object.freeze([
-  ...VIEW_ONLY, 'boards.use', 'tickets.create', 'tickets.edit', 'ui_qa.edit',
+  ...VIEW_ONLY, 'assistant.use', 'boards.use', 'tickets.create', 'tickets.edit', 'ui_qa.edit',
 ]);
 const SUPPORT = Object.freeze([
-  ...VIEW_ONLY, 'tickets.create', 'tickets.edit', 'ui_qa.edit',
+  ...VIEW_ONLY, 'assistant.use', 'tickets.create', 'tickets.edit', 'ui_qa.edit',
 ]);
-const READ_ONLY = VIEW_ONLY;
+const READ_ONLY = Object.freeze([...VIEW_ONLY, 'assistant.use']);
 const UNASSIGNED = Object.freeze([]);
-const CLIENT_BUNDLE = Object.freeze([]);
+// External access to data comes from AccessAssignment, not bundles; the only
+// bundle grant is the assistant, which an admin can switch off per role.
+const CLIENT_BUNDLE = Object.freeze(['assistant.use']);
 
 export const ROLE_PERMISSIONS = Object.freeze({
   [ROLE_IDS.SUPER_ADMIN]: FULL_ADMIN_BUNDLE,

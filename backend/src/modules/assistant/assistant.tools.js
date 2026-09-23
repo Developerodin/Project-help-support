@@ -203,6 +203,9 @@ const DESTINATIONS = Object.freeze({
   new_ticket: { path: '/tickets/new', label: 'New ticket' },
   ticket: { path: '/tickets', label: 'Ticket' },
   notifications: { path: '/notifications', label: 'Notifications' },
+  ui_qa: { path: '/ui-qa', label: 'UI & QA' },
+  audit_log: { path: '/audit-log', label: 'RBAC audit log' },
+  user_roles: { path: '/settings/rbac-preview/matrix', label: 'User roles' },
   notification_settings: { path: '/settings/notifications', label: 'Notification settings' },
   projects: { path: '/projects', label: 'Projects' },
   teams: { path: '/teams', label: 'Teams' },
@@ -291,6 +294,19 @@ function summarize(ticket) {
     blocked: Boolean(ticket.blocked),
     unread_replies: Number(ticket.discussionUnreadCount) || 0,
   };
+}
+
+/**
+ * The projects this user can see, as key and name. Given to the model up front
+ * so a spoken or half-remembered reference ("test final", "TS4") can be matched
+ * to a real project key, and to the transcriber as vocabulary.
+ */
+export async function projectRoster(ctx) {
+  try {
+    return (await projectsFor(ctx)).map((project) => ({ key: project.key, name: project.name }));
+  } catch {
+    return []; // no project access: nothing to match against
+  }
 }
 
 async function projectsFor(ctx) {

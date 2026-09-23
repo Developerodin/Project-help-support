@@ -308,6 +308,10 @@ function assertMatrixSafety(matrixRecord) {
         `${protectedRole} must retain users.manage and access.grant`,
       );
     }
+    // The assistant is only switchable for roles below admin.
+    if (!grants.includes('assistant.use')) {
+      throw new ApiError(400, 'MATRIX_SAFETY_VIOLATION', `${protectedRole} must retain assistant.use`);
+    }
   }
 }
 

@@ -33,6 +33,7 @@ export const PERMISSION_GROUPS = Object.freeze([
   { label: 'People', permissions: ['users.view', 'users.manage'] },
   { label: 'Access control', permissions: ['access.view', 'access.grant', 'access.revoke'] },
   { label: 'Audit', permissions: ['audit.view'] },
+  { label: 'AI assistant', permissions: ['assistant.use'] },
 ]);
 
 /** Roles shown in the global role matrix (excludes invite-default unassigned). */

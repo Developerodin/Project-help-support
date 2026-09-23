@@ -158,6 +158,7 @@ export const PERMISSION_GROUPS = [
   { label: 'People', permissions: ['users.view', 'users.manage'] },
   { label: 'Access control', permissions: ['access.view', 'access.grant', 'access.revoke'] },
   { label: 'Audit', permissions: ['audit.view'] },
+  { label: 'AI assistant', permissions: ['assistant.use'] },
 ];
 
 export const MATRIX_ROLES = [

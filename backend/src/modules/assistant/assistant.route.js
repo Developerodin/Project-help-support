@@ -1,12 +1,13 @@
 import express from 'express';
 import Joi from 'joi';
 import multer from 'multer';
+import { can } from '@pms/shared';
 import { auth } from '../../platform/auth.js';
 import { ApiError } from '../../platform/errors.js';
 import { MongoRateLimitStore, makeLimiter } from '../../platform/rateLimit.js';
 import { validate } from '../../platform/validate.js';
 import { chat } from './assistant.service.js';
-import { TICKET_TABS } from './assistant.tools.js';
+import { TICKET_TABS, projectRoster } from './assistant.tools.js';
 import {
   checkAllowance, estimateAudioSeconds, getAllowance, recordUsage, withChatLock,
 } from './assistant.guard.js';
@@ -57,10 +58,17 @@ const audioUpload = multer({
   limits: { fileSize: MAX_AUDIO_BYTES, files: 1 },
 }).single('audio');
 
+/** Whether this user's role (or a per-user override) grants the assistant. */
+const mayUseAssistant = (req) => can(req.user, 'assistant.use', req.permissionContext);
+
 function requireAssistant(config) {
-  return (_req, _res, next) => (config.assistant
-    ? next()
-    : next(new ApiError(503, 'ASSISTANT_DISABLED', 'The assistant is not configured.')));
+  return (req, _res, next) => {
+    if (!config.assistant) return next(new ApiError(503, 'ASSISTANT_DISABLED', 'The assistant is not configured.'));
+    if (!mayUseAssistant(req)) {
+      return next(new ApiError(403, 'ASSISTANT_NOT_ALLOWED', 'The assistant is not enabled for your role.'));
+    }
+    return next();
+  };
 }
 
 export default function assistantRoutes(config) {
@@ -70,7 +78,8 @@ export default function assistantRoutes(config) {
   // Tells the UI whether to show the assistant at all, and today's allowance for the usage meter.
   router.get('/', async (req, res, next) => {
     try {
-      if (!config.assistant) return res.json({ enabled: false });
+      // Not configured, or switched off for this user's role: the UI hides the assistant.
+      if (!config.assistant || !mayUseAssistant(req)) return res.json({ enabled: false });
       return res.json({ enabled: true, usage: await getAllowance(config, req.user) });
     } catch (err) {
       return next(err);
@@ -120,7 +129,9 @@ export default function assistantRoutes(config) {
           throw new ApiError(400, 'UNSUPPORTED_AUDIO', 'That doesn\'t look like an audio recording.');
         }
         await checkAllowance(config, req.user);
-        const { text, attempts } = await transcribe(config, req.file);
+        // The user's project keys and names help the transcriber spell them right.
+        const vocabulary = await projectRoster({ user: req.user, permissionContext: req.permissionContext, projects: null });
+        const { text, attempts } = await transcribe(config, req.file, { vocabulary });
         await recordUsage(config, req.user, { transcribeSeconds: estimateAudioSeconds(req.file.size) * attempts });
         res.json({ text });
       } catch (err) {

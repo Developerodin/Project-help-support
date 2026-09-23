@@ -1,10 +1,26 @@
 import { LANES, STAGES, isExternalUser } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { createResponse } from './openai.client.js';
-import { runTool, toolsFor } from './assistant.tools.js';
+import { projectRoster, runTool, toolsFor } from './assistant.tools.js';
 
 /** Enough for a multi-step lookup; stops a model that keeps calling tools. */
-const MAX_TOOL_ROUNDS = 6;
+const MAX_TOOL_ROUNDS = 8;
+/** How many projects to list for the model; beyond this it uses list_projects. */
+const ROSTER_LIMIT = 40;
+
+/**
+ * The user's projects, so references can be resolved without a search: people
+ * say project names, and voice input garbles keys ("TS4", "STES" for TES4).
+ */
+function projectContext(roster) {
+  if (!roster.length) return '';
+  const listed = roster.slice(0, ROSTER_LIMIT).map((project) => `${project.key} = ${project.name}`).join('; ');
+  const more = roster.length > ROSTER_LIMIT ? ` (and ${roster.length - ROSTER_LIMIT} more; use list_projects)` : '';
+  return `
+
+Projects this user can see: ${listed}${more}.
+Resolving references: a ticket id is PROJECTKEY-NUMBER (e.g. TES4-5). Spoken or typed ids are often garbled or partial, and people name projects instead of keys: "TS4", "STES", "test final" or "test final spike ticket five" most likely mean the project whose key or name is closest (here TES4-5 if TES4 is "Test Final Web"). Match against the list above first, then look the ticket up with that key. If exactly one project fits, use it without asking; ask only when two or more fit equally well. Don't spend several searches on the misheard words.`;
+}
 
 const STAGE_GUIDE = STAGES.map((stage) => `${stage.key} = ${stage.label}`).join('; ');
 const LANE_GUIDE = LANES.map((lane) => `${lane.label} (${lane.stages.join(', ')})`).join('; ');
@@ -18,7 +34,8 @@ How the app works (use this for "how do I" questions):
 - "New ticket" (top bar) files a ticket: project, title, description, module and page, category, severity, priority.
 - Clicking a ticket opens its drawer: details, discussion (with @mentions), attachments, history.
 - Notifications (bell icon) show mentions, replies and stage changes.
-- Admins: Projects page (a project belongs to a client and has modules, each with pages), Teams page (a team has a lead and members, optionally tied to a project), Users page (invite people, set roles), Settings for notifications and access.`;
+- Admins: Projects page (a project belongs to a client and has modules, each with pages), Teams page (a team has a lead and members, optionally tied to a project), Users page (invite people, set roles), Settings for notifications and access.
+- Pages (sidebar): Board, Tickets, Analytics, Notifications, Notification settings, UI & QA, and for admins Projects, Teams, People (users), RBAC audit, User roles. "UI & QA" is its own page (screens and their QA status per module); it is NOT a ticket's "QA report" tab. Open pages with navigate; open a ticket's tabs with navigate destination "ticket" and ticket_tab.`;
 
 /** Plain-language meaning of each stage, for explaining progress to clients. */
 const CLIENT_STAGE_GUIDE = `
@@ -105,7 +122,10 @@ export async function chat(config, user, permissionContext, messages, {
     config, user, permissionContext, actions: [], projects: null, clients: null,
   };
   const tools = toolsFor(user, permissionContext);
-  const instructions = instructionsFor(user, now) + (mode === 'voice' ? VOICE_RULES : '') + whereTheUserIs(page);
+  const instructions = instructionsFor(user, now)
+    + projectContext(await projectRoster(ctx))
+    + (mode === 'voice' ? VOICE_RULES : '')
+    + whereTheUserIs(page);
   const input = messages.map((message) => ({ role: message.role, content: message.content }));
   const usage = { inputTokens: 0, outputTokens: 0 };
 
@@ -128,8 +148,24 @@ export async function chat(config, user, permissionContext, messages, {
     }
   }
 
+  // Out of lookups: answer from what was found instead of giving up.
+  try {
+    const final = await createResponse(config, {
+      instructions: `${instructions}\n\nYou have used all your lookups for this message. Answer now from what you found; if something is still missing, say what and ask one short question.`,
+      input,
+      tools,
+      toolChoice: 'none',
+      signal,
+    });
+    usage.inputTokens += Number(final.usage?.input_tokens) || 0;
+    usage.outputTokens += Number(final.usage?.output_tokens) || 0;
+    const reply = outputText(final).trim();
+    if (reply) return { reply, actions: ctx.actions, usage };
+  } catch (err) {
+    if (err?.code === 'ASSISTANT_CANCELLED') throw err;
+  }
   return {
-    reply: 'That took more steps than I can handle in one go. Could you narrow the question?',
+    reply: 'I couldn\'t finish that. Could you give me the ticket id or a bit more detail?',
     actions: ctx.actions,
     usage,
   };
