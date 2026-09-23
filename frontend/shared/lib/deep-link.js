@@ -1,6 +1,12 @@
 export const TICKET_PARAM = 'ticket';
 export const COMMENT_PARAM = 'comment';
 export const UI_QA_PARAM = 'uiQa';
+/** Which drawer tab the open ticket shows; absent means Discussion. */
+export const TAB_PARAM = 'tab';
+
+export function tabFromSearch(search) {
+  return new URLSearchParams(search).get(TAB_PARAM);
+}
 
 export function ticketFromSearch(search) {
   return new URLSearchParams(search).get(TICKET_PARAM);
@@ -27,6 +33,7 @@ export function withTicketParam(search, ticketId) {
 export function withoutTicketParam(search) {
   const params = new URLSearchParams(search);
   params.delete(TICKET_PARAM);
+  params.delete(TAB_PARAM); // the tab belongs to the ticket that was open
   const rest = params.toString();
   // An empty string rather than "?" — a bare question mark is still a URL
   // change, which is exactly what closing a drawer should not produce.

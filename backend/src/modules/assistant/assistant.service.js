@@ -42,6 +42,24 @@ ${CLIENT_STAGE_GUIDE}
 const TEAM_RULES = `- Admin help: you can look up people (search_users), teams, clients and projects, and draft new projects (with modules and pages), teams and client brands (name and logo). Gather what is needed first, like the client, project name and key, or the team lead and members, then draft; the card lets the user adjust before confirming. A client's brand is only its name and logo. Only offer what your tools allow; otherwise point to the right page.
 `;
 
+/** Added when the user is talking in voice mode: they hear the reply and see only a small card. */
+const VOICE_RULES = `
+
+Voice mode: the user is talking, not typing, and hears your reply read aloud. Keep it to one or two short spoken sentences with no lists or symbols. They see a small card with a compact preview of any draft, not the full chat: when you draft something, give the key details in one sentence and ask them to check the preview and say "confirm" or "cancel". Never refer to "the card below".`;
+
+/**
+ * Where the user is looking, from the browser (validated by the route). It only
+ * resolves "this ticket" / "that tab"; every read still checks access.
+ */
+function whereTheUserIs(page) {
+  if (!page) return '';
+  const tab = page.tab || 'discussion';
+  const ticket = page.ticketId
+    ? ` with ticket ${page.ticketId.toUpperCase()} open on its ${tab === 'qa' ? 'QA report' : tab} tab. "This ticket" means ${page.ticketId.toUpperCase()}; to switch its tab, call navigate with destination "ticket", that ticket_id and the ticket_tab`
+    : '';
+  return `\n\nRight now the user is on ${page.path}${ticket}.`;
+}
+
 function instructionsFor(user, now) {
   const external = isExternalUser(user);
   return `You are the built-in assistant of a project management and support-ticket app.
@@ -78,20 +96,25 @@ function outputText(response) {
  * @returns {{ reply: string, actions: object[], usage: { inputTokens: number, outputTokens: number } }}
  *   usage is summed over every model round, for the spend caps.
  */
-export async function chat(config, user, permissionContext, messages, now = new Date()) {
+export async function chat(config, user, permissionContext, messages, {
+  mode = 'chat', page = null, now = new Date(), signal,
+} = {}) {
   if (!config.assistant) throw new ApiError(503, 'ASSISTANT_DISABLED', 'The assistant is not configured.');
 
   const ctx = {
     config, user, permissionContext, actions: [], projects: null, clients: null,
   };
   const tools = toolsFor(user, permissionContext);
-  const instructions = instructionsFor(user, now);
+  const instructions = instructionsFor(user, now) + (mode === 'voice' ? VOICE_RULES : '') + whereTheUserIs(page);
   const input = messages.map((message) => ({ role: message.role, content: message.content }));
   const usage = { inputTokens: 0, outputTokens: 0 };
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
     // Sequential on purpose: each round depends on the previous tool results.
-    const response = await createResponse(config, { instructions, input, tools });
+    if (signal?.aborted) throw new ApiError(499, 'ASSISTANT_CANCELLED', 'The request was cancelled.');
+    const response = await createResponse(config, {
+      instructions, input, tools, signal,
+    });
     usage.inputTokens += Number(response.usage?.input_tokens) || 0;
     usage.outputTokens += Number(response.usage?.output_tokens) || 0;
     const calls = (response.output || []).filter((item) => item.type === 'function_call');

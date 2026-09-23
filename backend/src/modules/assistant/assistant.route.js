@@ -6,8 +6,9 @@ import { ApiError } from '../../platform/errors.js';
 import { MongoRateLimitStore, makeLimiter } from '../../platform/rateLimit.js';
 import { validate } from '../../platform/validate.js';
 import { chat } from './assistant.service.js';
+import { TICKET_TABS } from './assistant.tools.js';
 import {
-  checkAllowance, estimateAudioSeconds, recordUsage, withChatLock,
+  checkAllowance, estimateAudioSeconds, getAllowance, recordUsage, withChatLock,
 } from './assistant.guard.js';
 import { speak, transcribe } from './openai.client.js';
 
@@ -21,6 +22,14 @@ const chatSchema = {
       role: Joi.string().valid('user', 'assistant').required(),
       content: Joi.string().trim().min(1).max(4000).required(),
     })).required(),
+    // 'voice' when the user is talking in voice mode, so replies suit being heard.
+    mode: Joi.string().valid('chat', 'voice').default('chat'),
+    // Where the user is right now, so "this ticket" and "the details tab" mean something.
+    page: Joi.object({
+      path: Joi.string().max(200).pattern(/^\/[\w\-/]*$/).required(),
+      ticketId: Joi.string().pattern(/^[A-Za-z][A-Za-z0-9]{1,9}-\d+$/).allow(null),
+      tab: Joi.string().valid(...TICKET_TABS).allow(null),
+    }),
   }),
 };
 
@@ -58,8 +67,15 @@ export default function assistantRoutes(config) {
   const router = express.Router();
   router.use(auth(config));
 
-  // Tells the UI whether to show the chat button at all.
-  router.get('/', (_req, res) => res.json({ enabled: Boolean(config.assistant) }));
+  // Tells the UI whether to show the assistant at all, and today's allowance for the usage meter.
+  router.get('/', async (req, res, next) => {
+    try {
+      if (!config.assistant) return res.json({ enabled: false });
+      return res.json({ enabled: true, usage: await getAllowance(config, req.user) });
+    } catch (err) {
+      return next(err);
+    }
+  });
 
   // Per-account burst limits, counted in Mongo so every instance shares them.
   // Daily and monthly spend caps are separate (assistant.guard.js).
@@ -72,14 +88,18 @@ export default function assistantRoutes(config) {
 
   router.post('/chat', requireAssistant(config), chatLimiter, validate(chatSchema), async (req, res, next) => {
     try {
-      const { messages } = req.body;
+      const { messages, mode, page } = req.body;
       if (messages[messages.length - 1].role !== 'user') {
         throw new ApiError(400, 'VALIDATION_ERROR', 'The last message must be from the user.');
       }
+      // If the user interrupts or leaves, stop paying for an answer nobody will read,
+      // which also frees their chat lock for the next message.
+      const cancelled = new AbortController();
+      res.on('close', () => { if (!res.writableEnded) cancelled.abort(); });
       // One turn at a time per user, refused once today's allowance is spent.
       const { reply, actions } = await withChatLock(req.user, async () => {
         await checkAllowance(config, req.user);
-        const turn = await chat(config, req.user, req.permissionContext, messages);
+        const turn = await chat(config, req.user, req.permissionContext, messages, { mode, page, signal: cancelled.signal });
         await recordUsage(config, req.user, turn.usage);
         return turn;
       });

@@ -6,15 +6,17 @@ const TIMEOUT_MS = 45_000;
 
 // ponytail: plain fetch, no SDK. Three endpoints don't justify a dependency;
 // switch to the `openai` package if we need streaming or its retry logic.
-async function call(config, path, init) {
+async function call(config, path, { signal, ...init }) {
   let res;
   try {
     res = await fetch(`${BASE_URL}${path}`, {
       ...init,
       headers: { Authorization: `Bearer ${config.assistant.apiKey}`, ...init.headers },
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      // Our timeout, or the caller cancelling (the user interrupted or left).
+      signal: signal ? AbortSignal.any([AbortSignal.timeout(TIMEOUT_MS), signal]) : AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch (err) {
+    if (signal?.aborted) throw new ApiError(499, 'ASSISTANT_CANCELLED', 'The request was cancelled.');
     logger.warn('assistant: OpenAI request failed', { path, error: err.message });
     throw new ApiError(502, 'ASSISTANT_UPSTREAM', 'The assistant is unavailable right now. Try again shortly.');
   }
@@ -31,9 +33,12 @@ async function call(config, path, init) {
 }
 
 /** One Responses API turn. `input` is the running item list (messages, calls, outputs). */
-export async function createResponse(config, { instructions, input, tools }) {
+export async function createResponse(config, {
+  instructions, input, tools, signal,
+}) {
   const res = await call(config, '/responses', {
     method: 'POST',
+    signal,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: config.assistant.chatModel,

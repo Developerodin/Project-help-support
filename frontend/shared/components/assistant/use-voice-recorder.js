@@ -26,6 +26,73 @@ export function voiceErrorMessage(error) {
   return 'The microphone stopped unexpectedly. Try again.';
 }
 
+/**
+ * Echo cancellation keeps the assistant's own voice (from the speakers) out of
+ * the mic, which is what lets people talk over it without it hearing itself.
+ */
+const MIC = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } };
+
+/** Speech has to be louder than this, for this long, to count as an interruption. */
+const BARGE_IN_LEVEL = 0.05;
+const BARGE_IN_HOLD_MS = 300;
+/** Ignore the mic's first moments: opening it can click. */
+const BARGE_IN_WARMUP_MS = 400;
+
+/**
+ * Listens (without recording) for the user starting to speak, so they can
+ * interrupt while the assistant thinks or talks. `done` resolves on sustained
+ * speech; `cancel()` releases the mic. If the mic can't open, `done` simply
+ * never resolves.
+ * ponytail: a fixed level. Loud speakers without echo cancellation, or a noisy
+ * room, can trigger it; raise BARGE_IN_LEVEL if interruptions fire on their own.
+ */
+export function watchForSpeech() {
+  let cancelled = false;
+  let cleanup = () => {};
+  const done = new Promise((resolve) => {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!navigator.mediaDevices?.getUserMedia || !AudioCtx) return;
+    navigator.mediaDevices.getUserMedia(MIC).then((stream) => {
+      if (cancelled) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      const context = new AudioCtx();
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 2048;
+      context.createMediaStreamSource(stream).connect(analyser);
+      const samples = new Float32Array(analyser.fftSize);
+      const started = Date.now();
+      let loudSince = null;
+      const poll = window.setInterval(() => {
+        analyser.getFloatTimeDomainData(samples);
+        let sum = 0;
+        for (const sample of samples) sum += sample * sample;
+        const now = Date.now();
+        if (now - started < BARGE_IN_WARMUP_MS) return;
+        if (Math.sqrt(sum / samples.length) > BARGE_IN_LEVEL) {
+          loudSince ??= now;
+          if (now - loudSince >= BARGE_IN_HOLD_MS) resolve();
+        } else {
+          loudSince = null;
+        }
+      }, 50);
+      cleanup = () => {
+        window.clearInterval(poll);
+        context.close().catch(() => {});
+        stream.getTracks().forEach((track) => track.stop());
+      };
+    }).catch(() => { /* no mic: nothing to listen for */ });
+  });
+  return {
+    done,
+    cancel: () => {
+      cancelled = true;
+      cleanup();
+    },
+  };
+}
+
 function pickMimeType() {
   return ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus']
     .find((type) => MediaRecorder.isTypeSupported?.(type));
@@ -57,7 +124,7 @@ export function useVoiceRecorder() {
     }
     let stream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia(MIC);
     } catch {
       throw new VoiceError('blocked');
     }

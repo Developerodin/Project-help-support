@@ -3,9 +3,16 @@ import { apiFetch, apiFetchResponse } from './client.js';
 /** { enabled } — false when the server has no OpenAI key; the UI then hides the chat. */
 export const getAssistantStatus = (options) => apiFetch('/assistant', options);
 
-/** @param {{ role: 'user'|'assistant', content: string }[]} messages */
-export const sendAssistantMessage = (messages, options) =>
-  apiFetch('/assistant/chat', { method: 'POST', body: { messages }, ...options });
+/**
+ * @param {{ role: 'user'|'assistant', content: string }[]} messages
+ * @param {{ mode?: 'voice', page?: { path: string, ticketId: string|null, tab: string|null } }} [options]
+ *   mode 'voice' asks for replies suited to being heard; page is where the user is
+ */
+export const sendAssistantMessage = (messages, { mode, page, ...options } = {}) => apiFetch('/assistant/chat', {
+  method: 'POST',
+  body: { messages, ...(mode ? { mode } : {}), ...(page ? { page } : {}) },
+  ...options,
+});
 
 /** @param {Blob} audio a MediaRecorder recording */
 export function transcribeAudio(audio, options) {

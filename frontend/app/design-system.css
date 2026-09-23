@@ -4914,7 +4914,34 @@ body:has(.assistant-fab) .page{ padding-bottom:96px; } /* keep the pager clear o
 .assistant-action-error{ color:var(--alarm); }
 
 .assistant-error{ margin:0; padding:6px 14px; font-size:0.8125rem; color:var(--alarm); }
-.assistant-disclaimer{ margin:0; padding:0 12px 8px; font-size:0.6875rem; line-height:1.4; color:var(--ink-3); text-align:center; }
+.assistant-footer{ display:flex; align-items:center; gap:8px; padding:0 12px 8px; }
+.assistant-disclaimer{ flex:1; margin:0; font-size:0.6875rem; line-height:1.4; color:var(--ink-3); }
+
+/* Usage ring (today's rupee allowance), with its details in a tooltip on hover or focus. */
+.usage-meter{ position:relative; flex:none; display:inline-grid; place-items:center; width:24px; height:24px;
+  border-radius:50%; cursor:default; }
+.usage-meter:focus-visible{ outline:2px solid var(--sig); outline-offset:1px; }
+.usage-meter svg{ transform:rotate(-90deg); }
+.usage-meter circle{ fill:none; stroke-width:2.5; }
+.usage-meter-track{ stroke:var(--rule); }
+.usage-meter-fill{ stroke:var(--ink-2); stroke-linecap:round; }
+.usage-meter.is-high .usage-meter-fill{ stroke:var(--warn); }
+.usage-meter.is-full .usage-meter-fill{ stroke:var(--alarm); }
+.usage-meter-tip{
+  position:absolute; left:-4px; bottom:calc(100% + 8px); z-index:5;
+  display:flex; flex-direction:column; gap:2px; width:max-content; max-width:260px; padding:7px 10px;
+  border-radius:var(--r-lg); background:oklch(0.22 0.012 262); color:oklch(0.96 0.005 262);
+  box-shadow:0 6px 18px oklch(0 0 0 / 0.22); font-size:0.75rem; line-height:1.35; text-align:left;
+  opacity:0; visibility:hidden; pointer-events:none;
+}
+.usage-meter-tip strong{ font-size:0.8125rem; font-weight:600; }
+.usage-meter-tip span{ color:oklch(0.8 0.01 262); }
+.usage-meter:hover .usage-meter-tip,
+.usage-meter:focus-visible .usage-meter-tip{ opacity:1; visibility:visible; }
+@media (prefers-reduced-motion: no-preference){
+  .usage-meter-fill{ transition:stroke-dashoffset 300ms cubic-bezier(0.16, 1, 0.3, 1), stroke 150ms ease-out; }
+  .usage-meter-tip{ transition:opacity 120ms ease-out, visibility 120ms; }
+}
 .assistant-compose{ display:flex; align-items:flex-end; gap:4px; padding:8px; border-top:1px solid var(--rule); }
 .assistant-compose textarea{
   flex:1; min-width:0; resize:none; max-height:120px; field-sizing:content;
@@ -5006,7 +5033,12 @@ body:has(.voice-dock) .page{ padding-bottom:120px; }
   --orb-b:oklch(0.62 0.17 268);
   --orb-c:oklch(0.9 0.07 200);
   position:relative; flex:none; width:64px; height:64px;
+  padding:0; border:0; border-radius:50%; background:none; color:inherit;
 }
+.voice-orb:not(:disabled){ cursor:pointer; }
+.voice-orb:disabled{ cursor:default; }
+.voice-orb:focus-visible{ outline:2px solid var(--sig); outline-offset:6px; }
+.voice-card-cutin{ font-weight:400; color:var(--ink-3); }
 .voice-orb-halo{
   position:absolute; inset:-14px; border-radius:50%;
   background:radial-gradient(circle, color-mix(in oklch, var(--orb-a) 70%, transparent) 0%, transparent 68%);
@@ -5041,7 +5073,7 @@ body:has(.voice-dock) .page{ padding-bottom:120px; }
 
 .voice-card{
   display:flex; flex-direction:column; gap:6px;
-  width:min(300px, calc(100vw - 40px - 76px)); padding:10px 12px 8px;
+  width:min(320px, calc(100vw - 40px - 76px)); max-height:calc(100dvh - 120px); overflow-y:auto; padding:10px 12px 8px;
   background:var(--paper); border:1px solid var(--rule); border-radius:var(--r-lg);
   box-shadow:0 8px 24px oklch(0.245 0.014 262 / 0.16);
 }
@@ -5054,7 +5086,20 @@ body:has(.voice-dock) .page{ padding-bottom:120px; }
 .voice-card-heard{ font-size:0.8125rem; color:var(--ink-3); }
 .voice-card-reply{ font-size:0.875rem; line-height:1.45; color:var(--ink);
   display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
-.voice-card-draft{ font-size:0.75rem; padding:5px 8px; border-radius:var(--r); background:var(--sig-wash); color:var(--ink); }
+/* Compact draft preview: voice mode's stand-in for the chat's full card. */
+.voice-draft{ display:flex; flex-direction:column; gap:6px; padding:8px 10px; border-radius:var(--r);
+  border:1px solid var(--sig-line); background:color-mix(in oklch, var(--sig-wash) 60%, var(--paper)); }
+.voice-draft-head{ font-size:0.8125rem; font-weight:600; color:var(--ink); }
+.voice-draft dl{ margin:0; display:grid; gap:2px; font-size:0.75rem; }
+.voice-draft dl div{ display:grid; grid-template-columns:62px 1fr; gap:6px; }
+.voice-draft dt{ color:var(--ink-3); }
+.voice-draft dd{ margin:0; min-width:0; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.voice-draft .is-long dd{ white-space:normal; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+.voice-draft-actions{ display:flex; flex-wrap:wrap; gap:4px; }
+.voice-draft-edit{ margin-left:auto; }
+.voice-draft-error{ font-size:0.75rem; color:var(--alarm); }
+.voice-draft-hint{ font-size:0.6875rem; color:var(--ink-3); }
+.voice-card .usage-meter-tip{ left:0; } /* the card scrolls, so keep the tooltip inside it */
 .voice-card-actions{ display:flex; align-items:center; justify-content:flex-end; gap:4px; }
 .voice-card-notice{ margin-right:auto; font-size:0.6875rem; color:var(--ink-3); }
 .voice-card-btn{

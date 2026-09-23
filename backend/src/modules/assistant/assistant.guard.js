@@ -14,6 +14,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const BUDGET_WARNING_SHARE = 0.8;
 /** Longer than any chat turn can run (six model rounds at 45s would be the worst case). */
 const LOCK_MS = 5 * 60 * 1000;
+/** How long a new message waits for the previous turn to finish or be cancelled. */
+const LOCK_WAIT_MS = 10_000;
+const LOCK_POLL_MS = 250;
+const pause = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 
 const usageSchema = new mongoose.Schema(
   {
@@ -99,6 +103,33 @@ export async function checkAllowance(config, user, now = new Date()) {
   }
 }
 
+/** The next midnight in the budget's time zone: when today's allowance resets. */
+function nextMidnight(config, now) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
+    timeZone: config.assistant.budgetTimeZone, hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+  }).formatToParts(now).map((part) => [part.type, Number(part.value)]));
+  const sinceMidnight = ((parts.hour * 60 + parts.minute) * 60 + parts.second) * 1000 + now.getMilliseconds();
+  return new Date(now.getTime() + DAY_MS - sinceMidnight);
+}
+
+/**
+ * Today's allowance for the usage meter: how much of the rupee limit is spent
+ * and when it resets. Read-only; checking it never counts against the cap.
+ */
+export async function getAllowance(config, user, now = new Date()) {
+  const { day } = periodOf(config, now);
+  const today = await AssistantUsage.findById(dayKey(user._id, day)).lean();
+  const limitInr = config.assistant.userDailyBudgetInr;
+  // Whole paise first, so ₹29 doesn't read as 28.999… and show 28%.
+  const usedPaise = Math.round(((today?.costMicros ?? 0) / 1e6) * config.assistant.usdToInr * 100);
+  return {
+    limitInr,
+    usedInr: usedPaise / 100,
+    percent: Math.min(100, Math.floor(usedPaise / limitInr)),
+    resetsAt: nextMidnight(config, now).toISOString(),
+  };
+}
+
 /**
  * Records what a finished call cost: added to the user's day (in micro-USD, so
  * no float drift) and, for chat tokens, to the workspace's month, with a single
@@ -130,24 +161,32 @@ export async function recordUsage(config, user, usage, now = new Date()) {
 }
 
 /**
- * Runs `work` while holding this user's chat lock, so a second message sent
- * before the first is answered is refused instead of running in parallel. The
- * lock expires on its own if a process dies mid-turn.
+ * Runs `work` while holding this user's chat lock, so turns never run in
+ * parallel. A new message waits briefly for the previous turn (an interrupted
+ * turn is cancelled server-side and frees the lock within moments) before
+ * being refused. The lock expires on its own if a process dies mid-turn.
  */
-export async function withChatLock(user, work, now = new Date()) {
+export async function withChatLock(user, work, { now, waitMs = LOCK_WAIT_MS } = {}) {
   const _id = String(user._id);
-  try {
-    // Takes a free or expired lock; a live one makes the upsert collide on _id.
-    await AssistantLock.findOneAndUpdate(
-      { _id, expiresAt: { $lte: now } },
-      { $set: { expiresAt: new Date(now.getTime() + LOCK_MS) } },
-      { upsert: true },
-    );
-  } catch (err) {
-    if (err?.code === 11000) {
-      throw new ApiError(409, 'ASSISTANT_BUSY', 'Still answering your last message. Try again in a moment.');
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    const at = now ?? new Date();
+    try {
+      // Takes a free or expired lock; a live one makes the upsert collide on _id.
+      // Sequential on purpose: each attempt waits for the previous one.
+      await AssistantLock.findOneAndUpdate(
+        { _id, expiresAt: { $lte: at } },
+        { $set: { expiresAt: new Date(at.getTime() + LOCK_MS) } },
+        { upsert: true },
+      );
+      break;
+    } catch (err) {
+      if (err?.code !== 11000) throw err;
+      if (Date.now() >= deadline) {
+        throw new ApiError(409, 'ASSISTANT_BUSY', 'Still answering your last message. Try again in a moment.');
+      }
+      await pause(LOCK_POLL_MS);
     }
-    throw err;
   }
   try {
     return await work();

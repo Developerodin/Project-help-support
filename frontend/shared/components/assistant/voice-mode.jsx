@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import Icon from '../icons.jsx';
+import UsageMeter from './usage-meter.jsx';
 
 const PHASE_LABEL = {
   listening: 'Listening',
@@ -46,7 +47,8 @@ export function useLevelVar(elementRef, cssVar, pickLevel, active = true) {
  * conversation loop itself lives in the widget; this only shows it.
  */
 export default function VoiceMode({
-  phase, heard, reply, draftHeading, micLevel, outputLevel, onEnd, onShowChat, notice,
+  phase, heard, reply, draft, draftReady, onConfirmDraft, onCancelDraft, onEditDraft,
+  micLevel, outputLevel, onEnd, onShowChat, notice, usage, onUsageReset, onInterrupt,
 }) {
   const orbRef = useRef(null);
   const endRef = useRef(null);
@@ -65,6 +67,9 @@ export default function VoiceMode({
     return () => window.removeEventListener('keydown', onKey);
   }, [onEnd]);
 
+  // While the assistant works or talks, the user can cut in (by speaking, or tapping the orb).
+  const interruptible = phase === 'transcribing' || phase === 'thinking' || phase === 'speaking';
+
   // The orb follows whoever is talking: the mic while listening, the reply while speaking.
   useLevelVar(orbRef, '--vm-level', () => (phaseRef.current === 'listening' ? micLevel.current
     : phaseRef.current === 'speaking' ? outputLevel.current
@@ -76,18 +81,46 @@ export default function VoiceMode({
         <p className="voice-card-phase" role="status" aria-live="polite">
           <span className="voice-card-dot" aria-hidden="true" />
           {PHASE_LABEL[phase] || PHASE_LABEL.idle}
+          {interruptible ? <span className="voice-card-cutin">· speak or tap the orb to interrupt</span> : null}
         </p>
         <div className="voice-card-captions" aria-live="polite">
           {heard ? <p className="voice-card-heard">&ldquo;{heard}&rdquo;</p> : null}
           {reply ? <p className="voice-card-reply">{reply}</p> : null}
           {!heard && !reply ? <p className="voice-card-heard">Ask about a ticket, or say where to go.</p> : null}
         </div>
-        {draftHeading ? (
-          <p className="voice-card-draft">
-            <strong>{draftHeading}</strong> is ready. Say &ldquo;confirm&rdquo; or &ldquo;cancel&rdquo;.
-          </p>
+        {draft ? (
+          <div className="voice-draft" role="group" aria-label={`Draft: ${draft.heading}`}>
+            <p className="voice-draft-head">{draft.heading}</p>
+            <dl>
+              {draft.rows.map(([label, value]) => (
+                <div key={label} className={label === 'Details' ? 'is-long' : undefined}>
+                  <dt>{label}</dt>
+                  <dd>{value}</dd>
+                </div>
+              ))}
+            </dl>
+            {draft.error ? <p className="voice-draft-error" role="alert">{draft.error}</p> : null}
+            <div className="voice-draft-actions">
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                disabled={draft.status === 'busy' || !draftReady}
+                onClick={onConfirmDraft}
+              >
+                {draft.status === 'busy' ? 'Working…' : 'Confirm'}
+              </button>
+              <button type="button" className="btn btn-sm btn-ghost" disabled={draft.status === 'busy'} onClick={onCancelDraft}>
+                Cancel
+              </button>
+              <button type="button" className="btn btn-sm btn-ghost voice-draft-edit" disabled={draft.status === 'busy'} onClick={onEditDraft}>
+                Edit in chat
+              </button>
+            </div>
+            <p className="voice-draft-hint">Or say &ldquo;confirm&rdquo; or &ldquo;cancel&rdquo;.</p>
+          </div>
         ) : null}
         <div className="voice-card-actions">
+          <UsageMeter usage={usage} onReset={onUsageReset} />
           <span className="voice-card-notice" title={notice}>AI · processed by OpenAI</span>
           <button type="button" className="voice-card-btn" onClick={onShowChat} aria-label="Show chat" title="Continue in chat">
             <Icon name="chat" size={16} aria-hidden="true" />
@@ -105,13 +138,21 @@ export default function VoiceMode({
         </div>
       </div>
 
-      <div className="voice-orb" ref={orbRef} aria-hidden="true">
+      <button
+        type="button"
+        className="voice-orb"
+        ref={orbRef}
+        disabled={!interruptible}
+        aria-label="Interrupt the assistant"
+        title={interruptible ? 'Tap to interrupt' : undefined}
+        onClick={onInterrupt}
+      >
         <span className="voice-orb-halo" />
         <span className="voice-orb-body">
           <span className="voice-orb-cloud is-a" />
           <span className="voice-orb-cloud is-b" />
         </span>
-      </div>
+      </button>
     </section>
   );
 }

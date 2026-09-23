@@ -5,6 +5,7 @@ import {
   userHasEffectivePermission,
   EXTERNAL_ACCEPTANCE_PERMISSION,
   isPureExternalActor,
+  STAGE_KEYS,
 } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { assertActiveUsers } from '../teams/team.service.js';
@@ -133,6 +134,53 @@ function resolveEvidence(ticket, attachmentIds) {
     }
     return found.toObject();
   });
+}
+
+/**
+ * Would `actor` be allowed to move this ticket to `to` right now? Runs the same
+ * checks as transitionTicket (access, board lane rules, estimate/ownership
+ * guards) without changing anything, so the assistant only offers moves that
+ * would succeed and can say why one wouldn't.
+ * @returns {{ ok: true, needsNote: boolean, needsReason: boolean } | { ok: false, code: string, reason: string }}
+ */
+async function evaluateMove(actor, ticket, to, boardPolicy, ctx, permissionContext) {
+  if (ticket.status === to) return { ok: false, code: 'SAME_STAGE', reason: `It is already in ${stageLabel(to)}.` };
+  try {
+    await assertMayTransition(actor, ticket, to, permissionContext);
+  } catch (err) {
+    if (err instanceof ApiError) return { ok: false, code: err.code, reason: err.message };
+    throw err;
+  }
+  const verdict = canTransition(ticket.status, to, actor, ticket, boardPolicy, ctx);
+  if (!verdict.ok) return { ok: false, code: verdict.code, reason: verdict.reason };
+  const guard = checkGuards(to, ticket);
+  if (!guard.ok) return { ok: false, code: guard.code, reason: guard.reason };
+  return { ok: true, needsNote: Boolean(verdict.isReopen), needsReason: Boolean(verdict.isClose) };
+}
+
+/** Checks one move without making it. See evaluateMove. */
+export async function previewTransition(actor, idOrKey, to, permissionContext = null) {
+  const ticket = await resolveTicketDoc(idOrKey);
+  const [boardPolicy, ctx] = await Promise.all([
+    getEffectiveBoardRolePolicy(),
+    resolvePermissionContext(actor, permissionContext),
+  ]);
+  return evaluateMove(actor, ticket, to, boardPolicy, ctx, permissionContext);
+}
+
+/** Every stage `actor` could move this ticket to right now, in pipeline order. */
+export async function allowedTransitions(actor, idOrKey, permissionContext = null) {
+  const ticket = await resolveTicketDoc(idOrKey);
+  const [boardPolicy, ctx] = await Promise.all([
+    getEffectiveBoardRolePolicy(),
+    resolvePermissionContext(actor, permissionContext),
+  ]);
+  const allowed = [];
+  for (const to of STAGE_KEYS) {
+    // Sequential on purpose: ten cheap checks against one loaded ticket.
+    if ((await evaluateMove(actor, ticket, to, boardPolicy, ctx, permissionContext)).ok) allowed.push(to);
+  }
+  return allowed;
 }
 
 export async function transitionTicket(actor, idOrKey, {

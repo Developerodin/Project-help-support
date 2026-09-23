@@ -18,17 +18,32 @@ import {
 import { createClient, patchClient, uploadClientLogo } from '@/shared/api/clients.js';
 import { createProject } from '@/shared/api/projects.js';
 import { createTeam } from '@/shared/api/teams.js';
+import { isAbortError } from '@/shared/api/client.js';
+import { TAB_PARAM, TICKET_PARAM } from '@/shared/lib/deep-link.js';
 import { friendlyTransitionError, normalizeApiError } from '@/shared/lib/api-error.js';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import { clearAssistantChats, readSavedChat, saveChat } from '@/shared/lib/assistant-chat-storage.js';
-import { useVoiceRecorder, voiceErrorMessage } from './use-voice-recorder.js';
+import { useVoiceRecorder, voiceErrorMessage, watchForSpeech } from './use-voice-recorder.js';
 import VoiceMode, { useLevelVar } from './voice-mode.jsx';
+import UsageMeter from './usage-meter.jsx';
 
 /** Turns sent per request; the server caps at 30. */
 const HISTORY_LIMIT = 20;
 /** Matches the panel's exit animation in design-system.css. */
 const PANEL_EXIT_MS = 160;
 const SPEAK_KEY = 'assistant.speak';
+/** Where the user is, so the assistant understands "this ticket" and "the details tab". */
+export function currentPage() {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    path: window.location.pathname,
+    ticketId: params.get(TICKET_PARAM),
+    tab: params.get(TICKET_PARAM) ? (params.get(TAB_PARAM) || 'discussion') : null,
+  };
+}
+
+/** Errors that mean voice mode can't usefully go on; anything else it rides out. */
+const VOICE_FATAL_CODES = new Set(['ASSISTANT_DAILY_LIMIT', 'ASSISTANT_BUDGET_EXHAUSTED', 'ASSISTANT_DISABLED']);
 /** Shown wherever people talk to the assistant: what it is, and where their data goes. */
 export const AI_NOTICE = 'AI assistant: it can make mistakes. Messages, voice and ticket details are processed by OpenAI.';
 const TICKET_ID = /\b([A-Z][A-Z0-9]{1,9}-\d+)\b/g;
@@ -212,7 +227,10 @@ async function applyAction(action) {
     return `Updated ${action.ticketId}.`;
   }
   await transitionTicket(action.ticketId, {
-    to: action.to, revision, ...(action.note ? { note: action.note } : {}),
+    to: action.to,
+    revision,
+    // Closing requires a reason; the assistant collected it as the note.
+    ...(action.note ? { [action.asReason ? 'reason' : 'note']: action.note } : {}),
   });
   return `Moved ${action.ticketId} to ${stageLabel(action.to)}.`;
 }
@@ -466,6 +484,8 @@ export default function AssistantWidget() {
   const { user } = useAuth();
   const userId = user?.id ?? null;
   const [enabled, setEnabled] = useState(false);
+  // Today's allowance for the usage ring: { percent, limitInr, usedInr, resetsAt }.
+  const [usage, setUsage] = useState(null);
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -495,6 +515,14 @@ export default function AssistantWidget() {
   const speakOnRef = useRef(speakOn);
   speakOnRef.current = speakOn;
   const handsFreeRef = useRef(false);
+  // The in-flight chat request, so an interruption can cancel it.
+  const chatAbort = useRef(null);
+  // Error code of the last failed send, for voice mode to decide whether to go on.
+  const lastErrorCode = useRef(null);
+  // Bumped on every interruption; a turn that finds it changed has been superseded.
+  const voiceTurn = useRef(0);
+  // Resolves the current turn's "tapped the orb" promise.
+  const interruptTap = useRef(null);
   const pushToTalk = useRef(false);
   const audioRef = useRef(null);
   const logRef = useRef(null);
@@ -506,7 +534,11 @@ export default function AssistantWidget() {
   useEffect(() => {
     let cancelled = false;
     getAssistantStatus()
-      .then((status) => { if (!cancelled) setEnabled(Boolean(status?.enabled)); })
+      .then((status) => {
+        if (cancelled) return;
+        setEnabled(Boolean(status?.enabled));
+        setUsage(status?.usage ?? null);
+      })
       .catch(() => { /* no assistant: leave the button hidden */ });
     setSpeakOn(readSpeakPref());
     return () => { cancelled = true; };
@@ -565,12 +597,20 @@ export default function AssistantWidget() {
     outputContext.current?.close().catch(() => {});
   }, [stopAudio]);
 
+  /** Re-reads today's allowance after anything that spends it. */
+  const refreshUsage = useCallback(() => {
+    getAssistantStatus()
+      .then((status) => setUsage(status?.usage ?? null))
+      .catch(() => { /* the ring keeps its last value */ });
+  }, []);
+
   /** Reads text aloud; resolves when playback ends, is stopped, or fails. */
   const speak = useCallback(async (text) => {
     stopAudio();
     let blob;
     try {
       blob = await speakText(text.slice(0, 2000));
+      refreshUsage();
     } catch {
       return; // reading aloud is a bonus; the text is already on screen
     }
@@ -609,7 +649,8 @@ export default function AssistantWidget() {
         resolve();
       };
       audio.onerror = audio.onended;
-      audio.play().catch(() => audio.onended?.());
+      // Wrapped so a play() that throws or returns nothing still settles the turn.
+      Promise.resolve().then(() => audio.play()).catch(() => audio.onended?.());
     });
   }, [stopAudio]);
 
@@ -626,12 +667,19 @@ export default function AssistantWidget() {
     setInput('');
     setError(null);
     setBusy(true);
+    lastErrorCode.current = null;
+    const controller = new AbortController();
+    chatAbort.current = controller;
     try {
       const history = next
         .filter((message) => message.content)
         .slice(-HISTORY_LIMIT)
         .map((message) => ({ role: message.role, content: historyText(message).slice(0, 4000) }));
-      const { reply, actions = [] } = await sendAssistantMessage(history);
+      const { reply, actions = [] } = await sendAssistantMessage(history, {
+        signal: controller.signal,
+        page: currentPage(),
+        ...(handsFreeRef.current ? { mode: 'voice' } : {}),
+      });
       const files = actions.filter((action) => action.type === 'attachment');
       const drafts = actions.filter((action) => action.type !== 'navigate' && action.type !== 'attachment');
       const answer = reply || (drafts.length ? 'Review the draft below.' : 'Sorry, I don\'t have an answer for that.');
@@ -662,12 +710,17 @@ export default function AssistantWidget() {
       }
       return answer;
     } catch (err) {
+      // An interruption cancels the request on purpose: nothing to report.
+      if (isAbortError(err) || controller.signal.aborted) return null;
+      lastErrorCode.current = normalizeApiError(err)?.code ?? null;
       setError(normalizeApiError(err)?.message || 'The assistant could not answer. Try again.');
       return null;
     } finally {
+      if (chatAbort.current === controller) chatAbort.current = null;
       setBusy(false);
+      refreshUsage();
     }
-  }, [router]);
+  }, [router, refreshUsage]);
 
   /** Applies or rejects a draft. Resolves with a short sentence saying what happened. */
   const resolveDraft = useCallback(async (action, confirm) => {
@@ -719,8 +772,9 @@ export default function AssistantWidget() {
       return null;
     } finally {
       setTranscribing(false);
+      refreshUsage();
     }
-  }, []);
+  }, [refreshUsage]);
 
   /** One spoken turn (mic button or push-to-talk): listen, answer, read aloud if enabled. */
   const talkOnce = useCallback(async ({ autoStop }) => {
@@ -762,9 +816,45 @@ export default function AssistantWidget() {
     setHandsFree(false);
     stopRecording();
     stopAudio();
+    chatAbort.current?.abort();
+    interruptTap.current?.();
   }, [stopAudio, stopRecording]);
 
-  /** Listen, answer out loud, listen again: until the user ends it, says "stop", or goes quiet. */
+  /** Cuts off whatever the assistant is doing (thinking or speaking) so the user can talk. */
+  const interrupt = useCallback(() => {
+    voiceTurn.current += 1;
+    chatAbort.current?.abort();
+    stopAudio();
+  }, [stopAudio]);
+
+  /**
+   * One spoken exchange after the user has finished talking: transcribe, answer,
+   * read the answer aloud. Bails out quietly if it has been interrupted.
+   * Resolves with 'done', 'stop', 'fatal' or 'error'.
+   */
+  const runVoiceTurn = useCallback(async (blob, turn) => {
+    const current = () => turn === voiceTurn.current && handsFreeRef.current;
+    const text = await transcribe(blob);
+    if (!current()) return 'done';
+    if (text === null) return 'error'; // transcribe() already showed why
+    if (!text) return 'done';
+    setHeard(text);
+    setLastReply('');
+    const answer = await handleUtterance(text);
+    if (!current()) return 'done';
+    if (answer === 'stop') return 'stop';
+    if (answer === null) return VOICE_FATAL_CODES.has(lastErrorCode.current) ? 'fatal' : 'error';
+    setLastReply(answer);
+    await speak(answer);
+    return 'done';
+  }, [handleUtterance, speak, transcribe]);
+
+  /**
+   * Listen, answer out loud, listen again: until the user ends it, says "stop",
+   * or goes quiet. While the assistant thinks or speaks, the user can cut in by
+   * talking (or tapping the orb): the reply stops, the pending request is
+   * cancelled, and it listens again straight away.
+   */
   const startHandsFree = useCallback(async () => {
     handsFreeRef.current = true;
     setHandsFree(true);
@@ -788,19 +878,29 @@ export default function AssistantWidget() {
         problem = 'Voice mode ended because I didn\'t hear anything.';
         break;
       }
-      const text = await transcribe(blob);
-      if (text === null) {
-        problem = ''; // transcribe() already set the message
+      voiceTurn.current += 1;
+      const turn = voiceTurn.current;
+      const cutIn = watchForSpeech();
+      const tapped = new Promise((resolve) => { interruptTap.current = resolve; });
+      // An unexpected failure counts as a failed turn, never a stuck voice mode.
+      const outcome = await Promise.race([
+        runVoiceTurn(blob, turn).catch(() => 'error'),
+        cutIn.done.then(() => 'interrupted'),
+        tapped.then(() => 'interrupted'),
+      ]);
+      cutIn.cancel();
+      interruptTap.current = null;
+      if (outcome === 'interrupted') {
+        interrupt();
+        setLastReply('');
+        continue;
+      }
+      if (outcome === 'stop') break;
+      if (outcome === 'fatal') {
+        problem = ''; // send() already showed why
         break;
       }
-      if (!text || !handsFreeRef.current) continue;
-      setHeard(text);
-      setLastReply('');
-      const answer = await handleUtterance(text);
-      if (answer === 'stop' || answer === null) break;
-      setLastReply(answer);
-      // Listening resumes only after playback ends, so the mic never hears the reply.
-      if (handsFreeRef.current) await speak(answer);
+      // 'error' is shown and voice goes on: one failed turn shouldn't end the conversation.
     }
     const endedByUser = !handsFreeRef.current;
     endHandsFree();
@@ -809,7 +909,7 @@ export default function AssistantWidget() {
       if (problem) setError(problem);
       setOpen(true);
     }
-  }, [endHandsFree, handleUtterance, record, speak, stopAudio, transcribe]);
+  }, [endHandsFree, interrupt, record, runVoiceTurn, stopAudio, unlockOutputAudio]);
 
   // Push-to-talk from anywhere in the app: hold Space, release to send.
   useEffect(() => {
@@ -890,8 +990,10 @@ export default function AssistantWidget() {
 
   if (!enabled) return null;
 
+  // The newest draft still waiting (or being applied), for voice mode's preview.
   const pendingDraft = messages.flatMap((message) => message.actions || [])
-    .find((action) => action.status === 'pending');
+    .filter((action) => action.status === 'pending' || action.status === 'busy')
+    .at(-1);
   const voicePhase = recording ? 'listening'
     : transcribing ? 'transcribing'
       : busy ? 'thinking'
@@ -902,9 +1004,19 @@ export default function AssistantWidget() {
       phase={voicePhase}
       heard={heard}
       reply={lastReply}
-      draftHeading={pendingDraft ? describeAction(pendingDraft).heading : null}
+      draft={pendingDraft ? { ...describeAction(pendingDraft), status: pendingDraft.status, error: pendingDraft.error } : null}
+      draftReady={pendingDraft ? draftReady(pendingDraft) : false}
+      onConfirmDraft={async () => setLastReply(await resolveDraft(pendingDraft, true))}
+      onCancelDraft={async () => setLastReply(await resolveDraft(pendingDraft, false))}
+      onEditDraft={() => {
+        endHandsFree();
+        setOpen(true);
+      }}
       micLevel={micLevel}
       outputLevel={outputLevel}
+      onInterrupt={() => interruptTap.current?.()}
+      usage={usage}
+      onUsageReset={refreshUsage}
       notice={AI_NOTICE}
       onEnd={endHandsFree}
       onShowChat={() => {
@@ -1099,7 +1211,10 @@ export default function AssistantWidget() {
             <Icon name="send" size={18} aria-hidden="true" />
           </button>
         </form>
-        <p className="assistant-disclaimer">{AI_NOTICE}</p>
+        <div className="assistant-footer">
+          <UsageMeter usage={usage} onReset={refreshUsage} />
+          <p className="assistant-disclaimer">{AI_NOTICE}</p>
+        </div>
       </section>
     </>
   );

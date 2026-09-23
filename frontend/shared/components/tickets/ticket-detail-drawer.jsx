@@ -37,6 +37,8 @@ import { useBoardPolicy } from '@/shared/hooks/use-board-policy.js';
 import { usePermissionContext } from '@/shared/hooks/use-permission-context.js';
 import { permissionContextForUi } from '@/shared/lib/permission-context-ui.js';
 import AppLoader from '../app-loader.jsx';
+import { useHistorySearch } from '@/shared/lib/use-history-search.js';
+import { TAB_PARAM, TICKET_PARAM, tabFromSearch } from '@/shared/lib/deep-link.js';
 import { useProjectMentionCandidates } from '@/shared/hooks/use-project-mention-candidates.js';
 
 function nestedDialogOpen(drawerNode) {
@@ -62,6 +64,8 @@ function TicketDrawerContent({
   const [fieldErrors, setFieldErrors] = useState({});
   const [validationDialog, setValidationDialog] = useState(null);
   const [tab, setTab] = useState('discussion');
+  // The address bar can name a tab (?tab=details), e.g. a shared link or the assistant.
+  const urlTab = tabFromSearch(useHistorySearch());
   const [blockReason, setBlockReason] = useState('');
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -119,6 +123,7 @@ function TicketDrawerContent({
 
   const selectTab = useCallback((next) => {
     setTab(next);
+    writeTabToUrl(next);
     requestAnimationFrame(() => {
       panelRefs[next]?.current?.focus();
     });
@@ -217,6 +222,11 @@ function TicketDrawerContent({
 
   const TAB_ORDER = ['discussion', 'details', 'attachments', 'history', ...(showQaTab ? ['qa'] : [])];
 
+  // Follow the URL's tab (a link, or the assistant switching it) when it names one this user has.
+  useEffect(() => {
+    if (urlTab && TAB_ORDER.includes(urlTab)) setTab(urlTab);
+  }, [urlTab, showQaTab]);
+
   const onTabKeyDown = useCallback((event) => {
     const index = TAB_ORDER.indexOf(tab);
     let next = null;
@@ -227,6 +237,7 @@ function TicketDrawerContent({
     if (!next) return;
     event.preventDefault();
     setTab(next);
+    writeTabToUrl(next);
     requestAnimationFrame(() => {
       const el = document.getElementById(`tab-${next}`);
       el?.focus();
@@ -534,6 +545,20 @@ function TicketDrawerContent({
       />
     </>
   );
+}
+
+/**
+ * Keeps the open tab in the address bar, so a reload or a shared link lands on
+ * it and the assistant knows where the user is. Only where the URL drives the
+ * drawer (it names the ticket); Discussion, the default, stays out of the URL.
+ */
+function writeTabToUrl(next) {
+  const params = new URLSearchParams(window.location.search);
+  if (!params.has(TICKET_PARAM)) return;
+  if (next === 'discussion') params.delete(TAB_PARAM);
+  else params.set(TAB_PARAM, next);
+  const search = params.toString();
+  window.history.replaceState(null, '', `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`);
 }
 
 export default function TicketDetailDrawer({

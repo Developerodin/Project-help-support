@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import {
-  ADMIN_ROLES, CATEGORIES, ENVIRONMENTS, PRIORITIES, SEVERITIES, STAGES, STAGE_KEYS,
-  can, hasAnyRole, isExternalUser, isTicketOverdue, resolveProjectModules, stageIndex, stageLabel,
+  ADMIN_ROLES, CATEGORIES, ENVIRONMENTS, EXTERNAL_ACCEPTANCE_PERMISSION, PRIORITIES, SEVERITIES, STAGES, STAGE_KEYS,
+  can, canAccessRoute, hasAnyRole, isExternalUser, isTicketOverdue, resolveProjectModules, stageIndex, stageLabel,
 } from '@pms/shared';
 import { getTicket, listTickets } from '../tickets/ticket.service.js';
+import { allowedTransitions, previewTransition } from '../tickets/transition.service.js';
 import { assertModuleAndPage, listProjects } from '../projects/project.service.js';
 import { listClients } from '../clients/client.service.js';
 import { listTeams } from '../teams/team.service.js';
@@ -190,11 +191,6 @@ const PROPOSE_STAGE = fn(
   },
 );
 
-/** The pages a client user has in the app; the rest are internal-only. */
-const CLIENT_DESTINATIONS = new Set([
-  'tickets', 'board', 'new_ticket', 'ticket', 'notifications', 'notification_settings', 'profile',
-]);
-
 /**
  * Pages the assistant may open. Hrefs are built here from fixed values, so the
  * model can never send the browser to an arbitrary URL. Pages the user lacks
@@ -214,13 +210,18 @@ const DESTINATIONS = Object.freeze({
   profile: { path: '/profile', label: 'Profile' },
 });
 
+/** The tabs of the ticket drawer, in the order the drawer shows them. */
+export const TICKET_TABS = Object.freeze(['discussion', 'details', 'attachments', 'history', 'qa']);
+
 const NAVIGATE = fn(
   'navigate',
-  'Open a page for the user right away: go to a page, open a ticket, or show a filtered ticket list. '
-    + 'Filters and view apply only to destination "tickets"; ticket_id only to "ticket". Use null for the rest.',
+  'Open a page for the user right away: go to a page, open a ticket (optionally on a tab), switch the open '
+    + 'ticket to another tab, or show a filtered ticket list. Filters and view apply only to destination '
+    + '"tickets"; ticket_id and ticket_tab only to "ticket". Use null for the rest.',
   {
     destination: { type: 'string', enum: Object.keys(DESTINATIONS) },
     ticket_id: nullable(TICKET_ID),
+    ticket_tab: nullableEnum(TICKET_TABS),
     view: nullableEnum(['table', 'modules']),
     query: nullable({ type: 'string' }),
     stage: nullableEnum(STAGE_KEYS),
@@ -239,7 +240,11 @@ export function toolsFor(user, permissionContext) {
   const tools = [SEARCH_TICKETS, GET_TICKET, GET_DISCUSSION, OPEN_ATTACHMENT, LIST_PROJECTS, NAVIGATE];
   if (external || can(user, 'tickets.create', permissionContext)) tools.push(PROPOSE_CREATE);
   if (allowed('tickets.edit')) tools.push(PROPOSE_UPDATE);
-  tools.push(PROPOSE_STAGE);
+  // Stage moves: internal users who work the board, or clients allowed to close/reopen.
+  const mayMoveStages = external
+    ? can(user, EXTERNAL_ACCEPTANCE_PERMISSION, permissionContext)
+    : can(user, 'boards.use', permissionContext);
+  if (mayMoveStages) tools.push(PROPOSE_STAGE);
   // Same gates as the REST routes these mirror; the user directory is admin-only there too.
   const admin = !external && hasAnyRole(user, ...ADMIN_ROLES);
   if (admin) tools.push(SEARCH_USERS);
@@ -355,6 +360,8 @@ const HANDLERS = {
       reporter: ticket.createdBy?.name ?? null,
       created: day(ticket.createdAt),
       reopened_times: ticket.reopenCount || 0,
+      // Stages this user could move it to right now (board rules, required dates, their role).
+      you_can_move_to: (await allowedTransitions(ctx.user, ticket.ticketId, ctx.permissionContext)).map(stageLabel),
       blocker_reason: ticket.blocked ? (ticket.blockerReason || null) : null,
       description: clip(ticket.description, 5000),
       steps_to_reproduce: clip(ticket.stepsToReproduce, 2000) || null,
@@ -529,8 +536,9 @@ const HANDLERS = {
   async navigate(args, ctx) {
     const destination = DESTINATIONS[args.destination];
     if (!destination) throw new ToolError(`Unknown destination ${args.destination}.`);
-    if (isExternalUser(ctx.user) && !CLIENT_DESTINATIONS.has(args.destination)) {
-      throw new ToolError('That page is only for the internal team.');
+    // The same page rules the app's route guard and sidebar use.
+    if (!canAccessRoute(destination.path, ctx.user, ctx.permissionContext)) {
+      throw new ToolError(`The user doesn't have access to ${destination.label}. Say so plainly; don't open it.`);
     }
     let href = destination.path;
     let { label } = destination;
@@ -539,6 +547,12 @@ const HANDLERS = {
       const ticket = await getTicket(ctx.user, args.ticket_id, ctx.permissionContext);
       href = `/tickets?ticket=${encodeURIComponent(ticket.ticketId)}`;
       label = ticket.ticketId;
+      // The QA report tab is internal-only; clients just get the ticket.
+      const tab = args.ticket_tab === 'qa' && isExternalUser(ctx.user) ? null : args.ticket_tab;
+      if (tab) {
+        href += `&tab=${tab}`;
+        label = `${ticket.ticketId} (${tab === 'qa' ? 'QA report' : tab})`;
+      }
     } else if (args.destination === 'tickets') {
       // Same param names the ticket list reads from its URL (ticket-list-query.js).
       const params = new URLSearchParams();
@@ -623,7 +637,19 @@ const HANDLERS = {
 
   async propose_stage_change(args, ctx) {
     const ticket = await getTicket(ctx.user, args.ticket_id, ctx.permissionContext);
-    if (ticket.status === args.to_stage) throw new ToolError(`${ticket.ticketId} is already in ${stageLabel(args.to_stage)}.`);
+    // Same checks as the real move, so the user never gets a card that fails on confirm.
+    const check = await previewTransition(ctx.user, ticket.ticketId, args.to_stage, ctx.permissionContext);
+    if (!check.ok) {
+      const options = (await allowedTransitions(ctx.user, ticket.ticketId, ctx.permissionContext)).map(stageLabel);
+      throw new ToolError(`${check.reason} ${options.length
+        ? `This user can move ${ticket.ticketId} to: ${options.join(', ')}.`
+        : `This user can't move ${ticket.ticketId} to any stage.`}`);
+    }
+    if ((check.needsReason || check.needsNote) && !args.note) {
+      throw new ToolError(check.needsReason
+        ? 'Closing needs a reason. Ask the user why it is being closed, then draft again with it as the note.'
+        : 'Reopening needs a note. Ask the user what is wrong, then draft again with it as the note.');
+    }
     return proposal(ctx, {
       type: 'stage_change',
       ticketId: ticket.ticketId,
@@ -631,6 +657,8 @@ const HANDLERS = {
       from: ticket.status,
       to: args.to_stage,
       ...(args.note ? { note: args.note } : {}),
+      // Closing takes the note as its reason.
+      ...(check.needsReason ? { asReason: true } : {}),
     });
   },
 };
