@@ -12,6 +12,7 @@ import ProfileMenu from '@/shared/components/profile-menu.jsx';
 import ProjectSwitcher from '@/shared/components/project-switcher.jsx';
 import NotificationBell from '@/shared/components/notification-bell.jsx';
 import ThemeToggle from '@/shared/components/theme-toggle.jsx';
+import PwaInstallButton from '@/shared/components/pwa-install-button.jsx';
 import AppSidebar from '@/shared/components/app-sidebar.jsx';
 import ExternalWorkspaceNotice from '@/shared/components/external-workspace-notice.jsx';
 import TicketCommentToasts from '@/shared/components/ticket-comment-toasts.jsx';
@@ -110,6 +111,7 @@ function TopBar() {
         </Link>
       ) : null}
       <NotificationBell />
+      <PwaInstallButton />
       <ThemeToggle />
       <ProfileMenu />
     </div>

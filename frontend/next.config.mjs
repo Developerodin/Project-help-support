@@ -17,6 +17,18 @@ const nextConfig = {
   transpilePackages: ['@pms/shared'],
   // Monorepo root — avoids Next picking C:\Users\INTEL\package-lock.json.
   outputFileTracingRoot: path.join(__dirname, '..'),
+  async headers() {
+    return [
+      {
+        // Keep SW fresh so updates activate without a stuck cached worker.
+        source: '/sw.js',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' },
+          { key: 'Service-Worker-Allowed', value: '/' },
+        ],
+      },
+    ];
+  },
 };
 
 // `next dev` keeps .next; `next build`/`next start` use .next-prod. Sharing one

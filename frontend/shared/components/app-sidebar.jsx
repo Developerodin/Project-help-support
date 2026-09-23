@@ -60,7 +60,11 @@ export default function AppSidebar() {
     <Sidebar collapsible="icon" aria-label="Primary">
       <SidebarHeader className="h-(--bar-h) justify-center border-b border-sidebar-border p-0">
         <div className="flex h-(--bar-h) items-center gap-2.5 px-3.5 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-          <BrandMark className="size-5 shrink-0" logoUrl={effectiveBranding?.logoUrl} />
+          <BrandMark
+            className="size-5 shrink-0"
+            logoUrl={effectiveBranding?.logoUrl}
+            name={effectiveBranding?.name}
+          />
           <b className="truncate text-[0.8125rem] font-semibold tracking-tight text-foreground group-data-[collapsible=icon]:hidden">
             {formatBrandDisplayName(effectiveBranding?.name)}
           </b>

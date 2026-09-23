@@ -11,7 +11,7 @@ import { useAuth } from '@/shared/contexts/auth-context.jsx';
  */
 function previewHtml(html) {
   const origin = typeof window === 'undefined' ? '' : window.location.origin;
-  return html.replaceAll('cid:brand-mark', `${origin}/prowplus-icon.png`);
+  return html.replaceAll('cid:brand-mark', `${origin}/branding/pp_icons.png`);
 }
 
 // The two widths that decide whether an email holds up: a desktop reading pane

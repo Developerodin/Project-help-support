@@ -12,7 +12,7 @@ export function AuthBrand() {
   return (
     <header className="auth-header">
       <div className="brand">
-        <BrandMark logoUrl={effectiveBranding?.logoUrl} />
+        <BrandMark logoUrl={effectiveBranding?.logoUrl} name={effectiveBranding?.name} />
         <b>{name}</b>
       </div>
       <p className="auth-header__sub">{brandDescription(effectiveBranding)}</p>

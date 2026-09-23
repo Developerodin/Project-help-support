@@ -16,7 +16,7 @@ export default function AuthRequiredScreen() {
   return (
     <div className="auth-gate">
       <div className="auth-gate-card">
-        <BrandMark className="auth-gate-mark" logoUrl={effectiveBranding?.logoUrl} />
+        <BrandMark className="auth-gate-mark" logoUrl={effectiveBranding?.logoUrl} name={effectiveBranding?.name} />
         <p className="auth-gate-brand">{formatBrandDisplayName(effectiveBranding?.name)}</p>
         <h1 className="auth-gate-title">Sign in required</h1>
         <p className="auth-gate-copy">

@@ -42,7 +42,7 @@ export default function SessionExpiredScreen() {
         aria-labelledby="auth-expired-title"
         aria-describedby="auth-expired-copy"
       >
-        <BrandMark className="auth-gate-mark" logoUrl={effectiveBranding?.logoUrl} />
+        <BrandMark className="auth-gate-mark" logoUrl={effectiveBranding?.logoUrl} name={effectiveBranding?.name} />
         <p className="auth-gate-brand">{formatBrandDisplayName(effectiveBranding?.name)}</p>
         <h2 id="auth-expired-title" className="auth-gate-title">Session expired</h2>
         <p id="auth-expired-copy" className="auth-gate-copy">

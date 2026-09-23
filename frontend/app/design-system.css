@@ -259,6 +259,15 @@ main{ min-width:0; display:flex; flex-direction:column; }
 .btn-sm{ height:26px; padding:0 8px; font-size:0.75rem; }
 .btn-ico{ padding:0; width:30px; justify-content:center; }
 .btn-ico.btn-sm{ width:26px; }
+.pwa-install{
+  display:inline-flex; align-items:center; gap:2px; flex:none;
+}
+.pwa-install__btn{
+  min-height:44px; height:44px; padding:0 12px;
+}
+.pwa-install__dismiss{
+  min-width:44px; min-height:44px; width:44px; height:44px;
+}
 .btn-spin{
   width:0.875em; height:0.875em; flex:none;
   border:2px solid currentColor; border-right-color:transparent;

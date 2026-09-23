@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#fcfbf9" />
+  <title>Offline · ProwPlus</title>
+  <style>
+    :root {
+      --paper: #fcfbf9;
+      --ink: #1d2127;
+      --ink-2: #6b7280;
+      --sig: #2a52a1;
+      --rule: #e5e2dc;
+      --ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--ui);
+    }
+    main {
+      max-width: 28rem;
+      margin: 0 auto;
+      padding: max(4rem, env(safe-area-inset-top, 0px))
+        max(1.5rem, env(safe-area-inset-right, 0px))
+        max(2rem, env(safe-area-inset-bottom, 0px))
+        max(1.5rem, env(safe-area-inset-left, 0px));
+    }
+    h1 {
+      margin: 0 0 0.5rem;
+      font-size: 1.375rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    p {
+      margin: 0 0 1.5rem;
+      color: var(--ink-2);
+      line-height: 1.5;
+      font-size: 0.9375rem;
+    }
+    a {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 0 0.875rem;
+      background: var(--sig);
+      color: #fcfbf9;
+      text-decoration: none;
+      border-radius: 4px;
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+    a:focus-visible {
+      outline: 2px solid var(--sig);
+      outline-offset: 2px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>You are offline</h1>
+    <p>ProwPlus needs a network connection to load your projects and tickets. Check your connection, then try again.</p>
+    <a href="/">Retry</a>
+  </main>
+</body>
+</html>

@@ -30,14 +30,10 @@ async function impersonationPayload(impersonatedBy) {
   };
 }
 
-function userIdOf(user) {
-  return user?.id ?? user?._id ?? null;
-}
-
 async function buildSessionBody(config, { user, accessToken = null, impersonation = null }) {
   const body = { user };
   if (accessToken) body.accessToken = accessToken;
-  body.effectiveBranding = await resolveEffectiveBrandingForUser(userIdOf(user), config);
+  body.effectiveBranding = await resolveEffectiveBrandingForUser(user, config);
   if (impersonation) body.impersonation = impersonation;
   return body;
 }
