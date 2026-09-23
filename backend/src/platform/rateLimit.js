@@ -8,7 +8,7 @@ import { ApiError } from './errors.js';
  * the effective limit by N. Accepted at this scale. The upgrade path is a shared
  * store, and it becomes worth doing when a second instance actually exists.
  */
-export function makeLimiter({ windowMs, limit, byEmail = false }) {
+export function makeLimiter({ windowMs, limit, byEmail = false, byUser = false }) {
   return rateLimit({
     windowMs,
     limit,
@@ -19,6 +19,8 @@ export function makeLimiter({ windowMs, limit, byEmail = false }) {
     validate: false,
     keyGenerator: (req) => {
       const ip = req.ip || 'unknown-ip';
+      // Per-account bucket for authenticated routes (mount after auth()).
+      if (byUser) return req.user?._id ? `user:${req.user._id}` : ip;
       if (!byEmail) return ip;
       // Email is the shared bucket so one account cannot be sprayed from many
       // IPs. Empty email falls back to IP so unauthenticated junk still counts.

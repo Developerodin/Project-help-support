@@ -18,6 +18,7 @@ import projectRoutes from './modules/projects/project.route.js';
 import ticketRoutes from './modules/tickets/ticket.route.js';
 import userRoutes from './modules/users/user.route.js';
 import notificationRoutes from './modules/notifications/notification.route.js';
+import assistantRoutes from './modules/assistant/assistant.route.js';
 import analyticsRoutes from './modules/tickets/analytics.route.js';
 import rbacRoutes from './modules/rbac/rbac.route.js';
 import realtimeRoutes from './modules/realtime/realtime.route.js';
@@ -76,6 +77,7 @@ export function createApp(config, { deliverReset, deliverInvite } = {}) {
   app.use('/v1/analytics', analyticsRoutes(config));
   app.use('/v1/rbac', rbacRoutes(config));
   app.use('/v1/realtime', realtimeRoutes(config));
+  app.use('/v1/assistant', assistantRoutes(config));
 
   app.use('/v1', (_req, _res, next) => next(new ApiError(404, 'NOT_FOUND', 'Resource not found')));
 

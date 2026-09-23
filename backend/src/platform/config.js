@@ -209,7 +209,18 @@ export function loadConfig(env = process.env) {
       attachments: storage !== null,
       email: email !== null,
       seed: seed !== null,
+      assistant: present(env.OPENAI_API_KEY),
     },
+    // Chatbot. Off unless OPENAI_API_KEY is set; the model names are overridable
+    // so a model swap is an env change, not a deploy.
+    assistant: present(env.OPENAI_API_KEY) ? {
+      apiKey: env.OPENAI_API_KEY.trim(),
+      chatModel: present(env.OPENAI_CHAT_MODEL) ? env.OPENAI_CHAT_MODEL.trim() : 'gpt-5.6-terra',
+      transcribeModel: present(env.OPENAI_TRANSCRIBE_MODEL)
+        ? env.OPENAI_TRANSCRIBE_MODEL.trim() : 'gpt-4o-mini-transcribe',
+      speechModel: present(env.OPENAI_TTS_MODEL) ? env.OPENAI_TTS_MODEL.trim() : 'gpt-4o-mini-tts',
+      speechVoice: present(env.OPENAI_TTS_VOICE) ? env.OPENAI_TTS_VOICE.trim() : 'marin',
+    } : null,
     storage: storage && {
       region: storage.AWS_REGION,
       accessKeyId: storage.AWS_ACCESS_KEY_ID,
