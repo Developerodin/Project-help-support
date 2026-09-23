@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch, isTransientApiError, setAccessToken, setSessionLostHandler } from '../api/client.js';
+import { clearAssistantChats } from '../lib/assistant-chat-storage.js';
 import {
   applyDocumentBranding,
   neutralBranding,
@@ -128,6 +129,8 @@ export function AuthProvider({ children }) {
       await apiFetch('/auth/logout', { method: 'POST' });
     } finally {
       setAccessToken(null);
+      // The assistant's saved conversation can hold ticket details; it leaves with the session.
+      clearAssistantChats();
       setUser(null);
       setImpersonation(null);
       setSessionNotice(null);

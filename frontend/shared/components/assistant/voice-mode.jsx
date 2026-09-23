@@ -46,7 +46,7 @@ export function useLevelVar(elementRef, cssVar, pickLevel, active = true) {
  * conversation loop itself lives in the widget; this only shows it.
  */
 export default function VoiceMode({
-  phase, heard, reply, draftHeading, micLevel, outputLevel, onEnd, onShowChat,
+  phase, heard, reply, draftHeading, micLevel, outputLevel, onEnd, onShowChat, notice,
 }) {
   const orbRef = useRef(null);
   const endRef = useRef(null);
@@ -88,6 +88,7 @@ export default function VoiceMode({
           </p>
         ) : null}
         <div className="voice-card-actions">
+          <span className="voice-card-notice" title={notice}>AI · processed by OpenAI</span>
           <button type="button" className="voice-card-btn" onClick={onShowChat} aria-label="Show chat" title="Continue in chat">
             <Icon name="chat" size={16} aria-hidden="true" />
           </button>

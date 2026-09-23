@@ -19,6 +19,8 @@ import { createClient, patchClient, uploadClientLogo } from '@/shared/api/client
 import { createProject } from '@/shared/api/projects.js';
 import { createTeam } from '@/shared/api/teams.js';
 import { friendlyTransitionError, normalizeApiError } from '@/shared/lib/api-error.js';
+import { useAuth } from '@/shared/contexts/auth-context.jsx';
+import { clearAssistantChats, readSavedChat, saveChat } from '@/shared/lib/assistant-chat-storage.js';
 import { useVoiceRecorder, voiceErrorMessage } from './use-voice-recorder.js';
 import VoiceMode, { useLevelVar } from './voice-mode.jsx';
 
@@ -27,6 +29,8 @@ const HISTORY_LIMIT = 20;
 /** Matches the panel's exit animation in design-system.css. */
 const PANEL_EXIT_MS = 160;
 const SPEAK_KEY = 'assistant.speak';
+/** Shown wherever people talk to the assistant: what it is, and where their data goes. */
+export const AI_NOTICE = 'AI assistant: it can make mistakes. Messages, voice and ticket details are processed by OpenAI.';
 const TICKET_ID = /\b([A-Z][A-Z0-9]{1,9}-\d+)\b/g;
 const SUGGESTIONS = ['What is overdue right now?', 'Open the board', 'How do I move a ticket to QA?'];
 
@@ -457,41 +461,10 @@ function readSpeakPref() {
   }
 }
 
-const CHAT_KEY = 'assistant.chat';
-const KEPT_MESSAGES = 40;
-
-// ponytail: per-tab (sessionStorage), so a reload keeps the chat but a new tab
-// or sign-out starts fresh. Server-side history is the upgrade if people want
-// chats to follow them across devices.
-function readSavedChat() {
-  try {
-    const saved = JSON.parse(window.sessionStorage.getItem(CHAT_KEY));
-    if (!Array.isArray(saved)) return [];
-    // A reload interrupts anything mid-flight; let the user try it again.
-    return saved.map((message) => (message.actions
-      ? { ...message, actions: message.actions.map((action) => (action.status === 'busy' ? { ...action, status: 'pending' } : action)) }
-      : message));
-  } catch {
-    return [];
-  }
-}
-
-function saveChat(messages) {
-  try {
-    if (!messages.length) {
-      window.sessionStorage.removeItem(CHAT_KEY);
-      return;
-    }
-    // A picked logo file can't be stored; the user re-picks it after a reload.
-    const kept = messages.slice(-KEPT_MESSAGES).map((message) => (message.actions
-      ? { ...message, actions: message.actions.map(({ logoFile, ...action }) => action) }
-      : message));
-    window.sessionStorage.setItem(CHAT_KEY, JSON.stringify(kept));
-  } catch { /* storage full or blocked: the chat still works for this page */ }
-}
-
 export default function AssistantWidget() {
   const router = useRouter();
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
   const [enabled, setEnabled] = useState(false);
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -527,7 +500,8 @@ export default function AssistantWidget() {
   const logRef = useRef(null);
   const inputRef = useRef(null);
   const fabRef = useRef(null);
-  const restored = useRef(false);
+  // Whose conversation `messages` holds; saving waits until it is known.
+  const chatOwner = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -535,13 +509,11 @@ export default function AssistantWidget() {
       .then((status) => { if (!cancelled) setEnabled(Boolean(status?.enabled)); })
       .catch(() => { /* no assistant: leave the button hidden */ });
     setSpeakOn(readSpeakPref());
-    setMessages(readSavedChat());
-    restored.current = true;
     return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
-    if (restored.current) saveChat(messages);
+    if (chatOwner.current) saveChat(chatOwner.current, messages);
   }, [messages]);
 
   useEffect(() => {
@@ -769,6 +741,22 @@ export default function AssistantWidget() {
     if (answer && answer !== 'stop' && speakOnRef.current) await speak(answer);
   }, [handleUtterance, record, speak, stopAudio, transcribe]);
 
+  // A different person in this tab (sign-in, impersonation, or its end) gets their
+  // own conversation: never the previous one, which can hold ticket details.
+  useEffect(() => {
+    handsFreeRef.current = false;
+    setHandsFree(false);
+    stopRecording();
+    stopAudio();
+    clearAssistantChats(userId);
+    chatOwner.current = userId;
+    setMessages(readSavedChat(userId));
+    setInput('');
+    setError(null);
+    setHeard('');
+    setLastReply('');
+  }, [userId, stopAudio, stopRecording]);
+
   const endHandsFree = useCallback(() => {
     handsFreeRef.current = false;
     setHandsFree(false);
@@ -917,6 +905,7 @@ export default function AssistantWidget() {
       draftHeading={pendingDraft ? describeAction(pendingDraft).heading : null}
       micLevel={micLevel}
       outputLevel={outputLevel}
+      notice={AI_NOTICE}
       onEnd={endHandsFree}
       onShowChat={() => {
         endHandsFree();
@@ -1110,6 +1099,7 @@ export default function AssistantWidget() {
             <Icon name="send" size={18} aria-hidden="true" />
           </button>
         </form>
+        <p className="assistant-disclaimer">{AI_NOTICE}</p>
       </section>
     </>
   );

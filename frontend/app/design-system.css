@@ -4914,6 +4914,7 @@ body:has(.assistant-fab) .page{ padding-bottom:96px; } /* keep the pager clear o
 .assistant-action-error{ color:var(--alarm); }
 
 .assistant-error{ margin:0; padding:6px 14px; font-size:0.8125rem; color:var(--alarm); }
+.assistant-disclaimer{ margin:0; padding:0 12px 8px; font-size:0.6875rem; line-height:1.4; color:var(--ink-3); text-align:center; }
 .assistant-compose{ display:flex; align-items:flex-end; gap:4px; padding:8px; border-top:1px solid var(--rule); }
 .assistant-compose textarea{
   flex:1; min-width:0; resize:none; max-height:120px; field-sizing:content;
@@ -5054,7 +5055,8 @@ body:has(.voice-dock) .page{ padding-bottom:120px; }
 .voice-card-reply{ font-size:0.875rem; line-height:1.45; color:var(--ink);
   display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
 .voice-card-draft{ font-size:0.75rem; padding:5px 8px; border-radius:var(--r); background:var(--sig-wash); color:var(--ink); }
-.voice-card-actions{ display:flex; justify-content:flex-end; gap:4px; }
+.voice-card-actions{ display:flex; align-items:center; justify-content:flex-end; gap:4px; }
+.voice-card-notice{ margin-right:auto; font-size:0.6875rem; color:var(--ink-3); }
 .voice-card-btn{
   display:inline-grid; place-items:center; width:36px; height:36px; border:0; border-radius:50%;
   background:var(--panel-2); color:var(--ink-2); cursor:pointer; transition:background 120ms ease-out;
