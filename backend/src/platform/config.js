@@ -226,9 +226,12 @@ export function loadConfig(env = process.env) {
       apiKey: env.OPENAI_API_KEY.trim(),
       chatModel: present(env.OPENAI_CHAT_MODEL) ? env.OPENAI_CHAT_MODEL.trim() : 'gpt-5.6-terra',
       transcribeModel: present(env.OPENAI_TRANSCRIBE_MODEL)
-        ? env.OPENAI_TRANSCRIBE_MODEL.trim() : 'gpt-4o-mini-transcribe',
+        // The full model: far better than mini at Hindi-English switching mid-sentence.
+        ? env.OPENAI_TRANSCRIBE_MODEL.trim() : 'gpt-4o-transcribe',
       speechModel: present(env.OPENAI_TTS_MODEL) ? env.OPENAI_TTS_MODEL.trim() : 'gpt-4o-mini-tts',
+      // One voice per language, each with its own accent (see openai.client.js).
       speechVoice: present(env.OPENAI_TTS_VOICE) ? env.OPENAI_TTS_VOICE.trim() : 'marin',
+      speechVoiceHindi: present(env.OPENAI_TTS_VOICE_HI) ? env.OPENAI_TTS_VOICE_HI.trim() : 'coral',
       // Spend caps. Each user may spend this much per day across chat and voice,
       // costed from the prices below; the day follows budgetTimeZone.
       userDailyBudgetInr: readPositiveNumber(env, 'ASSISTANT_USER_DAILY_BUDGET_INR', 100),
@@ -240,7 +243,7 @@ export function loadConfig(env = process.env) {
       prices: {
         chatInputPerM: readPositiveNumber(env, 'ASSISTANT_PRICE_CHAT_INPUT_PER_M', 0.2),
         chatOutputPerM: readPositiveNumber(env, 'ASSISTANT_PRICE_CHAT_OUTPUT_PER_M', 1.2),
-        transcribePerMin: readPositiveNumber(env, 'ASSISTANT_PRICE_TRANSCRIBE_PER_MIN', 0.003),
+        transcribePerMin: readPositiveNumber(env, 'ASSISTANT_PRICE_TRANSCRIBE_PER_MIN', 0.006),
         speechPerMin: readPositiveNumber(env, 'ASSISTANT_PRICE_SPEECH_PER_MIN', 0.015),
       },
     } : null,

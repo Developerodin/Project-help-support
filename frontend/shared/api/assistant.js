@@ -23,7 +23,9 @@ export function transcribeAudio(audio, options) {
 }
 
 /** @returns {Promise<Blob>} mp3 audio of `text` read aloud */
-export async function speakText(text, options) {
-  const response = await apiFetchResponse('/assistant/speech', { method: 'POST', body: { text }, ...options });
+export async function speakText(text, { language, ...options } = {}) {
+  const response = await apiFetchResponse('/assistant/speech', {
+    method: 'POST', body: { text, ...(language ? { language } : {}) }, ...options,
+  });
   return response.blob();
 }

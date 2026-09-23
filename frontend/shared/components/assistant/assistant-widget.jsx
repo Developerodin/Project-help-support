@@ -6,7 +6,7 @@ import {
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  CATEGORIES, ENVIRONMENTS, PRIORITIES, SEVERITIES, stageLabel,
+  CATEGORIES, ENVIRONMENTS, PRIORITIES, SEVERITIES, speechLanguage, stageLabel,
 } from '@pms/shared';
 import Icon from '../icons.jsx';
 import {
@@ -874,8 +874,10 @@ export default function AssistantWidget() {
     stopAudio();
     const seq = speechSeq.current;
     const parts = speechParts(text);
+    // One language (voice and accent) for the whole reply, so its parts match.
+    const language = speechLanguage(text);
     // Both requested at once: the rest is synthesised while the opening plays.
-    const clips = parts.map((part) => speakText(part));
+    const clips = parts.map((part) => speakText(part, { language }));
     clips.forEach((clip) => clip.catch(() => {})); // a failed later part must not surface as unhandled
     setPreparingSpeech(true);
     try {

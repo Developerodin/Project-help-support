@@ -1,3 +1,4 @@
+import { speechLanguage } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import logger from '../../platform/logger.js';
 
@@ -59,8 +60,11 @@ export async function createResponse(config, {
  * hears Hindi/Hinglish as Urdu and writes Arabic script, which then drags the
  * chat reply into Arabic. The prompt steers it; the script check catches a miss.
  */
-const LANGUAGE_HINT = 'The speaker talks about software tickets and projects in English, Hindi, '
-  + 'or Hinglish (Hindi mixed with English). Transcribe English and Hinglish in Latin script and Hindi in Devanagari.';
+/** Shows the transcriber the style we want: code-switched, Latin script, untranslated. */
+const HINGLISH_EXAMPLE = 'TES4-2 ka status kya hai? Isko Under Review mein move kar do, aur ek comment add karo ki testing ho gayi.';
+const LANGUAGE_HINT = 'A person talks about software tickets and projects in English, Hindi, or Hinglish, often '
+  + 'switching language mid-sentence. Write exactly what they say, word for word, and never translate. English and '
+  + `Hinglish go in Latin script, like: "${HINGLISH_EXAMPLE}" Only a fully Hindi sentence goes in Devanagari.`;
 const ARABIC_SCRIPT = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFC]/;
 
 /** Words of the app itself, so "discussion" isn't heard as "registration". */
@@ -85,7 +89,10 @@ const normalise = (text) => String(text).toLowerCase().replace(/[^\p{L}\p{N}]+/g
 export function isPromptEcho(text, prompt) {
   const said = normalise(text);
   if (said.split(' ').length < 4) return false; // "Board", "TES4-2": short real answers
-  return normalise(prompt).includes(said);
+  // The example is made of things people really say ("isko Under Review mein move
+  // kar do"), so only the example word for word counts as an echo of it.
+  if (said === normalise(HINGLISH_EXAMPLE)) return true;
+  return normalise(prompt.replace(HINGLISH_EXAMPLE, ' ')).includes(said);
 }
 
 async function transcribeOnce(config, audio, language, vocabulary) {
@@ -113,15 +120,37 @@ export async function transcribe(config, audio, { vocabulary } = {}) {
   return { text: await transcribeOnce(config, audio, 'hi', vocabulary), attempts: 2 };
 }
 
-/** Text to speech; returns an mp3 Buffer. */
-export async function speak(config, text) {
+/**
+ * How the voice should sound, the same for every clip of a reply (it is voiced
+ * in two parts; without this each part can come out at its own pace and pitch).
+ */
+const STEADY = 'Speak in a calm, steady, friendly tone at an even, moderate pace and a constant volume, like a '
+  + 'helpful teammate. No dramatic emphasis, no sudden pitch changes, no rushing at the end. Read ticket ids like '
+  + 'TES4-2 letter by letter: "T E S 4 dash 2".';
+
+/** Each language gets its own voice and accent. */
+const VOICE_STYLE = {
+  en: `${STEADY} Use a clear, neutral English accent.`,
+  hi: `${STEADY} Speak as a native Hindi speaker from North India, with a natural Hindi accent and intonation. `
+    + 'For Hinglish, keep the English words in the flow the way people in India say them, not with a foreign accent.',
+};
+
+/**
+ * Text to speech; returns an mp3 Buffer. `language` ('hi' or 'en') picks the
+ * voice and accent; decide it once per reply so its parts sound alike.
+ */
+export async function speak(config, text, { language = speechLanguage(text) } = {}) {
+  const lang = language === 'hi' ? 'hi' : 'en';
+  const voice = lang === 'hi' ? config.assistant.speechVoiceHindi || config.assistant.speechVoice : config.assistant.speechVoice;
   const res = await call(config, '/audio/speech', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: config.assistant.speechModel,
-      voice: config.assistant.speechVoice,
+      voice,
       input: text,
+      // Only the gpt-4o speech models take style instructions; tts-1 would reject them.
+      ...(/^gpt-4o/.test(config.assistant.speechModel) ? { instructions: VOICE_STYLE[lang] } : {}),
       response_format: 'mp3',
     }),
   });

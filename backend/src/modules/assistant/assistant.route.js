@@ -37,7 +37,11 @@ const chatSchema = {
 };
 
 const speechSchema = {
-  body: Joi.object({ text: Joi.string().trim().min(1).max(2000).required() }),
+  body: Joi.object({
+    text: Joi.string().trim().min(1).max(2000).required(),
+    // The reply's language, decided once for the whole reply so its parts share a voice.
+    language: Joi.string().valid('hi', 'en'),
+  }),
 };
 
 /**
@@ -145,7 +149,7 @@ export default function assistantRoutes(config) {
   router.post('/speech', requireAssistant(config), voiceLimiter, validate(speechSchema), async (req, res, next) => {
     try {
       await checkAllowance(config, req.user);
-      const audio = await speak(config, req.body.text);
+      const audio = await speak(config, req.body.text, req.body.language ? { language: req.body.language } : {});
       await recordUsage(config, req.user, { speechChars: req.body.text.length });
       res.set('Content-Type', 'audio/mpeg').send(audio);
     } catch (err) {

@@ -3,8 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 const MAX_MS = 60_000;
-/** Silence after speech that ends a turn. Long enough for a breath between phrases. */
-const END_SILENCE_MS = 1200;
+/**
+ * Silence after speech that ends a turn: long enough for a thinking pause
+ * mid-sentence (common when switching between Hindi and English), short
+ * enough to still feel quick.
+ */
+const END_SILENCE_MS = 1600;
 /** No speech at all for this long ends the recording with nothing. */
 const NO_SPEECH_MS = 8000;
 /** RMS level treated as speech. ponytail: fixed threshold; a noisy room may need calibration. */
