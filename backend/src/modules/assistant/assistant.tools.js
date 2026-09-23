@@ -103,10 +103,47 @@ const PROPOSE_STAGE = fn(
   },
 );
 
+/**
+ * Pages the assistant may open. Hrefs are built here from fixed values, so the
+ * model can never send the browser to an arbitrary URL. Pages the user lacks
+ * access to are still stopped by the app's route guard.
+ */
+const DESTINATIONS = Object.freeze({
+  tickets: { path: '/tickets', label: 'Tickets' },
+  board: { path: '/tickets/board', label: 'Board' },
+  analytics: { path: '/tickets/analytics', label: 'Analytics' },
+  new_ticket: { path: '/tickets/new', label: 'New ticket' },
+  ticket: { path: '/tickets', label: 'Ticket' },
+  notifications: { path: '/notifications', label: 'Notifications' },
+  notification_settings: { path: '/settings/notifications', label: 'Notification settings' },
+  projects: { path: '/projects', label: 'Projects' },
+  teams: { path: '/teams', label: 'Teams' },
+  users: { path: '/users', label: 'Users' },
+  profile: { path: '/profile', label: 'Profile' },
+});
+
+const NAVIGATE = fn(
+  'navigate',
+  'Open a page for the user right away: go to a page, open a ticket, or show a filtered ticket list. '
+    + 'Filters and view apply only to destination "tickets"; ticket_id only to "ticket". Use null for the rest.',
+  {
+    destination: { type: 'string', enum: Object.keys(DESTINATIONS) },
+    ticket_id: nullable(TICKET_ID),
+    view: nullableEnum(['table', 'modules']),
+    query: nullable({ type: 'string' }),
+    stage: nullableEnum(STAGE_KEYS),
+    priority: nullableEnum(PRIORITIES),
+    module: nullable({ type: 'string', description: 'Exact module label.' }),
+    scope: nullableEnum(['assigned', 'reported', 'unassigned']),
+    overdue: nullable({ type: 'boolean' }),
+    blocked: nullable({ type: 'boolean' }),
+  },
+);
+
 /** Tools offered to this user. Proposals they could never confirm aren't offered. */
 export function toolsFor(user, permissionContext) {
   const external = isExternalUser(user);
-  const tools = [SEARCH_TICKETS, GET_TICKET, LIST_PROJECTS];
+  const tools = [SEARCH_TICKETS, GET_TICKET, LIST_PROJECTS, NAVIGATE];
   if (external || can(user, 'tickets.create', permissionContext)) tools.push(PROPOSE_CREATE);
   if (!external && can(user, 'tickets.edit', permissionContext)) tools.push(PROPOSE_UPDATE);
   tools.push(PROPOSE_STAGE);
@@ -191,6 +228,34 @@ const HANDLERS = {
         pages: (module.pages || []).map((page) => page.label),
       })),
     }));
+  },
+
+  async navigate(args, ctx) {
+    const destination = DESTINATIONS[args.destination];
+    if (!destination) throw new ToolError(`Unknown destination ${args.destination}.`);
+    let href = destination.path;
+    let { label } = destination;
+    if (args.destination === 'ticket') {
+      if (!args.ticket_id) throw new ToolError('Say which ticket to open.');
+      const ticket = await getTicket(ctx.user, args.ticket_id, ctx.permissionContext);
+      href = `/tickets?ticket=${encodeURIComponent(ticket.ticketId)}`;
+      label = ticket.ticketId;
+    } else if (args.destination === 'tickets') {
+      // Same param names the ticket list reads from its URL (ticket-list-query.js).
+      const params = new URLSearchParams();
+      if (args.view === 'modules') params.set('view', 'modules');
+      if (args.query) params.set('q', args.query);
+      if (args.stage) params.set('status', args.stage);
+      if (args.priority) params.set('priority', args.priority);
+      if (args.module) params.set('module', args.module);
+      if (args.scope) params.set('scope', args.scope);
+      if (args.overdue) params.set('overdue', '1');
+      if (args.blocked) params.set('blocked', '1');
+      const search = params.toString();
+      if (search) href = `${href}?${search}`;
+    }
+    ctx.actions.push({ id: randomUUID(), type: 'navigate', href, label });
+    return { status: 'opened', page: label };
   },
 
   async propose_create_ticket(args, ctx) {

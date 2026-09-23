@@ -4909,6 +4909,19 @@ body:has(.assistant-fab) .page{ padding-bottom:96px; } /* keep the pager clear o
 }
 @keyframes assistant-pulse{ 0%, 100%{ box-shadow:0 0 0 0 var(--alarm-wash); } 50%{ box-shadow:0 0 0 6px var(--alarm-wash); } }
 
+/* Hands-free: replaces the composer while a spoken conversation runs. */
+.assistant-handsfree{ display:flex; align-items:center; gap:8px; min-height:56px; padding:8px 12px;
+  border-top:1px solid var(--rule); font-size:0.875rem; color:var(--ink-2); }
+.assistant-handsfree .spacer{ flex:1; }
+.assistant-handsfree-hint{ font-size:0.75rem; color:var(--ink-3); }
+.assistant-handsfree-dot{ width:10px; height:10px; border-radius:50%; background:var(--ink-3); flex:none; }
+.assistant-handsfree-dot.is-live{ background:var(--alarm); }
+@media (prefers-reduced-motion: no-preference){
+  .assistant-handsfree-dot.is-live{ animation:assistant-pulse 1.4s ease-in-out infinite; }
+}
+.assistant-empty kbd{ font-family:var(--mono); font-size:0.75rem; padding:1px 5px; border:1px solid var(--rule);
+  border-bottom-width:2px; border-radius:var(--r); background:var(--panel); color:var(--ink); }
+
 /* Phones: a bottom sheet, 16px input so iOS doesn't zoom on focus. */
 @media (max-width:560px){
   .assistant-panel{ right:0; bottom:0; width:100vw; height:min(88dvh, 100dvh - 56px);

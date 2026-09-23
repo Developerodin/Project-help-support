@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { stageLabel } from '@pms/shared';
 import Icon from '../icons.jsx';
 import {
@@ -11,13 +12,13 @@ import {
   createTicket, getTicket, patchTicket, transitionTicket,
 } from '@/shared/api/tickets.js';
 import { friendlyTransitionError, normalizeApiError } from '@/shared/lib/api-error.js';
+import { useVoiceRecorder, voiceErrorMessage } from './use-voice-recorder.js';
 
 /** Turns sent per request; the server caps at 30. */
 const HISTORY_LIMIT = 20;
-const MAX_RECORDING_MS = 60_000;
 const SPEAK_KEY = 'assistant.speak';
 const TICKET_ID = /\b([A-Z][A-Z0-9]{1,9}-\d+)\b/g;
-const SUGGESTIONS = ['What is overdue right now?', 'Show my open tickets', 'How do I move a ticket to QA?'];
+const SUGGESTIONS = ['What is overdue right now?', 'Open the board', 'How do I move a ticket to QA?'];
 
 /** Splits text so ticket ids (WEB-55) can render as links to the ticket drawer. */
 export function splitTicketIds(text) {
@@ -120,6 +121,18 @@ function ActionCard({ action, onConfirm, onDismiss }) {
   );
 }
 
+/** Spoken answers to a waiting draft, and "stop" for hands-free. Anything else goes to the model. */
+export function matchVoiceCommand(text) {
+  const said = String(text).toLowerCase().replace(/[.,!?]/g, '').trim();
+  if (/^(yes|yeah|yep|confirm|confirm it|confirmed|do it|go ahead|ok|okay|sure)( please)?$/.test(said)) return 'confirm';
+  if (/^(no|nope|cancel|cancel it|never mind|nevermind|don't|do not)$/.test(said)) return 'cancel';
+  if (/^(stop|stop listening|goodbye|bye|that's all|that is all|thanks that's all|thank you that's all)$/.test(said)) return 'stop';
+  return null;
+}
+
+/** Push-to-talk chord: hold Ctrl+Alt+Space (Ctrl+Option+Space on a Mac). */
+export const isTalkShortcut = (event) => event.code === 'Space' && event.ctrlKey && event.altKey;
+
 function readSpeakPref() {
   try {
     return window.localStorage.getItem(SPEAK_KEY) === '1';
@@ -129,21 +142,25 @@ function readSpeakPref() {
 }
 
 export default function AssistantWidget() {
+  const router = useRouter();
   const [enabled, setEnabled] = useState(false);
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
   const [speakOn, setSpeakOn] = useState(false);
+  const [handsFree, setHandsFree] = useState(false);
+  const { recording, record, stop: stopRecording } = useVoiceRecorder();
 
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
   const speakOnRef = useRef(speakOn);
   speakOnRef.current = speakOn;
-  const recorderRef = useRef(null);
+  const handsFreeRef = useRef(false);
+  const pushToTalk = useRef(false);
   const audioRef = useRef(null);
   const logRef = useRef(null);
   const inputRef = useRef(null);
@@ -164,40 +181,53 @@ export default function AssistantWidget() {
   }, [messages, busy]);
 
   useEffect(() => {
-    if (open) inputRef.current?.focus();
-  }, [open]);
+    if (open && !handsFree) inputRef.current?.focus();
+  }, [open, handsFree]);
 
   const stopAudio = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
     audio.pause();
-    URL.revokeObjectURL(audio.src);
-    audioRef.current = null;
+    audio.onended?.(); // settles a waiting speak() and frees the blob URL
   }, []);
 
-  // Release the mic and any playing reply when the widget goes away.
-  useEffect(() => () => {
-    recorderRef.current?.stream?.getTracks().forEach((track) => track.stop());
-    stopAudio();
-  }, [stopAudio]);
+  useEffect(() => stopAudio, [stopAudio]);
 
-  const play = useCallback(async (text) => {
+  /** Reads text aloud; resolves when playback ends, is stopped, or fails. */
+  const speak = useCallback(async (text) => {
     stopAudio();
+    let blob;
     try {
-      const blob = await speakText(text.slice(0, 2000));
-      if (!speakOnRef.current) return; // turned off while the audio was generating
-      const audio = new Audio(URL.createObjectURL(blob));
-      audio.onended = stopAudio;
-      audioRef.current = audio;
-      await audio.play();
+      blob = await speakText(text.slice(0, 2000));
     } catch {
-      // Reading aloud is a bonus; the text reply is already on screen.
+      return; // reading aloud is a bonus; the text is already on screen
     }
+    if (!speakOnRef.current && !handsFreeRef.current) return; // switched off meanwhile
+    const audio = new Audio(URL.createObjectURL(blob));
+    audioRef.current = audio;
+    setSpeaking(true);
+    await new Promise((resolve) => {
+      audio.onended = () => {
+        audio.onended = null;
+        audio.onerror = null;
+        if (audioRef.current === audio) audioRef.current = null;
+        URL.revokeObjectURL(audio.src);
+        setSpeaking(false);
+        resolve();
+      };
+      audio.onerror = audio.onended;
+      audio.play().catch(() => audio.onended?.());
+    });
   }, [stopAudio]);
 
+  const updateAction = (id, patch) => setMessages((prev) => prev.map((message) => (message.actions
+    ? { ...message, actions: message.actions.map((action) => (action.id === id ? { ...action, ...patch } : action)) }
+    : message)));
+
+  /** Sends a user turn and runs any navigation right away. Resolves with the reply, or null on failure. */
   const send = useCallback(async (text) => {
     const content = text.trim();
-    if (!content) return;
+    if (!content) return null;
     const next = [...messagesRef.current, { role: 'user', content }];
     setMessages(next);
     setInput('');
@@ -209,98 +239,181 @@ export default function AssistantWidget() {
         .slice(-HISTORY_LIMIT)
         .map(({ role, content: body }) => ({ role, content: body.slice(0, 4000) }));
       const { reply, actions = [] } = await sendAssistantMessage(history);
-      const fallback = actions.length ? 'Review the draft below.' : 'Sorry, I don\'t have an answer for that.';
+      const drafts = actions.filter((action) => action.type !== 'navigate');
+      const answer = reply || (drafts.length ? 'Review the draft below.' : 'Sorry, I don\'t have an answer for that.');
       setMessages((prev) => [...prev, {
         role: 'assistant',
-        content: reply || fallback,
-        actions: actions.map((action) => ({ ...action, status: 'pending' })),
+        content: answer,
+        actions: drafts.map((action) => ({ ...action, status: 'pending' })),
       }]);
-      if (speakOnRef.current && reply) play(reply);
+      const destination = actions.find((action) => action.type === 'navigate');
+      if (destination) {
+        router.push(destination.href);
+        // On a phone the sheet covers the page, so get out of the way (unless talking hands-free).
+        if (!handsFreeRef.current && window.matchMedia?.('(max-width: 560px)').matches) setOpen(false);
+      }
+      return answer;
     } catch (err) {
       setError(normalizeApiError(err)?.message || 'The assistant could not answer. Try again.');
+      return null;
     } finally {
       setBusy(false);
     }
-  }, [play]);
+  }, [router]);
 
-  const updateAction = (id, patch) => setMessages((prev) => prev.map((message) => (message.actions
-    ? { ...message, actions: message.actions.map((action) => (action.id === id ? { ...action, ...patch } : action)) }
-    : message)));
-
-  const confirmAction = async (action) => {
+  /** Applies or rejects a draft. Resolves with a short sentence saying what happened. */
+  const resolveDraft = useCallback(async (action, confirm) => {
+    if (!confirm) {
+      updateAction(action.id, { status: 'dismissed', error: null });
+      return 'Cancelled.';
+    }
     updateAction(action.id, { status: 'busy', error: null });
     try {
       const outcome = await applyAction(action);
       updateAction(action.id, { status: 'done' });
       // Recorded as an assistant turn so the model knows the change landed.
       setMessages((prev) => [...prev, { role: 'assistant', content: outcome }]);
+      return outcome;
     } catch (err) {
       const message = (action.type === 'stage_change'
         ? friendlyTransitionError(err)
-        : normalizeApiError(err))?.message;
-      updateAction(action.id, { status: 'pending', error: message || 'That didn\'t work. Try again.' });
+        : normalizeApiError(err))?.message || 'That didn\'t work. Try again.';
+      updateAction(action.id, { status: 'pending', error: message });
+      return message;
     }
-  };
+  }, []);
 
-  const startRecording = async () => {
-    setError(null);
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      setError('Voice input isn\'t supported in this browser.');
-      return;
+  /**
+   * Everything the user says or types lands here. "Confirm"/"cancel" answers
+   * the waiting draft locally when there is exactly one, so a voice user never
+   * has to click; anything else is a normal chat turn.
+   * Resolves with text worth reading aloud, 'stop', or null.
+   */
+  const handleUtterance = useCallback(async (text) => {
+    const command = matchVoiceCommand(text);
+    if (command === 'stop') return 'stop';
+    const waiting = messagesRef.current.flatMap((message) => message.actions || [])
+      .filter((action) => action.status === 'pending');
+    if ((command === 'confirm' || command === 'cancel') && waiting.length === 1) {
+      setMessages((prev) => [...prev, { role: 'user', content: text.trim() }]);
+      return resolveDraft(waiting[0], command === 'confirm');
     }
-    let stream;
+    return send(text);
+  }, [resolveDraft, send]);
+
+  /** Recording to text. '' means nothing intelligible; null means the request failed. */
+  const transcribe = useCallback(async (blob) => {
+    setTranscribing(true);
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch {
-      setError('Microphone access is blocked. Allow it in your browser settings to talk to the assistant.');
+      return (await transcribeAudio(blob)).text?.trim() || '';
+    } catch (err) {
+      setError(normalizeApiError(err)?.message || 'Could not understand the recording.');
+      return null;
+    } finally {
+      setTranscribing(false);
+    }
+  }, []);
+
+  /** One spoken turn (mic button or push-to-talk): listen, answer, read aloud if enabled. */
+  const talkOnce = useCallback(async ({ autoStop }) => {
+    setError(null);
+    stopAudio();
+    let blob;
+    try {
+      blob = await record({ autoStop });
+    } catch (err) {
+      setError(voiceErrorMessage(err));
       return;
     }
-    const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus']
-      .find((type) => MediaRecorder.isTypeSupported?.(type));
-    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-    const chunks = [];
-    const limit = window.setTimeout(() => recorder.state === 'recording' && recorder.stop(), MAX_RECORDING_MS);
-    recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
-    recorder.onstop = async () => {
-      window.clearTimeout(limit);
-      stream.getTracks().forEach((track) => track.stop());
-      recorderRef.current = null;
-      setRecording(false);
-      const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
-      if (blob.size < 1000) return; // a tap, not speech
-      setTranscribing(true);
+    if (!blob) return;
+    const text = await transcribe(blob);
+    if (text === '') setError('I didn\'t catch that. Try again.');
+    if (!text) return;
+    const answer = await handleUtterance(text);
+    if (answer && answer !== 'stop' && speakOnRef.current) await speak(answer);
+  }, [handleUtterance, record, speak, stopAudio, transcribe]);
+
+  const endHandsFree = useCallback(() => {
+    handsFreeRef.current = false;
+    setHandsFree(false);
+    stopRecording();
+    stopAudio();
+  }, [stopAudio, stopRecording]);
+
+  /** Listen, answer out loud, listen again: until the user ends it, says "stop", or goes quiet. */
+  const startHandsFree = useCallback(async () => {
+    handsFreeRef.current = true;
+    setHandsFree(true);
+    setError(null);
+    stopAudio();
+    while (handsFreeRef.current) {
+      let blob;
       try {
-        const { text } = await transcribeAudio(blob);
-        if (text) send(text);
-        else setError('I didn\'t catch that. Try again.');
+        // Sequential on purpose: each turn waits for the previous answer.
+        blob = await record({ autoStop: true });
       } catch (err) {
-        setError(normalizeApiError(err)?.message || 'Could not understand the recording.');
-      } finally {
-        setTranscribing(false);
+        setError(voiceErrorMessage(err));
+        break;
+      }
+      if (!handsFreeRef.current) break;
+      if (!blob) {
+        setError('Hands-free ended because I didn\'t hear anything.');
+        break;
+      }
+      const text = await transcribe(blob);
+      if (text === null) break;
+      if (!text || !handsFreeRef.current) continue;
+      const answer = await handleUtterance(text);
+      if (answer === 'stop' || answer === null) break;
+      // Listening resumes only after playback ends, so the mic never hears the reply.
+      if (handsFreeRef.current) await speak(answer);
+    }
+    endHandsFree();
+  }, [endHandsFree, handleUtterance, record, speak, stopAudio, transcribe]);
+
+  // Push-to-talk from anywhere in the app: hold the chord, release to send.
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const onDown = (event) => {
+      if (!isTalkShortcut(event)) return;
+      event.preventDefault();
+      if (event.repeat || pushToTalk.current || handsFreeRef.current || busy || transcribing) return;
+      pushToTalk.current = true;
+      setOpen(true);
+      talkOnce({ autoStop: false });
+    };
+    const onUp = (event) => {
+      if (!pushToTalk.current) return;
+      if (event.code === 'Space' || event.key === 'Control' || event.key === 'Alt') {
+        pushToTalk.current = false;
+        stopRecording();
       }
     };
-    recorderRef.current = recorder;
-    recorder.start();
-    setRecording(true);
-  };
+    window.addEventListener('keydown', onDown);
+    window.addEventListener('keyup', onUp);
+    return () => {
+      window.removeEventListener('keydown', onDown);
+      window.removeEventListener('keyup', onUp);
+    };
+  }, [enabled, busy, transcribing, talkOnce, stopRecording]);
 
-  const toggleRecording = () => {
-    if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
-    else startRecording();
+  const toggleMic = () => {
+    if (recording) stopRecording();
+    else talkOnce({ autoStop: true });
   };
 
   const toggleSpeak = () => {
     const next = !speakOn;
     setSpeakOn(next);
-    if (!next) stopAudio();
+    if (!next && !handsFreeRef.current) stopAudio();
     try {
       window.localStorage.setItem(SPEAK_KEY, next ? '1' : '0');
     } catch { /* storage blocked: preference lasts this visit */ }
   };
 
   const close = () => {
-    if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
-    stopAudio();
+    endHandsFree();
+    stopRecording();
     setOpen(false);
     window.setTimeout(() => fabRef.current?.focus(), 0);
   };
@@ -309,15 +422,27 @@ export default function AssistantWidget() {
 
   if (!open) {
     return (
-      <button ref={fabRef} type="button" className="assistant-fab" aria-label="Open assistant" onClick={() => setOpen(true)}>
+      <button
+        ref={fabRef}
+        type="button"
+        className="assistant-fab"
+        aria-label="Open assistant"
+        title="Assistant (hold Ctrl+Alt+Space to talk)"
+        onClick={() => setOpen(true)}
+      >
         <Icon name="chat" size={22} aria-hidden="true" />
       </button>
     );
   }
 
-  const placeholder = recording ? 'Listening… tap stop when you\'re done'
+  const voiceStatus = recording ? 'Listening…'
     : transcribing ? 'Transcribing…'
-      : 'Ask about tickets, or how something works';
+      : busy ? 'Thinking…'
+        : speaking ? 'Speaking…'
+          : 'Hands-free';
+  const placeholder = recording ? 'Listening… just stop talking when you\'re done'
+    : transcribing ? 'Transcribing…'
+      : 'Ask about tickets, or say where to go';
 
   return (
     <section
@@ -330,6 +455,17 @@ export default function AssistantWidget() {
       <header className="assistant-head">
         <h2 id="assistant-title">Assistant</h2>
         <span className="spacer" />
+        <button
+          type="button"
+          className="assistant-icon-btn"
+          aria-pressed={handsFree}
+          aria-label="Hands-free conversation"
+          title={handsFree ? 'End hands-free' : 'Hands-free: talk back and forth without tapping'}
+          disabled={!handsFree && (busy || transcribing || recording)}
+          onClick={() => (handsFree ? endHandsFree() : startHandsFree())}
+        >
+          <Icon name="handsfree" size={18} aria-hidden="true" />
+        </button>
         <button
           type="button"
           className="assistant-icon-btn"
@@ -348,10 +484,13 @@ export default function AssistantWidget() {
       <div className="assistant-log" ref={logRef} aria-live="polite">
         {messages.length === 0 ? (
           <div className="assistant-empty">
-            <p>Ask about your tickets, file a new one, or ask how something works. Tap the mic to talk.</p>
+            <p>
+              Ask about your tickets, file a new one, or say where to go, like &ldquo;open the board&rdquo; or
+              &ldquo;show overdue tickets&rdquo;. Tap the mic to talk, or hold <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd> anywhere.
+            </p>
             <div className="assistant-suggestions">
               {SUGGESTIONS.map((suggestion) => (
-                <button key={suggestion} type="button" className="btn btn-sm" onClick={() => send(suggestion)}>
+                <button key={suggestion} type="button" className="btn btn-sm" onClick={() => handleUtterance(suggestion)}>
                   {suggestion}
                 </button>
               ))}
@@ -366,8 +505,8 @@ export default function AssistantWidget() {
               <ActionCard
                 key={action.id}
                 action={action}
-                onConfirm={() => confirmAction(action)}
-                onDismiss={() => updateAction(action.id, { status: 'dismissed', error: null })}
+                onConfirm={() => resolveDraft(action, true)}
+                onDismiss={() => resolveDraft(action, false)}
               />
             ))}
           </div>
@@ -381,43 +520,54 @@ export default function AssistantWidget() {
 
       {error ? <p className="assistant-error" role="alert">{error}</p> : null}
 
-      <form
-        className="assistant-compose"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!busy) send(input);
-        }}
-      >
-        <button
-          type="button"
-          className={`assistant-icon-btn assistant-mic${recording ? ' is-recording' : ''}`}
-          aria-pressed={recording}
-          aria-label={recording ? 'Stop recording and send' : 'Speak your message'}
-          disabled={busy || transcribing}
-          onClick={toggleRecording}
-        >
-          <Icon name={recording ? 'stop' : 'mic'} size={18} aria-hidden="true" />
-        </button>
-        <textarea
-          ref={inputRef}
-          rows={1}
-          value={input}
-          maxLength={4000}
-          placeholder={placeholder}
-          aria-label="Message the assistant"
-          disabled={recording || transcribing}
-          onChange={(event) => setInput(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault();
-              if (!busy) send(input);
-            }
+      {handsFree ? (
+        <div className="assistant-handsfree" role="status">
+          <span className={`assistant-handsfree-dot${recording ? ' is-live' : ''}`} aria-hidden="true" />
+          <span>{voiceStatus}</span>
+          <span className="spacer" />
+          <span className="assistant-handsfree-hint">Say &ldquo;stop&rdquo; to end</span>
+          <button type="button" className="btn btn-sm" onClick={endHandsFree}>End</button>
+        </div>
+      ) : (
+        <form
+          className="assistant-compose"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!busy) handleUtterance(input);
           }}
-        />
-        <button type="submit" className="assistant-icon-btn assistant-send" aria-label="Send" disabled={busy || !input.trim()}>
-          <Icon name="send" size={18} aria-hidden="true" />
-        </button>
-      </form>
+        >
+          <button
+            type="button"
+            className={`assistant-icon-btn assistant-mic${recording ? ' is-recording' : ''}`}
+            aria-pressed={recording}
+            aria-label={recording ? 'Stop recording and send' : 'Speak your message'}
+            title="Tap and speak; it sends when you stop talking"
+            disabled={busy || transcribing}
+            onClick={toggleMic}
+          >
+            <Icon name={recording ? 'stop' : 'mic'} size={18} aria-hidden="true" />
+          </button>
+          <textarea
+            ref={inputRef}
+            rows={1}
+            value={input}
+            maxLength={4000}
+            placeholder={placeholder}
+            aria-label="Message the assistant"
+            disabled={recording || transcribing}
+            onChange={(event) => setInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                if (!busy) handleUtterance(input);
+              }
+            }}
+          />
+          <button type="submit" className="assistant-icon-btn assistant-send" aria-label="Send" disabled={busy || !input.trim()}>
+            <Icon name="send" size={18} aria-hidden="true" />
+          </button>
+        </form>
+      )}
     </section>
   );
 }
