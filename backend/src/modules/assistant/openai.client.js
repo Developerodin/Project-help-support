@@ -48,14 +48,31 @@ export async function createResponse(config, { instructions, input, tools }) {
   return res.json();
 }
 
-/** Speech to text. `audio` is a multer file (buffer + mimetype). */
-export async function transcribe(config, audio) {
+/**
+ * Our users speak English, Hindi or Hinglish. Left to guess, the model often
+ * hears Hindi/Hinglish as Urdu and writes Arabic script, which then drags the
+ * chat reply into Arabic. The prompt steers it; the script check catches a miss.
+ */
+const LANGUAGE_HINT = 'The speaker talks about software tickets and projects in English, Hindi, '
+  + 'or Hinglish (Hindi mixed with English). Transcribe English and Hinglish in Latin script and Hindi in Devanagari.';
+const ARABIC_SCRIPT = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFC]/;
+
+async function transcribeOnce(config, audio, language) {
   const form = new FormData();
   form.append('file', new Blob([audio.buffer], { type: audio.mimetype }), audio.originalname || 'audio.webm');
   form.append('model', config.assistant.transcribeModel);
+  form.append('prompt', LANGUAGE_HINT);
+  if (language) form.append('language', language);
   const res = await call(config, '/audio/transcriptions', { method: 'POST', body: form });
   const data = await res.json();
   return String(data.text || '').trim();
+}
+
+/** Speech to text. `audio` is a multer file (buffer + mimetype). */
+export async function transcribe(config, audio) {
+  const text = await transcribeOnce(config, audio);
+  // Arabic script here means Hindi/Hinglish misheard as Urdu: redo it as Hindi.
+  return ARABIC_SCRIPT.test(text) ? transcribeOnce(config, audio, 'hi') : text;
 }
 
 /** Text to speech; returns an mp3 Buffer. */

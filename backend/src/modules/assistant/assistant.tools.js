@@ -190,6 +190,11 @@ const PROPOSE_STAGE = fn(
   },
 );
 
+/** The pages a client user has in the app; the rest are internal-only. */
+const CLIENT_DESTINATIONS = new Set([
+  'tickets', 'board', 'new_ticket', 'ticket', 'notifications', 'notification_settings', 'profile',
+]);
+
 /**
  * Pages the assistant may open. Hrefs are built here from fixed values, so the
  * model can never send the browser to an arbitrary URL. Pages the user lacks
@@ -524,6 +529,9 @@ const HANDLERS = {
   async navigate(args, ctx) {
     const destination = DESTINATIONS[args.destination];
     if (!destination) throw new ToolError(`Unknown destination ${args.destination}.`);
+    if (isExternalUser(ctx.user) && !CLIENT_DESTINATIONS.has(args.destination)) {
+      throw new ToolError('That page is only for the internal team.');
+    }
     let href = destination.path;
     let { label } = destination;
     if (args.destination === 'ticket') {
