@@ -4846,6 +4846,8 @@ body:has(.assistant-fab) .page{ padding-bottom:96px; } /* keep the pager clear o
 }
 .assistant-head{ display:flex; align-items:center; gap:4px; padding:8px 8px 8px 16px; border-bottom:1px solid var(--rule); }
 .assistant-head h2{ margin:0; font-size:0.9375rem; font-weight:600; }
+.assistant-title{ display:flex; flex-direction:column; min-width:0; }
+.assistant-status{ min-height:1.1em; font-size:0.75rem; color:var(--ink-3); }
 .assistant-head .spacer{ flex:1; }
 .assistant-icon-btn{
   display:inline-grid; place-items:center; width:40px; height:40px; flex:none;
@@ -4862,11 +4864,20 @@ body:has(.assistant-fab) .page{ padding-bottom:96px; } /* keep the pager clear o
 .assistant-empty p{ margin:0 0 10px; }
 .assistant-suggestions{ display:flex; flex-wrap:wrap; gap:6px; }
 .assistant-msg{ max-width:88%; font-size:0.875rem; line-height:1.5; }
-.assistant-msg > p{ margin:0; padding:8px 11px; border-radius:var(--r-lg); white-space:pre-wrap; overflow-wrap:anywhere; }
+/* A reply carrying a draft form gets the full width so the fields aren't cramped. */
+.assistant-msg:has(.assistant-action){ max-width:100%; width:100%; }
+.assistant-bubble{ padding:8px 11px; border-radius:var(--r-lg); overflow-wrap:anywhere; }
+.assistant-bubble p{ margin:0; }
+.assistant-bubble p + p,
+.assistant-bubble :is(ul, ol) + p,
+.assistant-bubble p + :is(ul, ol){ margin-top:6px; }
+.assistant-bubble :is(ul, ol){ margin:0; padding-left:1.2em; }
+.assistant-bubble li + li{ margin-top:2px; }
 .assistant-msg.is-user{ align-self:flex-end; }
-.assistant-msg.is-user > p{ background:var(--sig); color:var(--sig-ink); }
+.assistant-msg.is-user .assistant-bubble{ background:var(--sig); color:var(--sig-ink); }
 .assistant-msg.is-assistant{ align-self:flex-start; }
-.assistant-msg.is-assistant > p{ background:var(--panel); border:1px solid var(--rule); color:var(--ink); }
+.assistant-msg.is-assistant .assistant-bubble{ background:var(--panel); border:1px solid var(--rule); color:var(--ink); }
+.assistant-msg:has(.assistant-action) .assistant-bubble{ width:fit-content; max-width:88%; }
 .assistant-msg a{ color:inherit; font-family:var(--mono); font-weight:600; text-underline-offset:2px; }
 
 .assistant-typing{ display:flex; gap:4px; padding:12px; }
@@ -4881,7 +4892,8 @@ body:has(.assistant-fab) .page{ padding-bottom:96px; } /* keep the pager clear o
 .assistant-action{ margin-top:6px; padding:10px 12px; border:1px solid var(--sig-line); border-radius:var(--r-lg);
   background:var(--paper); font-size:0.8125rem; }
 .assistant-action.is-done,
-.assistant-action.is-dismissed{ border-color:var(--rule); opacity:0.75; }
+.assistant-action.is-dismissed,
+.assistant-action.is-replaced{ border-color:var(--rule); opacity:0.75; }
 .assistant-action-head{ margin:0 0 6px; font-weight:600; color:var(--ink); }
 .assistant-action dl{ margin:0; display:grid; gap:3px; }
 .assistant-action dl div{ display:grid; grid-template-columns:72px 1fr; gap:8px; }

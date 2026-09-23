@@ -45,6 +45,72 @@ function RichText({ text }) {
     : <Link key={index} href={`/tickets?ticket=${encodeURIComponent(part.ticketId)}`}>{part.ticketId}</Link>));
 }
 
+/** **bold** spans, then ticket-id links inside each piece. */
+function Inline({ text }) {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((piece, index) => (piece.startsWith('**') && piece.endsWith('**') && piece.length > 4
+    // Index keys are fine: pieces are positional and never reorder.
+    ? <strong key={index}><RichText text={piece.slice(2, -2)} /></strong>
+    : <RichText key={index} text={piece} />));
+}
+
+const LIST_ITEM = /^\s*(?:[-*•]|\d+[.)])\s+/;
+
+/**
+ * Just enough formatting for chat replies: paragraphs, bullet or numbered
+ * lists, bold. Anything else stays plain text (never HTML), so model output
+ * can't inject markup.
+ */
+export function MessageText({ text }) {
+  const blocks = [];
+  for (const line of String(text).split('\n')) {
+    if (!line.trim()) continue;
+    const item = LIST_ITEM.test(line);
+    const ordered = /^\s*\d/.test(line);
+    const last = blocks[blocks.length - 1];
+    if (item && last?.type === 'list' && last.ordered === ordered) last.items.push(line.replace(LIST_ITEM, ''));
+    else if (item) blocks.push({ type: 'list', ordered, items: [line.replace(LIST_ITEM, '')] });
+    else blocks.push({ type: 'p', text: line });
+  }
+  return blocks.map((block, index) => {
+    // Index keys are fine: blocks are positional and never reorder.
+    if (block.type === 'p') return <p key={index}><Inline text={block.text} /></p>;
+    const List = block.ordered ? 'ol' : 'ul';
+    return (
+      <List key={index}>
+        {block.items.map((item, itemIndex) => <li key={itemIndex}><Inline text={item} /></li>)}
+      </List>
+    );
+  });
+}
+
+const DRAFT_STATUS = {
+  pending: 'waiting for the user to confirm',
+  busy: 'being applied',
+  done: 'confirmed and applied',
+  dismissed: 'cancelled by the user',
+  replaced: 'replaced by a newer draft',
+};
+
+/**
+ * How a draft card reads to the model on later turns. Cards aren't chat text,
+ * so without this the model forgets its own drafts ("no draft was created").
+ * Carries the values as the user may have edited them.
+ */
+export function draftNote(action) {
+  const { heading, rows } = describeAction(action);
+  const details = rows.map(([label, value]) => `${label}: ${String(value).slice(0, 800)}`).join('; ');
+  return `[Draft "${heading}": ${details}. Status: ${DRAFT_STATUS[action.status] || action.status}]`;
+}
+
+/** Drafts with the same key are revisions of one another. */
+const draftKey = (action) => `${action.type}:${action.ticketId || action.clientId || ''}`;
+
+/** What the model sees for a past message: its text plus notes for any drafts. */
+export function historyText(message) {
+  const notes = (message.actions || []).map(draftNote);
+  return [message.content, ...notes].filter(Boolean).join('\n');
+}
+
 const FIELD_LABELS = { title: 'Title', priority: 'Priority', severity: 'Severity', category: 'Category', module: 'Module', page: 'Page' };
 
 /** Heading and rows for a drafted change, in the user's terms. */
@@ -332,6 +398,7 @@ function ActionCard({
       {action.error ? <p className="assistant-action-error" role="alert">{action.error}</p> : null}
       {action.status === 'done' ? <p className="assistant-action-note">Done</p> : null}
       {action.status === 'dismissed' ? <p className="assistant-action-note">Cancelled</p> : null}
+      {action.status === 'replaced' ? <p className="assistant-action-note">Replaced by the newer draft below</p> : null}
       {action.status === 'pending' || action.status === 'busy' ? (
         <div className="assistant-action-buttons">
           <button
@@ -385,6 +452,39 @@ function readSpeakPref() {
   }
 }
 
+const CHAT_KEY = 'assistant.chat';
+const KEPT_MESSAGES = 40;
+
+// ponytail: per-tab (sessionStorage), so a reload keeps the chat but a new tab
+// or sign-out starts fresh. Server-side history is the upgrade if people want
+// chats to follow them across devices.
+function readSavedChat() {
+  try {
+    const saved = JSON.parse(window.sessionStorage.getItem(CHAT_KEY));
+    if (!Array.isArray(saved)) return [];
+    // A reload interrupts anything mid-flight; let the user try it again.
+    return saved.map((message) => (message.actions
+      ? { ...message, actions: message.actions.map((action) => (action.status === 'busy' ? { ...action, status: 'pending' } : action)) }
+      : message));
+  } catch {
+    return [];
+  }
+}
+
+function saveChat(messages) {
+  try {
+    if (!messages.length) {
+      window.sessionStorage.removeItem(CHAT_KEY);
+      return;
+    }
+    // A picked logo file can't be stored; the user re-picks it after a reload.
+    const kept = messages.slice(-KEPT_MESSAGES).map((message) => (message.actions
+      ? { ...message, actions: message.actions.map(({ logoFile, ...action }) => action) }
+      : message));
+    window.sessionStorage.setItem(CHAT_KEY, JSON.stringify(kept));
+  } catch { /* storage full or blocked: the chat still works for this page */ }
+}
+
 export default function AssistantWidget() {
   const router = useRouter();
   const [enabled, setEnabled] = useState(false);
@@ -409,6 +509,7 @@ export default function AssistantWidget() {
   const logRef = useRef(null);
   const inputRef = useRef(null);
   const fabRef = useRef(null);
+  const restored = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -416,8 +517,14 @@ export default function AssistantWidget() {
       .then((status) => { if (!cancelled) setEnabled(Boolean(status?.enabled)); })
       .catch(() => { /* no assistant: leave the button hidden */ });
     setSpeakOn(readSpeakPref());
+    setMessages(readSavedChat());
+    restored.current = true;
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (restored.current) saveChat(messages);
+  }, [messages]);
 
   useEffect(() => {
     const log = logRef.current;
@@ -481,17 +588,30 @@ export default function AssistantWidget() {
       const history = next
         .filter((message) => message.content)
         .slice(-HISTORY_LIMIT)
-        .map(({ role, content: body }) => ({ role, content: body.slice(0, 4000) }));
+        .map((message) => ({ role: message.role, content: historyText(message).slice(0, 4000) }));
       const { reply, actions = [] } = await sendAssistantMessage(history);
       const files = actions.filter((action) => action.type === 'attachment');
       const drafts = actions.filter((action) => action.type !== 'navigate' && action.type !== 'attachment');
       const answer = reply || (drafts.length ? 'Review the draft below.' : 'Sorry, I don\'t have an answer for that.');
-      setMessages((prev) => [...prev, {
-        role: 'assistant',
-        content: answer,
-        files,
-        actions: drafts.map((action) => ({ ...action, status: 'pending' })),
-      }]);
+      // A new draft of the same thing is a revision: retire the older pending card
+      // so there is only ever one live version to confirm.
+      const revised = new Set(drafts.map(draftKey));
+      setMessages((prev) => [
+        ...prev.map((message) => (message.actions?.some((action) => action.status === 'pending' && revised.has(draftKey(action)))
+          ? {
+            ...message,
+            actions: message.actions.map((action) => (action.status === 'pending' && revised.has(draftKey(action))
+              ? { ...action, status: 'replaced', error: null }
+              : action)),
+          }
+          : message)),
+        {
+          role: 'assistant',
+          content: answer,
+          files,
+          actions: drafts.map((action) => ({ ...action, status: 'pending' })),
+        },
+      ]);
       const destination = actions.find((action) => action.type === 'navigate');
       if (destination) {
         router.push(destination.href);
@@ -675,6 +795,15 @@ export default function AssistantWidget() {
     window.setTimeout(() => fabRef.current?.focus(), 0);
   };
 
+  const startNewChat = () => {
+    endHandsFree();
+    stopAudio();
+    setMessages([]);
+    setInput('');
+    setError(null);
+    inputRef.current?.focus();
+  };
+
   if (!enabled) return null;
 
   if (!open) {
@@ -692,11 +821,11 @@ export default function AssistantWidget() {
     );
   }
 
-  const voiceStatus = recording ? 'Listening…'
+  const activity = recording ? 'Listening…'
     : transcribing ? 'Transcribing…'
       : busy ? 'Thinking…'
         : speaking ? 'Speaking…'
-          : 'Hands-free';
+          : null;
   const placeholder = recording ? 'Listening… just stop talking when you\'re done'
     : transcribing ? 'Transcribing…'
       : 'Ask about tickets, or say where to go';
@@ -710,8 +839,21 @@ export default function AssistantWidget() {
       onKeyDown={(event) => { if (event.key === 'Escape') close(); }}
     >
       <header className="assistant-head">
-        <h2 id="assistant-title">Assistant</h2>
+        <div className="assistant-title">
+          <h2 id="assistant-title">Assistant</h2>
+          <span className="assistant-status" aria-live="polite">{activity || (handsFree ? 'Hands-free' : '')}</span>
+        </div>
         <span className="spacer" />
+        <button
+          type="button"
+          className="assistant-icon-btn"
+          aria-label="New chat"
+          title="New chat"
+          disabled={!messages.length || busy}
+          onClick={startNewChat}
+        >
+          <Icon name="new-chat" size={18} aria-hidden="true" />
+        </button>
         <button
           type="button"
           className="assistant-icon-btn"
@@ -757,7 +899,7 @@ export default function AssistantWidget() {
         {messages.map((message, index) => (
           // Index keys are fine: the log only ever appends.
           <div key={index} className={`assistant-msg is-${message.role}`}>
-            <p><RichText text={message.content} /></p>
+            <div className="assistant-bubble"><MessageText text={message.content} /></div>
             {message.files?.length ? (
               <div className="assistant-files">
                 {message.files.map((file) => <FileButton key={file.id} file={file} />)}
@@ -786,7 +928,7 @@ export default function AssistantWidget() {
       {handsFree ? (
         <div className="assistant-handsfree" role="status">
           <span className={`assistant-handsfree-dot${recording ? ' is-live' : ''}`} aria-hidden="true" />
-          <span>{voiceStatus}</span>
+          <span>{activity || 'Hands-free'}</span>
           <span className="spacer" />
           <span className="assistant-handsfree-hint">Say &ldquo;stop&rdquo; to end</span>
           <button type="button" className="btn btn-sm" onClick={endHandsFree}>End</button>

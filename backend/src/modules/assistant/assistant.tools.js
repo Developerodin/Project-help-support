@@ -55,6 +55,10 @@ const SEARCH_TICKETS = fn(
     overdue: nullable({ type: 'boolean' }),
     blocked: nullable({ type: 'boolean' }),
     scope: nullableEnum(['assigned', 'reported', 'unassigned']),
+    new_reply: nullable({
+      type: 'boolean',
+      description: 'True for tickets with discussion replies this user has not read yet ("any new comments?").',
+    }),
   },
 );
 
@@ -275,6 +279,7 @@ function summarize(ticket) {
     due: day(ticket.estimatedResolutionAt),
     overdue: isTicketOverdue(ticket),
     blocked: Boolean(ticket.blocked),
+    unread_replies: Number(ticket.discussionUnreadCount) || 0,
   };
 }
 
@@ -329,6 +334,7 @@ const HANDLERS = {
     if (args.overdue) query.overdue = true;
     if (args.blocked) query.blocked = true;
     if (args.scope) query.scope = args.scope;
+    if (args.new_reply) query.newReply = true;
     const page = await listTickets(ctx.user, query, ctx.permissionContext);
     return { total: page.totalResults, shown: page.results.length, tickets: page.results.map(summarize) };
   },
