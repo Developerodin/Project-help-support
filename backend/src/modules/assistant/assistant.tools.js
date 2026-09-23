@@ -11,6 +11,8 @@ import { listClients } from '../clients/client.service.js';
 import { listTeams } from '../teams/team.service.js';
 import { listUsers } from '../users/user.service.js';
 import { listProjectTeamMembers } from '../projects/project-team-member.service.js';
+import { dashboard as analyticsDashboard } from '../tickets/analytics.service.js';
+import { ANALYTICS_ROLES } from '../tickets/analytics.access.js';
 
 /*
  * Every read runs through the same service call the REST API uses, with the
@@ -372,6 +374,25 @@ const SET_TICKET_FILTERS = fn(
   },
 );
 
+const BREAKDOWNS = ['severity', 'module', 'assignee', 'team', 'priority', 'category', 'environment', 'label'];
+
+const GET_ANALYTICS = fn(
+  'get_analytics',
+  'Run the Analytics page numbers for a project (or all projects): tickets per stage and lane, blocked and overdue, '
+    + 'estimate accuracy, reopens after QA, ticket age, lead and cycle time, time spent in each stage (and the '
+    + 'bottleneck), weekly created vs closed, and a breakdown by one dimension. Filters narrow the tickets counted.',
+  {
+    project_key: nullable({ type: 'string', description: 'Project key, e.g. WEB; null for all of the user\'s projects.' }),
+    breakdown: nullableEnum(BREAKDOWNS),
+    window_days: nullable({ type: 'integer', description: 'Days of throughput to count, 7 to 90 (default 30).' }),
+    stage: nullableEnum(STAGE_KEYS),
+    priority: nullableEnum(PRIORITIES),
+    severity: nullableEnum(SEVERITIES),
+    category: nullableEnum(CATEGORIES),
+    module: nullable({ type: 'string', description: 'Exact module label.' }),
+  },
+);
+
 const SWITCH_PROJECT = fn(
   'switch_project',
   'Change which project the app shows (the project switcher at the top), right away. '
@@ -402,6 +423,8 @@ export function toolsFor(user, permissionContext) {
   // Same gates as the REST routes these mirror; the user directory is admin-only there too.
   const admin = !external && hasAnyRole(user, ...ADMIN_ROLES);
   if (admin) tools.push(SEARCH_USERS);
+  // Same gate as the analytics REST routes (analytics.access.js).
+  if (!external && hasAnyRole(user, ...ANALYTICS_ROLES)) tools.push(GET_ANALYTICS);
   if (allowed('teams.view')) tools.push(LIST_TEAMS);
   if (allowed('clients.view')) tools.push(LIST_CLIENTS);
   if (allowed('projects.manage') && allowed('clients.view')) tools.push(PROPOSE_CREATE_PROJECT);
@@ -809,6 +832,52 @@ const HANDLERS = {
         : 'Those settings are already that way; nothing to change.');
     }
     return proposal(ctx, { type: 'notification_settings', settings, ...(args.restore_defaults ? { reset: true } : {}) });
+  },
+
+  async get_analytics(args, ctx) {
+    const project = args.project_key ? await projectByKey(ctx, args.project_key) : null;
+    const query = {
+      ...(project ? { project: String(project.id) } : {}),
+      ...(args.stage ? { status: args.stage } : {}),
+      ...(args.priority ? { priority: args.priority } : {}),
+      ...(args.severity ? { severity: args.severity } : {}),
+      ...(args.category ? { category: args.category } : {}),
+      ...(args.module ? { module: args.module } : {}),
+      trendGroupBy: 'week',
+      deliveryGroupBy: 'week',
+      windowDays: args.window_days ?? 30,
+      dimension: args.breakdown || 'severity',
+    };
+    const data = await analyticsDashboard(ctx.user, query);
+    const stages = (byStage) => Object.fromEntries(Object.entries(byStage)
+      .map(([stage, value]) => [stageLabel(stage), value]));
+    // Stages nobody has passed through yet say nothing; leave them out.
+    const timeInStage = Object.fromEntries(Object.entries(data.timeInStage.byStage)
+      .filter(([, value]) => value.count)
+      .map(([stage, value]) => [stageLabel(stage), value]));
+    return {
+      project: project ? `${project.name} (${project.key})` : 'All projects',
+      tickets: data.ticketCount,
+      ...(data.exceedsCeiling ? { note: `Over ${data.ceiling} tickets; numbers may be partial.` } : {}),
+      by_lane: data.overview.lanes,
+      by_stage: stages(data.overview.byStage),
+      blocker_or_critical: data.overview.blockerCritical,
+      estimates: data.overview.estimates.buckets,
+      reopened_after_qa: data.overview.reopens,
+      open_ticket_age_days: data.overview.aging,
+      delivery: {
+        window_days: data.delivery.windowDays,
+        ...data.delivery.summary,
+        lead_time: data.delivery.leadTime,
+        cycle_time: data.delivery.cycleTime,
+        live_and_closed_by_week: data.delivery.throughput,
+      },
+      time_in_stage_hours: timeInStage,
+      bottleneck: data.timeInStage.bottleneck ? stageLabel(data.timeInStage.bottleneck) : null,
+      // ponytail: last 12 weeks is plenty for a spoken summary; the page has the full chart.
+      created_vs_closed_by_week: data.trend.points.slice(-12),
+      breakdown: { by: data.drill.dimension, rows: data.drill.rows.slice(0, 15) },
+    };
   },
 
   async navigate(args, ctx) {
