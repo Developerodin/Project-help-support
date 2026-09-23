@@ -38,6 +38,22 @@ export function groupTicketsByModule(tickets, sort = 'name') {
     .sort(sort === 'urgency' ? byUrgency : byName);
 }
 
+/**
+ * Splits one module's tickets by page, A–Z with page-less tickets last.
+ * Returns a single unlabelled group when no ticket names a page.
+ */
+export function groupTicketsByPage(tickets) {
+  const pages = new Map();
+  for (const ticket of tickets) {
+    const key = ticket.page?.trim() || '';
+    if (!pages.has(key)) pages.set(key, []);
+    pages.get(key).push(ticket);
+  }
+  return [...pages.entries()]
+    .sort(([a], [b]) => (!a ? 1 : !b ? -1 : a.localeCompare(b)))
+    .map(([page, items]) => ({ page, tickets: items }));
+}
+
 /** Tickets per board lane (intake → done), in LANES order. */
 export function laneCounts(tickets) {
   const counts = Object.fromEntries(LANES.map((lane) => [lane.key, 0]));
@@ -89,7 +105,11 @@ function ModuleGroup({ group, collapsed, onToggle, onOpen, canCreate }) {
   const lanes = laneCounts(group.tickets);
   const open = count - lanes.find((lane) => lane.key === 'done').count;
   const hidden = count - PREVIEW_COUNT;
-  const visible = showAll ? group.tickets : group.tickets.slice(0, PREVIEW_COUNT);
+  const pages = groupTicketsByPage(group.tickets);
+  const labelled = pages.some((entry) => entry.page);
+  // The preview cap runs over page order, so "Show more" continues where the pages leave off.
+  const ordered = pages.flatMap((entry) => entry.tickets);
+  const shown = new Set(showAll ? ordered : ordered.slice(0, PREVIEW_COUNT));
   const named = group.module !== NO_MODULE;
 
   return (
@@ -134,26 +154,47 @@ function ModuleGroup({ group, collapsed, onToggle, onOpen, canCreate }) {
           </Link>
         ) : null}
       </div>
-      <div id={bodyId} className="lane-stack" hidden={collapsed}>
-        {visible.map((ticket) => (
-          <TicketCard
-            key={ticket.id || ticket.ticketId}
-            ticket={ticket}
-            onOpen={onOpen}
-            draggable={false}
-            quietPriority
-          />
-        ))}
-        {hidden > 0 ? (
-          <button
-            type="button"
-            className="btn btn-sm btn-ghost module-group-more"
-            aria-expanded={showAll}
-            onClick={() => setShowAll((value) => !value)}
-          >
-            {showAll ? 'Show fewer' : `Show ${hidden} more`}
-          </button>
-        ) : null}
+      {/* Always rendered so open/close can animate; collapsed content is made
+          visibility:hidden in CSS, which also drops it from tab order and the a11y tree. */}
+      <div id={bodyId} className="mg-body">
+        <div className="mg-body-clip">
+          <div className="lane-stack">
+            {pages.map((entry) => {
+              const cards = entry.tickets.filter((ticket) => shown.has(ticket)).map((ticket) => (
+                <TicketCard
+                  key={ticket.id || ticket.ticketId}
+                  ticket={ticket}
+                  onOpen={onOpen}
+                  draggable={false}
+                  quietPriority
+                />
+              ));
+              if (!cards.length) return null;
+              if (!labelled) return cards;
+              const name = entry.page || 'Other';
+              return (
+                <div key={name} className="mg-page" role="group" aria-label={`Page: ${name}`}>
+                  <p className="mg-page-head" aria-hidden="true">
+                    <span>{name}</span>
+                    <span className="mg-page-sep">-</span>
+                    <span className="num">{entry.tickets.length}</span>
+                  </p>
+                  {cards}
+                </div>
+              );
+            })}
+            {hidden > 0 ? (
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost module-group-more"
+                aria-expanded={showAll}
+                onClick={() => setShowAll((value) => !value)}
+              >
+                {showAll ? 'Show fewer' : `Show ${hidden} more`}
+              </button>
+            ) : null}
+          </div>
+        </div>
       </div>
     </section>
   );
@@ -162,9 +203,14 @@ function ModuleGroup({ group, collapsed, onToggle, onOpen, canCreate }) {
 export default function TicketModuleGroups({ tickets, onOpen, busy = false, canCreate = false }) {
   const [collapsed, setCollapsed] = useState(() => new Set());
   const [sort, setSort] = useState('name');
+  // Off until the stored state is restored, so remembered-collapsed modules
+  // don't visibly animate shut on page load.
+  const [animate, setAnimate] = useState(false);
   useEffect(() => {
     setCollapsed(new Set(readStored(COLLAPSED_KEY, [])));
     setSort(readStored(SORT_KEY, 'name') === 'urgency' ? 'urgency' : 'name');
+    const timer = window.setTimeout(() => setAnimate(true), 50);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const saveCollapsed = (next) => {
@@ -221,7 +267,12 @@ export default function TicketModuleGroups({ tickets, onOpen, busy = false, canC
           {allCollapsed ? 'Expand all' : 'Collapse all'}
         </button>
       </div>
-      <div className="module-grid" data-busy={busy ? 'true' : undefined} aria-busy={busy || undefined}>
+      <div
+        className="module-grid"
+        data-animate={animate ? 'true' : undefined}
+        data-busy={busy ? 'true' : undefined}
+        aria-busy={busy || undefined}
+      >
         {groups.map((group) => (
           <ModuleGroup
             key={group.module}

@@ -837,16 +837,13 @@ main{ min-width:0; display:flex; flex-direction:column; }
   cursor:pointer; transition:border-color 120ms ease-out, background 120ms ease-out; }
 .module-group:hover{ border-color:var(--ink-3); }
 .module-group .card-shell{ cursor:auto; }
-.module-group .lane-stack[hidden]{ display:none; } /* .lane-stack's display:flex beats the UA [hidden] rule */
 /* Nothing overdue or blocked: step back so the modules that need you stand out. */
 .module-group.is-calm{ background:var(--paper); border-color:var(--rule-soft); }
 .module-group.is-calm .module-group-name,
 .module-group.is-calm .mg-open{ color:var(--ink-3); }
 .module-group.is-calm:hover{ border-color:var(--ink-3); }
 
-.module-group-head{ display:flex; align-items:flex-start; gap:4px; margin:0 0 10px; padding-bottom:10px;
-  border-bottom:1px solid var(--rule); }
-.module-group.is-collapsed .module-group-head{ margin-bottom:0; padding-bottom:0; border-bottom-color:transparent; }
+.module-group-head{ display:flex; align-items:flex-start; gap:4px; }
 .module-group-head h3{ flex:1; min-width:0; margin:0; }
 .module-group-head button{
   display:flex; flex-direction:column; gap:8px; width:100%; min-height:44px; padding:2px;
@@ -873,6 +870,33 @@ main{ min-width:0; display:flex; flex-direction:column; }
   .module-group:hover .module-group-add,
   .module-group-add:focus-visible{ opacity:1; }
 }
+/* Open/close: grid rows 0fr <-> 1fr animate to the list's natural height with no
+   JS measuring. The clip pads 4px (offset by negative margin) so card focus rings
+   aren't cut off. Collapsed content goes visibility:hidden once the close finishes,
+   which removes it from tab order and the accessibility tree. */
+.mg-body{ display:grid; grid-template-rows:1fr; }
+.mg-body-clip{ min-height:0; overflow:hidden; margin:0 -4px -4px; padding:0 4px 4px; }
+.mg-body .lane-stack{ margin-top:10px; padding-top:10px; border-top:1px solid var(--rule); }
+.module-group.is-collapsed .mg-body{ grid-template-rows:0fr; }
+.module-group.is-collapsed .mg-body-clip{ visibility:hidden; }
+.module-group.is-collapsed .mg-body .lane-stack{ opacity:0; transform:translateY(-6px); }
+@media (prefers-reduced-motion: no-preference){
+  .module-grid[data-animate] .mg-body{ transition:grid-template-rows 260ms cubic-bezier(0.22, 1, 0.36, 1); }
+  .module-grid[data-animate] .mg-body .lane-stack{ transition:opacity 220ms ease-out, transform 260ms cubic-bezier(0.22, 1, 0.36, 1); }
+  .module-grid[data-animate] .mg-body-clip{ transition:visibility 0s; }
+  /* Closing runs a little faster than opening and hides only once it's done. */
+  .module-grid[data-animate] .module-group.is-collapsed .mg-body{ transition-duration:200ms; }
+  .module-grid[data-animate] .module-group.is-collapsed .mg-body .lane-stack{ transition-duration:150ms, 200ms; }
+  .module-grid[data-animate] .module-group.is-collapsed .mg-body-clip{ transition:visibility 0s 200ms; }
+}
+/* Page sub-groups inside a module: a quiet label, not another card. */
+.mg-page{ display:flex; flex-direction:column; gap:8px; }
+.mg-page + .mg-page{ margin-top:6px; }
+.mg-page-head{ display:flex; align-items:baseline; gap:6px; margin:0; padding:0 2px;
+  font-size:0.6875rem; font-weight:600; color:var(--ink-2); }
+.mg-page-head span:first-child{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mg-page-head .num,
+.mg-page-sep{ font-weight:500; color:var(--ink-3); }
 .module-group-more{ align-self:stretch; min-height:36px; color:var(--ink-2); }
 .module-grid[data-busy="true"]{ opacity:0.62; pointer-events:none; }
 @media (prefers-reduced-motion: no-preference){
