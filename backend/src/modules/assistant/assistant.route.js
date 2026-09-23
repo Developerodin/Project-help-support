@@ -3,9 +3,12 @@ import Joi from 'joi';
 import multer from 'multer';
 import { auth } from '../../platform/auth.js';
 import { ApiError } from '../../platform/errors.js';
-import { makeLimiter } from '../../platform/rateLimit.js';
+import { MongoRateLimitStore, makeLimiter } from '../../platform/rateLimit.js';
 import { validate } from '../../platform/validate.js';
 import { chat } from './assistant.service.js';
+import {
+  checkAllowance, estimateAudioSeconds, recordUsage, withChatLock,
+} from './assistant.guard.js';
 import { speak, transcribe } from './openai.client.js';
 
 const MINUTE = 60 * 1000;
@@ -58,9 +61,14 @@ export default function assistantRoutes(config) {
   // Tells the UI whether to show the chat button at all.
   router.get('/', (_req, res) => res.json({ enabled: Boolean(config.assistant) }));
 
-  // Per-account limits: every call here costs money upstream.
-  const chatLimiter = makeLimiter({ windowMs: MINUTE, limit: 20, byUser: true });
-  const voiceLimiter = makeLimiter({ windowMs: MINUTE, limit: 30, byUser: true });
+  // Per-account burst limits, counted in Mongo so every instance shares them.
+  // Daily and monthly spend caps are separate (assistant.guard.js).
+  const chatLimiter = makeLimiter({
+    windowMs: MINUTE, limit: 20, byUser: true, store: new MongoRateLimitStore('assistant-chat'),
+  });
+  const voiceLimiter = makeLimiter({
+    windowMs: MINUTE, limit: 30, byUser: true, store: new MongoRateLimitStore('assistant-voice'),
+  });
 
   router.post('/chat', requireAssistant(config), chatLimiter, validate(chatSchema), async (req, res, next) => {
     try {
@@ -68,7 +76,14 @@ export default function assistantRoutes(config) {
       if (messages[messages.length - 1].role !== 'user') {
         throw new ApiError(400, 'VALIDATION_ERROR', 'The last message must be from the user.');
       }
-      res.json(await chat(config, req.user, req.permissionContext, messages));
+      // One turn at a time per user, refused once today's allowance is spent.
+      const { reply, actions } = await withChatLock(req.user, async () => {
+        await checkAllowance(config, req.user);
+        const turn = await chat(config, req.user, req.permissionContext, messages);
+        await recordUsage(config, req.user, turn.usage);
+        return turn;
+      });
+      res.json({ reply, actions });
     } catch (err) {
       next(err);
     }
@@ -84,7 +99,10 @@ export default function assistantRoutes(config) {
         if (!req.file || !isAudio(req.file.buffer)) {
           throw new ApiError(400, 'UNSUPPORTED_AUDIO', 'That doesn\'t look like an audio recording.');
         }
-        res.json({ text: await transcribe(config, req.file) });
+        await checkAllowance(config, req.user);
+        const { text, attempts } = await transcribe(config, req.file);
+        await recordUsage(config, req.user, { transcribeSeconds: estimateAudioSeconds(req.file.size) * attempts });
+        res.json({ text });
       } catch (err) {
         next(err);
       }
@@ -93,7 +111,9 @@ export default function assistantRoutes(config) {
 
   router.post('/speech', requireAssistant(config), voiceLimiter, validate(speechSchema), async (req, res, next) => {
     try {
+      await checkAllowance(config, req.user);
       const audio = await speak(config, req.body.text);
+      await recordUsage(config, req.user, { speechChars: req.body.text.length });
       res.set('Content-Type', 'audio/mpeg').send(audio);
     } catch (err) {
       next(err);

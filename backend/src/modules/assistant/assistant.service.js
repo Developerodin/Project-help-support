@@ -75,7 +75,8 @@ function outputText(response) {
 /**
  * One chat turn. The conversation lives in the browser and is sent whole each
  * time (validated and capped by the route); nothing is stored server-side.
- * @returns {{ reply: string, actions: object[] }}
+ * @returns {{ reply: string, actions: object[], usage: { inputTokens: number, outputTokens: number } }}
+ *   usage is summed over every model round, for the spend caps.
  */
 export async function chat(config, user, permissionContext, messages, now = new Date()) {
   if (!config.assistant) throw new ApiError(503, 'ASSISTANT_DISABLED', 'The assistant is not configured.');
@@ -86,12 +87,15 @@ export async function chat(config, user, permissionContext, messages, now = new 
   const tools = toolsFor(user, permissionContext);
   const instructions = instructionsFor(user, now);
   const input = messages.map((message) => ({ role: message.role, content: message.content }));
+  const usage = { inputTokens: 0, outputTokens: 0 };
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
     // Sequential on purpose: each round depends on the previous tool results.
     const response = await createResponse(config, { instructions, input, tools });
+    usage.inputTokens += Number(response.usage?.input_tokens) || 0;
+    usage.outputTokens += Number(response.usage?.output_tokens) || 0;
     const calls = (response.output || []).filter((item) => item.type === 'function_call');
-    if (!calls.length) return { reply: outputText(response).trim(), actions: ctx.actions };
+    if (!calls.length) return { reply: outputText(response).trim(), actions: ctx.actions, usage };
 
     input.push(...response.output);
     for (const toolCall of calls) {
@@ -104,5 +108,6 @@ export async function chat(config, user, permissionContext, messages, now = new 
   return {
     reply: 'That took more steps than I can handle in one go. Could you narrow the question?',
     actions: ctx.actions,
+    usage,
   };
 }

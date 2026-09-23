@@ -68,11 +68,15 @@ async function transcribeOnce(config, audio, language) {
   return String(data.text || '').trim();
 }
 
-/** Speech to text. `audio` is a multer file (buffer + mimetype). */
+/**
+ * Speech to text. `audio` is a multer file (buffer + mimetype). `attempts` is
+ * how many times the clip was sent (each is billed), for the spend cap.
+ */
 export async function transcribe(config, audio) {
   const text = await transcribeOnce(config, audio);
   // Arabic script here means Hindi/Hinglish misheard as Urdu: redo it as Hindi.
-  return ARABIC_SCRIPT.test(text) ? transcribeOnce(config, audio, 'hi') : text;
+  if (!ARABIC_SCRIPT.test(text)) return { text, attempts: 1 };
+  return { text: await transcribeOnce(config, audio, 'hi'), attempts: 2 };
 }
 
 /** Text to speech; returns an mp3 Buffer. */

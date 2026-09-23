@@ -1,17 +1,63 @@
 import rateLimit from 'express-rate-limit';
 import { ApiError } from './errors.js';
+import RateLimitHit from './rateLimitHit.model.js';
 
 /**
- * ponytail: the default in-memory store, NOT Redis.
- *
- * The ceiling: the store is per-process, so an N-instance deployment multiplies
- * the effective limit by N. Accepted at this scale. The upgrade path is a shared
- * store, and it becomes worth doing when a second instance actually exists.
+ * express-rate-limit store backed by Mongo, so every backend instance counts
+ * against the same window (the in-memory default multiplies limits by the
+ * instance count). One atomic update per hit: a new window starts when the old
+ * one has passed. `prefix` keeps limiters that share a key apart.
  */
-export function makeLimiter({ windowMs, limit, byEmail = false, byUser = false }) {
+export class MongoRateLimitStore {
+  constructor(prefix) {
+    this.prefix = prefix;
+    this.localKeys = false;
+  }
+
+  init(options) {
+    this.windowMs = options.windowMs;
+  }
+
+  async increment(key) {
+    const now = new Date();
+    const live = { $gt: ['$resetAt', now] };
+    const doc = await RateLimitHit.findOneAndUpdate(
+      { _id: `${this.prefix}:${key}` },
+      [{
+        $set: {
+          hits: { $cond: [live, { $add: ['$hits', 1] }, 1] },
+          resetAt: { $cond: [live, '$resetAt', new Date(now.getTime() + this.windowMs)] },
+        },
+      }],
+      { upsert: true, new: true, lean: true },
+    );
+    return { totalHits: doc.hits, resetTime: doc.resetAt };
+  }
+
+  async decrement(key) {
+    await RateLimitHit.updateOne({ _id: `${this.prefix}:${key}`, hits: { $gt: 0 } }, { $inc: { hits: -1 } });
+  }
+
+  async resetKey(key) {
+    await RateLimitHit.deleteOne({ _id: `${this.prefix}:${key}` });
+  }
+}
+
+/**
+ * ponytail: the default in-memory store unless a limiter passes `store`.
+ *
+ * The ceiling: the memory store is per-process, so an N-instance deployment
+ * multiplies the effective limit by N. The assistant's limiters already use
+ * MongoRateLimitStore; the auth limiters can switch the same way (pass
+ * `store: new MongoRateLimitStore('login')`) once a second instance exists.
+ */
+export function makeLimiter({
+  windowMs, limit, byEmail = false, byUser = false, store,
+}) {
   return rateLimit({
     windowMs,
     limit,
+    ...(store ? { store } : {}),
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     // Custom keyGenerator already falls back to IP; disable validate keys that

@@ -45,6 +45,15 @@ function readPositiveInt(env, key, defaultValue) {
   return value;
 }
 
+function readPositiveNumber(env, key, defaultValue) {
+  if (!present(env[key])) return defaultValue;
+  const value = Number(env[key]);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`Config error: ${key} must be a positive number.`);
+  }
+  return value;
+}
+
 function readCsvSet(env, key) {
   if (!present(env[key])) return new Set();
   return new Set(
@@ -220,6 +229,20 @@ export function loadConfig(env = process.env) {
         ? env.OPENAI_TRANSCRIBE_MODEL.trim() : 'gpt-4o-mini-transcribe',
       speechModel: present(env.OPENAI_TTS_MODEL) ? env.OPENAI_TTS_MODEL.trim() : 'gpt-4o-mini-tts',
       speechVoice: present(env.OPENAI_TTS_VOICE) ? env.OPENAI_TTS_VOICE.trim() : 'marin',
+      // Spend caps. Each user may spend this much per day across chat and voice,
+      // costed from the prices below; the day follows budgetTimeZone.
+      userDailyBudgetInr: readPositiveNumber(env, 'ASSISTANT_USER_DAILY_BUDGET_INR', 100),
+      usdToInr: readPositiveNumber(env, 'ASSISTANT_USD_TO_INR', 88),
+      budgetTimeZone: present(env.ASSISTANT_BUDGET_TIMEZONE) ? env.ASSISTANT_BUDGET_TIMEZONE.trim() : 'Asia/Kolkata',
+      monthlyTokenBudget: readPositiveInt(env, 'ASSISTANT_MONTHLY_TOKEN_BUDGET', 10_000_000),
+      // USD list prices. Defaults are OpenAI's published prices for the default
+      // models (chat priced as a "luna" tier); update them when models or prices change.
+      prices: {
+        chatInputPerM: readPositiveNumber(env, 'ASSISTANT_PRICE_CHAT_INPUT_PER_M', 0.2),
+        chatOutputPerM: readPositiveNumber(env, 'ASSISTANT_PRICE_CHAT_OUTPUT_PER_M', 1.2),
+        transcribePerMin: readPositiveNumber(env, 'ASSISTANT_PRICE_TRANSCRIBE_PER_MIN', 0.003),
+        speechPerMin: readPositiveNumber(env, 'ASSISTANT_PRICE_SPEECH_PER_MIN', 0.015),
+      },
     } : null,
     storage: storage && {
       region: storage.AWS_REGION,
