@@ -3,14 +3,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { stageLabel } from '@pms/shared';
+import {
+  CATEGORIES, ENVIRONMENTS, PRIORITIES, SEVERITIES, stageLabel,
+} from '@pms/shared';
 import Icon from '../icons.jsx';
 import {
   getAssistantStatus, sendAssistantMessage, speakText, transcribeAudio,
 } from '@/shared/api/assistant.js';
 import {
-  createTicket, getTicket, patchTicket, transitionTicket,
+  createTicket, getTicket, patchTicket, resolveAttachmentDownloadUrl, transitionTicket,
 } from '@/shared/api/tickets.js';
+import { createClient, patchClient, uploadClientLogo } from '@/shared/api/clients.js';
+import { createProject } from '@/shared/api/projects.js';
+import { createTeam } from '@/shared/api/teams.js';
 import { friendlyTransitionError, normalizeApiError } from '@/shared/lib/api-error.js';
 import { useVoiceRecorder, voiceErrorMessage } from './use-voice-recorder.js';
 
@@ -58,6 +63,37 @@ export function describeAction(action) {
       ].filter(([, value]) => value),
     };
   }
+  if (action.type === 'create_project') {
+    const { body } = action;
+    return {
+      heading: `New project for ${action.clientName}`,
+      rows: [
+        ['Name', body.name],
+        ['Key', body.key || 'From the name'],
+        ['About', body.description],
+        ['Modules', body.modules.map((module) => (module.pages.length
+          ? `${module.label} (${module.pages.map((page) => page.label).join(', ')})`
+          : module.label)).join('; ') || 'None yet'],
+      ].filter(([, value]) => value),
+    };
+  }
+  if (action.type === 'create_team') {
+    return {
+      heading: 'New team',
+      rows: [
+        ['Name', action.body.name],
+        ['Project', action.projectKey || 'All projects'],
+        ['Lead', action.leadName || 'None'],
+        ['Members', action.memberNames.join(', ') || 'None yet'],
+      ],
+    };
+  }
+  if (action.type === 'client_brand') {
+    return {
+      heading: action.clientId ? `Brand for ${action.currentName}` : 'New client',
+      rows: [['Name', action.name], ['Logo', action.logoFile?.name || (action.hasLogo ? 'Keep current logo' : 'None')]],
+    };
+  }
   if (action.type === 'update_ticket') {
     return {
       heading: `Update ${action.ticketId}`,
@@ -73,11 +109,26 @@ export function describeAction(action) {
   };
 }
 
-/** Applies a confirmed draft through the normal ticket API; returns what happened. */
+/** Applies a confirmed draft through the normal API for that thing; returns what happened. */
 async function applyAction(action) {
   if (action.type === 'create_ticket') {
     const ticket = await createTicket(action.body);
     return `Created ${ticket.ticketId}.`;
+  }
+  if (action.type === 'create_project') {
+    const project = await createProject(action.body);
+    return `Created project ${project.name} (${project.key}).`;
+  }
+  if (action.type === 'create_team') {
+    const team = await createTeam(action.body);
+    return `Created team ${team.name}.`;
+  }
+  if (action.type === 'client_brand') {
+    let clientId = action.clientId;
+    if (!clientId) clientId = (await createClient({ name: action.name })).id;
+    else if (action.name !== action.currentName) await patchClient(clientId, { name: action.name });
+    if (action.logoFile) await uploadClientLogo(clientId, action.logoFile);
+    return action.clientId ? `Updated the brand for ${action.name}.` : `Created client ${action.name}.`;
   }
   // Fresh revision so a stale draft fails as a conflict instead of overwriting.
   const { revision } = await getTicket(action.ticketId);
@@ -91,25 +142,204 @@ async function applyAction(action) {
   return `Moved ${action.ticketId} to ${stageLabel(action.to)}.`;
 }
 
-function ActionCard({ action, onConfirm, onDismiss }) {
+/**
+ * Opens a ticket file in a new tab. The URL is fetched on click (it is a
+ * short-lived signed link, and the download route re-checks access), and the
+ * tab is opened first so the browser doesn't treat it as a popup.
+ */
+function FileButton({ file }) {
+  const [state, setState] = useState('idle');
+  const open = async () => {
+    const tab = window.open('', '_blank');
+    setState('busy');
+    try {
+      const url = await resolveAttachmentDownloadUrl(file.ticketId, file.attachmentId);
+      if (tab) tab.location.href = url;
+      else window.location.assign(url);
+      setState('idle');
+    } catch {
+      tab?.close();
+      setState('error');
+    }
+  };
+  return (
+    <button type="button" className="btn btn-sm assistant-file" disabled={state === 'busy'} onClick={open}>
+      <Icon name="clip" size={13} aria-hidden="true" />
+      <span>{state === 'error' ? `Couldn't open ${file.name}` : `Open ${file.name}`}</span>
+    </button>
+  );
+}
+
+function Choice({ label, value, options, onChange, disabled }) {
+  return (
+    <label className="assistant-field">
+      <span>{label}</span>
+      <select value={value || ''} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
+        {!value ? <option value="">Choose…</option> : null}
+        {options.map((option) => <option key={option} value={option}>{option}</option>)}
+      </select>
+    </label>
+  );
+}
+
+/**
+ * A drafted ticket as an editable form: whatever the assistant filled in, the
+ * user can correct before confirming, without another round of chat.
+ */
+function TicketDraftFields({ action, onChange }) {
+  const { body } = action;
+  const busy = action.status === 'busy';
+  const set = (patch) => onChange({ body: { ...body, ...patch } });
+  const modules = action.modules || [];
+  const pages = modules.find((module) => module.label === body.module)?.pages || [];
+  return (
+    <div className="assistant-draft">
+      <label className="assistant-field is-wide">
+        <span>Title</span>
+        <input value={body.title} maxLength={200} disabled={busy} onChange={(event) => set({ title: event.target.value })} />
+      </label>
+      {modules.length ? (
+        <>
+          <Choice
+            label="Module"
+            value={body.module}
+            options={modules.map((module) => module.label)}
+            disabled={busy}
+            onChange={(module) => {
+              const nextPages = modules.find((entry) => entry.label === module)?.pages || [];
+              set({ module, page: nextPages.includes(body.page) ? body.page : nextPages[0] });
+            }}
+          />
+          {pages.length ? (
+            <Choice label="Page" value={body.page} options={pages} disabled={busy} onChange={(page) => set({ page })} />
+          ) : null}
+        </>
+      ) : null}
+      <Choice label="Category" value={body.category} options={CATEGORIES} disabled={busy} onChange={(category) => set({ category })} />
+      <Choice label="Severity" value={body.severity} options={SEVERITIES} disabled={busy} onChange={(severity) => set({ severity })} />
+      <Choice label="Priority" value={body.priority} options={PRIORITIES} disabled={busy} onChange={(priority) => set({ priority })} />
+      <Choice label="Environment" value={body.environment} options={ENVIRONMENTS} disabled={busy} onChange={(environment) => set({ environment })} />
+      <label className="assistant-field is-wide">
+        <span>Details</span>
+        <textarea
+          rows={3}
+          value={body.description}
+          maxLength={5000}
+          disabled={busy}
+          onChange={(event) => set({ description: event.target.value })}
+        />
+      </label>
+    </div>
+  );
+}
+
+const PROJECT_KEY = /^[A-Z][A-Z0-9]{1,9}$/;
+const MAX_LOGO_BYTES = 2 * 1024 * 1024;
+
+/** Whether the draft, as edited, would pass the API's own validation. */
+export function draftReady(action) {
+  if (action.type === 'create_ticket') {
+    return action.body.title.trim().length >= 5 && action.body.description.trim().length >= 10;
+  }
+  if (action.type === 'create_project') {
+    return Boolean(action.body.name.trim()) && (!action.body.key || PROJECT_KEY.test(action.body.key));
+  }
+  if (action.type === 'client_brand') {
+    return Boolean(action.name.trim()) && (!action.logoFile || action.logoFile.size <= MAX_LOGO_BYTES);
+  }
+  return true;
+}
+
+function ProjectDraftFields({ action, onChange }) {
+  const { body } = action;
+  const busy = action.status === 'busy';
+  const set = (patch) => onChange({ body: { ...body, ...patch } });
+  const keyInvalid = Boolean(body.key) && !PROJECT_KEY.test(body.key);
+  return (
+    <div className="assistant-draft">
+      <label className="assistant-field is-wide">
+        <span>Project name</span>
+        <input value={body.name} maxLength={120} disabled={busy} onChange={(event) => set({ name: event.target.value })} />
+      </label>
+      <label className="assistant-field">
+        <span>Key</span>
+        <input
+          value={body.key || ''}
+          maxLength={10}
+          placeholder="From the name"
+          disabled={busy}
+          aria-invalid={keyInvalid || undefined}
+          onChange={(event) => set({ key: event.target.value.toUpperCase() || undefined })}
+        />
+      </label>
+      <p className="assistant-field-note">
+        {keyInvalid ? '2–10 letters or digits, starting with a letter.' : `Client: ${action.clientName}`}
+      </p>
+      <p className="assistant-field-note is-wide">
+        Modules: {describeAction(action).rows.find(([label]) => label === 'Modules')[1]}
+      </p>
+    </div>
+  );
+}
+
+function BrandDraftFields({ action, onChange }) {
+  const busy = action.status === 'busy';
+  const tooBig = action.logoFile && action.logoFile.size > MAX_LOGO_BYTES;
+  return (
+    <div className="assistant-draft">
+      <label className="assistant-field is-wide">
+        <span>Company name</span>
+        <input value={action.name} maxLength={120} disabled={busy} onChange={(event) => onChange({ name: event.target.value })} />
+      </label>
+      <label className="assistant-field is-wide">
+        <span>{action.hasLogo ? 'Replace logo (optional)' : 'Logo (optional)'}</span>
+        <input
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/svg+xml"
+          disabled={busy}
+          onChange={(event) => onChange({ logoFile: event.target.files?.[0] || null })}
+        />
+      </label>
+      {tooBig ? <p className="assistant-field-note is-wide" role="alert">Logos can be up to 2 MB.</p> : null}
+    </div>
+  );
+}
+
+const DRAFT_FIELDS = {
+  create_ticket: TicketDraftFields,
+  create_project: ProjectDraftFields,
+  client_brand: BrandDraftFields,
+};
+
+function ActionCard({
+  action, onConfirm, onDismiss, onChange,
+}) {
   const { heading, rows } = describeAction(action);
+  const Fields = (action.status === 'pending' || action.status === 'busy') && DRAFT_FIELDS[action.type];
   return (
     <div className={`assistant-action is-${action.status}`}>
       <p className="assistant-action-head">{heading}</p>
-      <dl>
-        {rows.map(([label, value]) => (
-          <div key={label}>
-            <dt>{label}</dt>
-            <dd>{value}</dd>
-          </div>
-        ))}
-      </dl>
+      {Fields ? <Fields action={action} onChange={onChange} /> : (
+        <dl>
+          {rows.map(([label, value]) => (
+            <div key={label}>
+              <dt>{label}</dt>
+              <dd>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
       {action.error ? <p className="assistant-action-error" role="alert">{action.error}</p> : null}
       {action.status === 'done' ? <p className="assistant-action-note">Done</p> : null}
       {action.status === 'dismissed' ? <p className="assistant-action-note">Cancelled</p> : null}
       {action.status === 'pending' || action.status === 'busy' ? (
         <div className="assistant-action-buttons">
-          <button type="button" className="btn btn-sm btn-primary" disabled={action.status === 'busy'} onClick={onConfirm}>
+          <button
+            type="button"
+            className="btn btn-sm btn-primary"
+            disabled={action.status === 'busy' || !draftReady(action)}
+            onClick={onConfirm}
+          >
             {action.status === 'busy' ? 'Working…' : action.error ? 'Try again' : 'Confirm'}
           </button>
           <button type="button" className="btn btn-sm btn-ghost" disabled={action.status === 'busy'} onClick={onDismiss}>
@@ -253,11 +483,13 @@ export default function AssistantWidget() {
         .slice(-HISTORY_LIMIT)
         .map(({ role, content: body }) => ({ role, content: body.slice(0, 4000) }));
       const { reply, actions = [] } = await sendAssistantMessage(history);
-      const drafts = actions.filter((action) => action.type !== 'navigate');
+      const files = actions.filter((action) => action.type === 'attachment');
+      const drafts = actions.filter((action) => action.type !== 'navigate' && action.type !== 'attachment');
       const answer = reply || (drafts.length ? 'Review the draft below.' : 'Sorry, I don\'t have an answer for that.');
       setMessages((prev) => [...prev, {
         role: 'assistant',
         content: answer,
+        files,
         actions: drafts.map((action) => ({ ...action, status: 'pending' })),
       }]);
       const destination = actions.find((action) => action.type === 'navigate');
@@ -526,12 +758,18 @@ export default function AssistantWidget() {
           // Index keys are fine: the log only ever appends.
           <div key={index} className={`assistant-msg is-${message.role}`}>
             <p><RichText text={message.content} /></p>
+            {message.files?.length ? (
+              <div className="assistant-files">
+                {message.files.map((file) => <FileButton key={file.id} file={file} />)}
+              </div>
+            ) : null}
             {message.actions?.map((action) => (
               <ActionCard
                 key={action.id}
                 action={action}
                 onConfirm={() => resolveDraft(action, true)}
                 onDismiss={() => resolveDraft(action, false)}
+                onChange={(patch) => updateAction(action.id, patch)}
               />
             ))}
           </div>

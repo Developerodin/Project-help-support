@@ -4909,6 +4909,27 @@ body:has(.assistant-fab) .page{ padding-bottom:96px; } /* keep the pager clear o
 }
 @keyframes assistant-pulse{ 0%, 100%{ box-shadow:0 0 0 0 var(--alarm-wash); } 50%{ box-shadow:0 0 0 6px var(--alarm-wash); } }
 
+/* Editable ticket draft inside a confirmation card. */
+.assistant-draft{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.assistant-field{ display:flex; flex-direction:column; gap:3px; min-width:0; font-size:0.75rem; color:var(--ink-3); }
+.assistant-field.is-wide{ grid-column:1 / -1; }
+.assistant-field input,
+.assistant-field select,
+.assistant-field textarea{
+  min-height:36px; min-width:0; padding:6px 8px; border:1px solid var(--rule); border-radius:var(--r);
+  background:var(--paper); color:var(--ink); font:inherit; font-size:0.8125rem;
+}
+.assistant-field textarea{ resize:vertical; }
+.assistant-field :is(input, select, textarea):focus{ outline:none; border-color:var(--sig); box-shadow:0 0 0 3px var(--sig-wash); }
+@media (max-width:560px){ .assistant-field :is(input, select, textarea){ font-size:1rem; } }
+.assistant-field-note{ margin:0; align-self:end; font-size:0.75rem; color:var(--ink-3); }
+.assistant-field-note.is-wide{ grid-column:1 / -1; }
+.assistant-field input[aria-invalid="true"]{ border-color:var(--alarm); }
+.assistant-field input[type="file"]{ padding:5px; font-size:0.75rem; }
+.assistant-files{ display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+.assistant-file{ display:inline-flex; align-items:center; gap:5px; max-width:100%; min-height:32px; }
+.assistant-file span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
 /* Hands-free: replaces the composer while a spoken conversation runs. */
 .assistant-handsfree{ display:flex; align-items:center; gap:8px; min-height:56px; padding:8px 12px;
   border-top:1px solid var(--rule); font-size:0.875rem; color:var(--ink-2); }
