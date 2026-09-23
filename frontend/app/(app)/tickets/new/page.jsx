@@ -86,7 +86,14 @@ export default function NewTicketPage() {
         return { ...d, module: '', page: '' };
       }
       const moduleValid = modules.some((m) => m.label === d.module);
-      if (!moduleValid) return { ...d, module, page };
+      if (!moduleValid) {
+        // "+" on a module card links here with ?module= so the form starts in that module.
+        const wanted = new URLSearchParams(window.location.search).get('module');
+        if (wanted && modules.some((m) => m.label === wanted)) {
+          return { ...d, module: wanted, page: defaultPageForModule(modules, wanted) };
+        }
+        return { ...d, module, page };
+      }
       const pageValid = pagesForModule(modules, d.module).some((p) => p.label === d.page);
       if (!pageValid) return { ...d, page: defaultPageForModule(modules, d.module) };
       return d;

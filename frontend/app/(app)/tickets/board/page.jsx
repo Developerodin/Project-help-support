@@ -16,7 +16,8 @@ import {
   getBoardMoveTargets,
   getBoardReadOnlyNotice,
 } from '@pms/shared';
-import { listTickets, transitionTicket, getTicket } from '@/shared/api/tickets.js';
+import { transitionTicket, getTicket } from '@/shared/api/tickets.js';
+import { listAllTickets } from '@/shared/lib/list-all-tickets.js';
 import { isAbortError } from '@/shared/api/client.js';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import { useProject } from '@/shared/contexts/project-context.jsx';
@@ -127,35 +128,17 @@ function BoardPage() {
     else setLoading(true);
     setLoadError(null);
 
-    const BOARD_PAGE_CAP = 10;
-    const BOARD_LIMIT = 100;
     const loadAll = async () => {
-      const all = [];
-      let truncated = false;
-      let totalResults = null;
       const baseQuery = buildTicketListQuery({
         preferences,
         projectId: activeProjectId,
         scopeOverride: savedBoardMine ? 'assigned' : preferences.filters.scope,
       });
-      for (let p = 1; p <= BOARD_PAGE_CAP; p += 1) {
-        if (controller.signal.aborted) return null;
-        // eslint-disable-next-line no-await-in-loop -- page N+1 needs N's totalPages
-        const res = await listTickets(
-          { ...baseQuery, page: p, limit: BOARD_LIMIT },
-          { signal: controller.signal },
-        );
-        if (controller.signal.aborted) return null;
-        if (totalResults == null) totalResults = res.totalResults ?? all.length;
-        all.push(...res.results);
-        const totalPages = res.totalPages || 1;
-        if (p >= totalPages) break;
-        if (p === BOARD_PAGE_CAP && totalPages > BOARD_PAGE_CAP) truncated = true;
-      }
+      const res = await listAllTickets(baseQuery, { signal: controller.signal });
       if (controller.signal.aborted) return null;
-      setBoardTruncated(truncated);
-      setBoardTotalResults(totalResults);
-      return all;
+      setBoardTruncated(res.truncated);
+      setBoardTotalResults(res.totalResults ?? res.results.length);
+      return res.results;
     };
 
     return loadAll()

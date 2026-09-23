@@ -4,6 +4,7 @@ import { stageLabel } from '@pms/shared';
 import Icon, {
   initials,
   isOverdue,
+  normalizePriority,
   priorityCardClass,
   priorityChipClass,
   priorityDataValue,
@@ -13,6 +14,7 @@ import Icon, {
 export default function TicketCard({
   ticket, onOpen, draggable = true, canDrag = true, onBlockedDrag,
   moveTargets = [], onMoveTo, busy = false, onDragStart, onDragEnd,
+  quietPriority = false,
 }) {
   const late = isOverdue(ticket);
   const unread = Number(ticket.discussionUnreadCount) || 0;
@@ -20,6 +22,8 @@ export default function TicketCard({
   const assigneeName = ticket.assignedTo?.name;
   const allowedMoves = moveTargets.filter((target) => !target.blocked);
   const showMove = Boolean(onMoveTo) && allowedMoves.length > 0;
+  // Quiet mode drops the everyday Medium/Low chip so High and Urgent stand out.
+  const showPriority = !quietPriority || ['High', 'Urgent'].includes(normalizePriority(ticket.priority));
 
   return (
     <div className="card-shell" aria-busy={busy || undefined}>
@@ -57,7 +61,9 @@ export default function TicketCard({
             </span>
           )}
           <span className="spacer" />
-          <span className={priorityChipClass(ticket.priority)}>{priorityLabel(ticket.priority)}</span>
+          {showPriority && (
+            <span className={priorityChipClass(ticket.priority)}>{priorityLabel(ticket.priority)}</span>
+          )}
         </div>
         <h4>{ticket.title}</h4>
         {(ticket.blocked || late || ticket.reopenCount > 0) && (

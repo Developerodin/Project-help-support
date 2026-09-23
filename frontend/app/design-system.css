@@ -803,6 +803,81 @@ main{ min-width:0; display:flex; flex-direction:column; }
   .tablewrap[data-busy="true"]{ transition:opacity 150ms ease; }
 }
 .tablewrap.bare{ border:none; border-radius:0; }
+
+/* Tickets grouped by module. A row-filling grid so A-Z reads left to right;
+   the 5-ticket preview keeps expanded modules close enough in height. */
+.tickets-view-seg{ margin:0 0 10px; }
+.module-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:14px; align-items:start; }
+.module-grid[data-busy="true"]{ opacity:0.62; pointer-events:none; }
+@media (prefers-reduced-motion: no-preference){
+  .module-grid[data-busy="true"]{ transition:opacity 150ms ease; }
+}
+
+/* Summary bar: one line of totals, the stage legend, then the controls. */
+.module-grid-bar{ display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; margin:0 0 12px; }
+.module-grid-bar .spacer{ flex:1; }
+.mg-summary{ display:flex; flex-wrap:wrap; gap:4px 12px; margin:0; font-size:0.8125rem; color:var(--ink-2);
+  font-variant-numeric:tabular-nums; }
+.mg-summary span + span::before{ content:"·"; margin-right:12px; color:var(--ink-3); }
+.mg-summary-warn{ color:var(--warn-hi); font-weight:600; }
+.mg-summary-alarm{ color:var(--alarm); font-weight:600; }
+.mg-legend{ display:flex; flex-wrap:wrap; gap:4px 10px; margin:0; padding:0; list-style:none;
+  font-size:0.6875rem; color:var(--ink-3); }
+.mg-legend li{ display:inline-flex; align-items:center; gap:4px; }
+.mg-legend i{ width:8px; height:8px; border-radius:2px; }
+
+/* Stage colours step from neutral intake to full signal at release; done is "ok". */
+:is(.mg-bar, .mg-legend) [data-lane="intake"]{ background:color-mix(in oklch, var(--ink-3) 45%, var(--rule)); }
+:is(.mg-bar, .mg-legend) [data-lane="development"]{ background:color-mix(in oklch, var(--sig) 40%, var(--paper)); }
+:is(.mg-bar, .mg-legend) [data-lane="qa"]{ background:color-mix(in oklch, var(--sig) 70%, var(--paper)); }
+:is(.mg-bar, .mg-legend) [data-lane="release"]{ background:var(--sig); }
+:is(.mg-bar, .mg-legend) [data-lane="done"]{ background:var(--ok); }
+
+.module-group{ min-width:0; padding:12px; border:1px solid var(--rule); background:var(--panel);
+  cursor:pointer; transition:border-color 120ms ease-out, background 120ms ease-out; }
+.module-group:hover{ border-color:var(--ink-3); }
+.module-group .card-shell{ cursor:auto; }
+.module-group .lane-stack[hidden]{ display:none; } /* .lane-stack's display:flex beats the UA [hidden] rule */
+/* Nothing overdue or blocked: step back so the modules that need you stand out. */
+.module-group.is-calm{ background:var(--paper); border-color:var(--rule-soft); }
+.module-group.is-calm .module-group-name,
+.module-group.is-calm .mg-open{ color:var(--ink-3); }
+.module-group.is-calm:hover{ border-color:var(--ink-3); }
+
+.module-group-head{ display:flex; align-items:flex-start; gap:4px; margin:0 0 10px; padding-bottom:10px;
+  border-bottom:1px solid var(--rule); }
+.module-group.is-collapsed .module-group-head{ margin-bottom:0; padding-bottom:0; border-bottom-color:transparent; }
+.module-group-head h3{ flex:1; min-width:0; margin:0; }
+.module-group-head button{
+  display:flex; flex-direction:column; gap:8px; width:100%; min-height:44px; padding:2px;
+  font:inherit; text-align:left; color:var(--ink); background:none; border:0; cursor:pointer;
+}
+.module-group-head button:focus-visible,
+.module-group-add:focus-visible{ outline:2px solid var(--sig); outline-offset:2px; border-radius:var(--r); }
+.mg-top{ display:flex; align-items:baseline; gap:10px; }
+.module-group-name{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  font-size:0.8125rem; font-weight:600; letter-spacing:0.04em; text-transform:uppercase; }
+.mg-open{ flex:none; font-size:0.75rem; color:var(--ink-2); }
+.mg-open b{ font-size:1.25rem; font-weight:700; color:inherit; font-variant-numeric:tabular-nums; }
+.module-group:not(.is-calm) .mg-open b{ color:var(--ink); }
+.mg-bar{ display:flex; gap:2px; height:6px; border-radius:3px; overflow:hidden; background:var(--rule-soft); }
+.mg-bar i{ min-width:4px; }
+.mg-meta{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:0.6875rem; color:var(--ink-3); }
+.mg-meta .num{ margin-right:2px; }
+.module-group-add{ flex:none; display:inline-grid; place-items:center; width:44px; height:44px; margin:-8px -8px 0 0;
+  border-radius:var(--r); color:var(--ink-3); transition:opacity 120ms ease-out; }
+.module-group-add:hover{ background:var(--panel-2); color:var(--sig); }
+/* Mouse users get the + on hover/focus; touch screens always show it. */
+@media (hover:hover){
+  .module-group-add{ opacity:0; }
+  .module-group:hover .module-group-add,
+  .module-group-add:focus-visible{ opacity:1; }
+}
+.module-group-more{ align-self:stretch; min-height:36px; color:var(--ink-2); }
+.module-grid[data-busy="true"]{ opacity:0.62; pointer-events:none; }
+@media (prefers-reduced-motion: no-preference){
+  .module-grid[data-busy="true"]{ transition:opacity 150ms ease; }
+}
 table{ width:100%; border-collapse:collapse; min-width:940px; }
 thead th{
   text-align:left; padding:8px 12px; font-size:0.6875rem; font-weight:600;

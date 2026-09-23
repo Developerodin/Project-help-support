@@ -11,6 +11,8 @@ import {
   ticketSearchTermIsNoOp,
 } from '@pms/shared';
 import { listTickets } from '@/shared/api/tickets.js';
+import { listAllTickets } from '@/shared/lib/list-all-tickets.js';
+import { useCanCreateTicket } from '@/shared/hooks/use-can-create-ticket.js';
 import { getProject } from '@/shared/api/projects.js';
 import { listUsers } from '@/shared/api/users.js';
 import { isAbortError } from '@/shared/api/client.js';
@@ -53,6 +55,7 @@ import { REALTIME_BACKSTOP_MS } from '@/shared/hooks/use-ticket-realtime.js';
 import { useRealtime, useRealtimeEvent } from '@/shared/contexts/realtime-context.jsx';
 import TicketFilters from '@/shared/components/tickets/ticket-filters.jsx';
 import TicketTable from '@/shared/components/tickets/ticket-table.jsx';
+import TicketModuleGroups from '@/shared/components/tickets/ticket-module-groups.jsx';
 import TicketDetailDrawer from '@/shared/components/tickets/ticket-detail-drawer.jsx';
 import AppLoader from '@/shared/components/app-loader.jsx';
 
@@ -92,6 +95,7 @@ function TicketListPage() {
   const [ownerOptions, setOwnerOptions] = useState(null);
   const [resetBusy, setResetBusy] = useState(false);
   const [reloadNonce, setReloadNonce] = useState(0);
+  const canCreateTicket = useCanCreateTicket();
 
   // The URL is the view: filters, page and the open ticket all live in it, so a
   // refresh, a shared link and the back button all land on the same screen.
@@ -99,6 +103,7 @@ function TicketListPage() {
   const page = pageFromSearch(searchString);
   const limit = limitFromSearch(searchString, preferences.limit);
   const openTicketId = ticketFromSearch(searchString);
+  const moduleView = new URLSearchParams(searchString).get('view') === 'modules';
   const highlightCommentId = useMemo(() => {
     if (typeof window === 'undefined') return null;
     return commentFromLocation(searchString, window.location.hash);
@@ -325,8 +330,12 @@ function TicketListPage() {
     if (initialPageLoading) return undefined;
     const controller = new AbortController();
     setLoading(true);
-    listTickets(queryFilters, { signal: controller.signal })
-      .then(applyListResponse)
+    // Module view groups the whole filtered list, not one page of it, so a
+    // module never splits across pages.
+    const request = moduleView
+      ? listAllTickets(queryFilters, { signal: controller.signal }).then(setListPage)
+      : listTickets(queryFilters, { signal: controller.signal }).then(applyListResponse);
+    request
       .catch((error) => {
         if (isAbortError(error) || controller.signal.aborted) return;
         showToast(normalizeApiError(error)?.message || 'Could not load tickets');
@@ -336,7 +345,7 @@ function TicketListPage() {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [applyListResponse, queryFilters, initialPageLoading, reloadNonce]);
+  }, [applyListResponse, queryFilters, initialPageLoading, reloadNonce, moduleView]);
 
   // The view we pushed the drawer on top of, or null when the drawer was
   // reached by deep link and has no entry of ours behind it.
@@ -363,6 +372,14 @@ function TicketListPage() {
       return;
     }
     writeSearch(without);
+  };
+
+  const setView = (modules) => {
+    const params = new URLSearchParams(window.location.search);
+    if (modules) params.set('view', 'modules');
+    else params.delete('view');
+    const next = params.toString();
+    writeSearch(next ? `?${next}` : '');
   };
 
   const handleSort = (column) => {
@@ -488,6 +505,10 @@ function TicketListPage() {
           user,
         )}
       />
+      <div className="seg tickets-view-seg" role="group" aria-label="Ticket layout">
+        <button type="button" aria-pressed={!moduleView} onClick={() => setView(false)}>Table</button>
+        <button type="button" aria-pressed={moduleView} onClick={() => setView(true)}>By module</button>
+      </div>
       {showDeepLinkBanner ? (
         <p className="meta" role="status">
           {openTicketId} is not in the current list — it may be filtered out or on another page. The detail drawer still opens below.
@@ -519,6 +540,21 @@ function TicketListPage() {
             </button>
           ) : null}
         </div>
+      ) : moduleView ? (
+        <>
+          {listPage.truncated ? (
+            <div className="board-truncation-banner" role="status">
+              <strong>Showing the first {listPage.results.length.toLocaleString()} of {listPage.totalResults.toLocaleString()} tickets</strong>
+              <p>Narrow the filters to group the rest, or switch to Table to page through everything.</p>
+            </div>
+          ) : null}
+          <TicketModuleGroups
+            tickets={listPage.results}
+            onOpen={open}
+            busy={tableBusy}
+            canCreate={canCreateTicket}
+          />
+        </>
       ) : (
         <TicketTable
           tickets={listPage.results}
@@ -529,70 +565,74 @@ function TicketListPage() {
         />
       )}
 
-      <nav className="pager" aria-label="Ticket list pagination">
-        <div className="pager__meta" aria-live="polite" aria-atomic="true">
-          {tableBusy ? <span className="of">Updating results…</span> : null}
-          <span className="of">{listPage.totalResults} tickets</span>
-          <span className="of">Showing {showingFrom}-{showingTo}</span>
-          {(listPage.totalPages || 1) > 1 ? <span className="of">Page {page} of {listPage.totalPages}</span> : null}
-        </div>
-
-        <div className="pager__controls">
-          <label className="pagesize">
-            <span className="pagesize__label">Rows</span>
-            <select
-              aria-label="Rows per page"
-              value={limit}
-              disabled={loading}
-              onChange={handleLimitChange}
-            >
-              {TICKET_PAGE_SIZES.map((size) => (
-                <option key={size} value={size}>{size} / page</option>
-              ))}
-            </select>
-          </label>
-
-          <button
-            type="button"
-            className="pagebtn"
-            aria-label="Previous page"
-            disabled={page <= 1 || loading}
-            onClick={() => setPage(page - 1)}
-          >
-            Prev
-          </button>
-
-          <div className="pager__pages" role="group" aria-label="Page numbers">
-            {pageNumbers.map((item, index) => (
-              typeof item === 'number' ? (
-                <button
-                  key={item}
-                  type="button"
-                  className="pagebtn"
-                  aria-label={`Page ${item}`}
-                  aria-current={item === page ? 'page' : undefined}
-                  disabled={loading}
-                  onClick={() => setPage(item)}
-                >
-                  {item}
-                </button>
-              ) : (
-                <span key={`gap-${index}-${item}`} className="of pager__gap" aria-hidden="true">{item}</span>
-              )
-            ))}
+      {moduleView ? (
+        <p className="meta" aria-live="polite">{tableBusy ? 'Updating results…' : ''}</p>
+      ) : (
+        <nav className="pager" aria-label="Ticket list pagination">
+          <div className="pager__meta" aria-live="polite" aria-atomic="true">
+            {tableBusy ? <span className="of">Updating results…</span> : null}
+            <span className="of">{listPage.totalResults} tickets</span>
+            <span className="of">Showing {showingFrom}-{showingTo}</span>
+            {(listPage.totalPages || 1) > 1 ? <span className="of">Page {page} of {listPage.totalPages}</span> : null}
           </div>
 
-          <button
-            type="button"
-            className="pagebtn"
-            aria-label="Next page"
-            disabled={page >= (listPage.totalPages || 1) || loading}
-            onClick={() => setPage(page + 1)}
-          >
-            Next
-          </button>
-        </div>
-      </nav>
+          <div className="pager__controls">
+            <label className="pagesize">
+              <span className="pagesize__label">Rows</span>
+              <select
+                aria-label="Rows per page"
+                value={limit}
+                disabled={loading}
+                onChange={handleLimitChange}
+              >
+                {TICKET_PAGE_SIZES.map((size) => (
+                  <option key={size} value={size}>{size} / page</option>
+                ))}
+              </select>
+            </label>
+
+            <button
+              type="button"
+              className="pagebtn"
+              aria-label="Previous page"
+              disabled={page <= 1 || loading}
+              onClick={() => setPage(page - 1)}
+            >
+              Prev
+            </button>
+
+            <div className="pager__pages" role="group" aria-label="Page numbers">
+              {pageNumbers.map((item, index) => (
+                typeof item === 'number' ? (
+                  <button
+                    key={item}
+                    type="button"
+                    className="pagebtn"
+                    aria-label={`Page ${item}`}
+                    aria-current={item === page ? 'page' : undefined}
+                    disabled={loading}
+                    onClick={() => setPage(item)}
+                  >
+                    {item}
+                  </button>
+                ) : (
+                  <span key={`gap-${index}-${item}`} className="of pager__gap" aria-hidden="true">{item}</span>
+                )
+              ))}
+            </div>
+
+            <button
+              type="button"
+              className="pagebtn"
+              aria-label="Next page"
+              disabled={page >= (listPage.totalPages || 1) || loading}
+              onClick={() => setPage(page + 1)}
+            >
+              Next
+            </button>
+          </div>
+        </nav>
+      )}
 
       {openTicketId && (
         <TicketDetailDrawer
