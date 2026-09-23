@@ -2,10 +2,10 @@ import { randomUUID } from 'node:crypto';
 import {
   ADMIN_ROLES, CATEGORIES, ENVIRONMENTS, ESTIMATE_DATE_EDITOR_ROLES, EXTERNAL_ACCEPTANCE_PERMISSION, PRIORITIES,
   SEVERITIES, STAGES, STAGE_KEYS,
-  can, canAccessRoute, hasAnyRole, isExternalUser, isTicketOverdue, resolveProjectModules, stageIndex, stageLabel,
+  can, canAccessRoute, canEditTicket, hasAnyRole, isExternalUser, isTicketOverdue, resolveProjectModules, stageIndex, stageLabel,
 } from '@pms/shared';
 import { getTicket, listTickets } from '../tickets/ticket.service.js';
-import { allowedTransitions, previewTransition } from '../tickets/transition.service.js';
+import { allowedTransitions, checkGuards, previewTransition } from '../tickets/transition.service.js';
 import { assertModuleAndPage, listProjects } from '../projects/project.service.js';
 import { listClients } from '../clients/client.service.js';
 import { listTeams } from '../teams/team.service.js';
@@ -199,7 +199,8 @@ const PROPOSE_UPDATE = fn(
     environment: nullableEnum(ENVIRONMENTS),
     module: nullable({ type: 'string' }),
     page: nullable({ type: 'string' }),
-    due_date: nullable({ type: 'string', description: 'Estimated done date, YYYY-MM-DD.' }),
+    due_date: nullable({ type: 'string', description: 'Estimated resolution date, YYYY-MM-DD.' }),
+    release_date: nullable({ type: 'string', description: 'Expected release date, YYYY-MM-DD (not before the resolution date).' }),
   },
 );
 
@@ -255,6 +256,9 @@ const PROPOSE_ATTACH = fn(
   },
 );
 
+/** Guard failures a move card can fix by setting the estimate dates itself. */
+const DATE_GUARDS = new Set(['ESTIMATES_REQUIRED', 'INVALID_ESTIMATE_DATES']);
+
 /** Most tickets one stage-move card may carry. */
 const MAX_STAGE_BATCH = 50;
 
@@ -266,6 +270,14 @@ const PROPOSE_STAGE = fn(
     ticket_ids: { type: 'array', items: TICKET_ID, description: `One ticket, or up to ${MAX_STAGE_BATCH} to move together.` },
     to_stage: { type: 'string', enum: [...STAGE_KEYS] },
     note: nullable({ type: 'string', description: 'Note for the stage history; the reason when closing.' }),
+    due_date: nullable({
+      type: 'string',
+      description: 'Estimated resolution date to set first, YYYY-MM-DD. Later stages need it; null keeps the current one.',
+    }),
+    release_date: nullable({
+      type: 'string',
+      description: 'Expected release date to set first, YYYY-MM-DD. Later stages need it; null keeps the current one.',
+    }),
   },
 );
 
@@ -414,6 +426,39 @@ async function projectByKey(ctx, key) {
 }
 
 class ToolError extends Error {}
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * The estimate dates a draft would set on `ticket` (only the ones that change),
+ * checked as the API checks them: real YYYY-MM-DD days, an allowed role, and a
+ * release not before the resolution.
+ */
+function estimateDateChanges(ctx, ticket, { due, release }) {
+  const changes = {};
+  for (const [field, value, label] of [
+    ['estimatedResolutionAt', due, 'estimated resolution date'],
+    ['expectedReleaseDate', release, 'expected release date'],
+  ]) {
+    if (value == null) continue;
+    if (!ISO_DAY.test(value) || Number.isNaN(Date.parse(value))) throw new ToolError(`Give the ${label} as YYYY-MM-DD.`);
+    if (value !== day(ticket[field])) changes[field] = value;
+  }
+  if (!Object.keys(changes).length) return changes;
+  if (!hasAnyRole(ctx.user, ...ESTIMATE_DATE_EDITOR_ROLES)) {
+    throw new ToolError('Only admins, project admins and developers can change estimate dates.');
+  }
+  // The API's ticket-edit rule too: admins, project admins, or the ticket's reporter or owner.
+  if (!canEditTicket(ctx.user, ticket)) {
+    throw new ToolError(`This user can't edit ${ticket.ticketId}'s dates: only admins, project admins, its reporter or its owner can.`);
+  }
+  const resolution = changes.estimatedResolutionAt ?? day(ticket.estimatedResolutionAt);
+  const releaseDay = changes.expectedReleaseDate ?? day(ticket.expectedReleaseDate);
+  if (resolution && releaseDay && releaseDay < resolution) {
+    throw new ToolError(`The release date (${releaseDay}) can't be before the resolution date (${resolution}).`);
+  }
+  return changes;
+}
 
 async function clientsFor(ctx) {
   ctx.clients ??= (await listClients({ limit: 100 }, ctx.config, ctx.user, ctx.permissionContext)).results;
@@ -783,7 +828,11 @@ const HANDLERS = {
 
   async propose_update_ticket(args, ctx) {
     const ticket = await getTicket(ctx.user, args.ticket_id, ctx.permissionContext);
-    const current = { ...ticket, estimatedResolutionAt: day(ticket.estimatedResolutionAt) };
+    const current = {
+      ...ticket,
+      estimatedResolutionAt: day(ticket.estimatedResolutionAt),
+      expectedReleaseDate: day(ticket.expectedReleaseDate),
+    };
     const wanted = {
       title: args.title,
       description: args.description,
@@ -794,12 +843,12 @@ const HANDLERS = {
       environment: args.environment,
       module: args.module,
       page: args.page,
-      estimatedResolutionAt: args.due_date,
     };
     const changes = {};
     for (const [field, value] of Object.entries(wanted)) {
       if (value != null && value !== current[field]) changes[field] = value;
     }
+    Object.assign(changes, estimateDateChanges(ctx, ticket, { due: args.due_date, release: args.release_date }));
     if (!Object.keys(changes).length) throw new ToolError('Nothing would change. Ask what should be different.');
     // Checked here too, so the card never fails on confirm.
     if (changes.title && (changes.title.trim().length < 5 || changes.title.length > 200)) {
@@ -807,14 +856,6 @@ const HANDLERS = {
     }
     if (changes.description && changes.description.trim().length < 10) {
       throw new ToolError('Description must be at least 10 characters.');
-    }
-    if (changes.estimatedResolutionAt) {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(changes.estimatedResolutionAt) || Number.isNaN(Date.parse(changes.estimatedResolutionAt))) {
-        throw new ToolError('Give the due date as YYYY-MM-DD.');
-      }
-      if (!hasAnyRole(ctx.user, ...ESTIMATE_DATE_EDITOR_ROLES)) {
-        throw new ToolError('Only admins, project admins and developers can change the due date.');
-      }
     }
     return proposal(ctx, {
       type: 'update_ticket',
@@ -967,23 +1008,41 @@ const HANDLERS = {
         continue;
       }
       // Same checks as the real move, so the user never gets a card that fails on confirm.
-      const check = await previewTransition(ctx.user, ticket.ticketId, args.to_stage, ctx.permissionContext);
+      let check = await previewTransition(ctx.user, ticket.ticketId, args.to_stage, ctx.permissionContext);
+      // Missing or bad estimate dates are the last check; if this card sets them, judge the move with them in place.
+      const dates = estimateDateChanges(ctx, ticket, { due: args.due_date, release: args.release_date });
+      if (!check.ok && DATE_GUARDS.has(check.code) && Object.keys(dates).length) {
+        const guard = checkGuards(args.to_stage, { ...ticket, ...dates });
+        check = guard.ok
+          ? {
+            ok: true,
+            needsReason: args.to_stage === 'closed',
+            needsNote: stageIndex(args.to_stage) < stageIndex(ticket.status),
+          }
+          : guard;
+      }
       if (!check.ok) {
-        skipped.push({ ticket: ticket.ticketId, reason: check.reason });
+        skipped.push({
+          ticket: ticket.ticketId,
+          reason: check.reason,
+          ...(DATE_GUARDS.has(check.code)
+            ? { fix: 'Offer to set them: ask for the dates, then draft again with due_date and release_date.' }
+            : {}),
+        });
         continue;
       }
       needsReason ||= check.needsReason;
       needsNote ||= check.needsNote;
-      movable.push(ticket);
+      movable.push({ ...ticket, dates });
     }
     if (!movable.length) {
       if (ids.length === 1) {
         const options = skipped[0].reason === 'Not found, or no access.'
           ? []
           : (await allowedTransitions(ctx.user, ids[0], ctx.permissionContext)).map(stageLabel);
-        throw new ToolError(`${skipped[0].reason} ${options.length
-          ? `This user can move ${ids[0]} to: ${options.join(', ')}.`
-          : `This user can't move ${ids[0]} there.`}`);
+        throw new ToolError(`${skipped[0].reason} ${skipped[0].fix ?? ''} ${options.length
+          ? `Right now this user can move ${ids[0]} to: ${options.join(', ')}.`
+          : `This user can't move ${ids[0]} there.`}`.replace(/\s+/g, ' '));
       }
       throw new ToolError(`None of these can move to ${stageLabel(args.to_stage)}: `
         + `${skipped.map((entry) => `${entry.ticket} (${entry.reason})`).join('; ')}`);
@@ -1000,6 +1059,10 @@ const HANDLERS = {
       ...(one
         ? { ticketId: one.ticketId, title: one.title, from: one.status }
         : { ticketIds: movable.map((ticket) => ticket.ticketId), froms: movable.map((ticket) => ticket.status) }),
+      // Estimate dates set just before the move (the same for every ticket on the card).
+      ...(movable.some((ticket) => Object.keys(ticket.dates).length)
+        ? { dates: { due: args.due_date ?? null, release: args.release_date ?? null } }
+        : {}),
       to: args.to_stage,
       ...(args.note ? { note: args.note } : {}),
       // Closing takes the note as its reason.

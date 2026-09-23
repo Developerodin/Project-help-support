@@ -177,7 +177,8 @@ const FIELD_LABELS = {
   environment: 'Environment',
   module: 'Module',
   page: 'Page',
-  estimatedResolutionAt: 'Due date',
+  estimatedResolutionAt: 'Resolution date',
+  expectedReleaseDate: 'Release date',
 };
 
 /** Heading and rows for a drafted change, in the user's terms. */
@@ -270,16 +271,17 @@ export function describeAction(action) {
       ]),
     };
   }
+  const dateRows = [['Resolution date', action.dates?.due], ['Release date', action.dates?.release]];
   if (action.ticketIds) {
     return {
       heading: `Move ${action.ticketIds.length} tickets`,
-      rows: [['Tickets', action.ticketIds.join(', ')], ['To', stageLabel(action.to)], ['Note', action.note]]
+      rows: [['Tickets', action.ticketIds.join(', ')], ['To', stageLabel(action.to)], ...dateRows, ['Note', action.note]]
         .filter(([, value]) => value),
     };
   }
   return {
     heading: `Move ${action.ticketId}`,
-    rows: [['Stage', `${stageLabel(action.from)} → ${stageLabel(action.to)}`], ['Note', action.note]]
+    rows: [['Stage', `${stageLabel(action.from)} → ${stageLabel(action.to)}`], ...dateRows, ['Note', action.note]]
       .filter(([, value]) => value),
   };
 }
@@ -303,7 +305,16 @@ async function eachTicket(ticketIds, work) {
 
 /** The move itself, with a fresh revision so a stale card fails as a conflict. */
 async function moveTicket(action, ticketId) {
-  const { revision } = await getTicket(ticketId);
+  let { revision } = await getTicket(ticketId);
+  // Dates first: later stages refuse a ticket without them.
+  const dates = {
+    ...(action.dates?.due ? { estimatedResolutionAt: action.dates.due } : {}),
+    ...(action.dates?.release ? { expectedReleaseDate: action.dates.release } : {}),
+  };
+  if (Object.keys(dates).length) {
+    const updated = await patchTicket(ticketId, { ...dates, revision });
+    revision = updated?.revision ?? (await getTicket(ticketId)).revision;
+  }
   await transitionTicket(ticketId, {
     to: action.to,
     revision,
@@ -749,8 +760,11 @@ export default function AssistantWidget() {
     return () => { cancelled = true; };
   }, []);
 
+  // Never saves an empty chat: in development React runs effects twice on
+  // mount, and saving [] before the saved chat is read back would erase it.
+  // Starting a new chat clears the saved one explicitly instead.
   useEffect(() => {
-    if (chatOwner.current) saveChat(chatOwner.current, messages);
+    if (chatOwner.current && messages.length) saveChat(chatOwner.current, messages);
   }, [messages]);
 
   useEffect(() => {
@@ -1022,8 +1036,11 @@ export default function AssistantWidget() {
   const handleUtterance = useCallback(async (text) => {
     const command = matchVoiceCommand(text);
     if (command === 'stop') return 'stop';
-    const waiting = messagesRef.current.flatMap((message) => message.actions || [])
-      .filter((action) => action.status === 'pending');
+    // "Confirm" answers the newest card: the latest message that still has one
+    // waiting. Older cards left pending further up must not block it.
+    const latest = [...messagesRef.current].reverse()
+      .find((message) => message.actions?.some((action) => action.status === 'pending'));
+    const waiting = (latest?.actions || []).filter((action) => action.status === 'pending');
     if ((command === 'confirm' || command === 'cancel') && waiting.length === 1) {
       setMessages((prev) => [...prev, { role: 'user', content: text.trim() }]);
       return resolveDraft(waiting[0], command === 'confirm');
@@ -1254,6 +1271,7 @@ export default function AssistantWidget() {
   const startNewChat = () => {
     endHandsFree();
     stopAudio();
+    saveChat(chatOwner.current, []);
     setMessages([]);
     setInput('');
     setError(null);
