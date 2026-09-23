@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import Icon from '../icons.jsx';
 import UsageMeter from './usage-meter.jsx';
+import { AttachButton, StagedFiles, fileDropProps } from './staged-files.jsx';
 
 const PHASE_LABEL = {
   listening: 'Listening',
@@ -49,6 +50,7 @@ export function useLevelVar(elementRef, cssVar, pickLevel, active = true) {
 export default function VoiceMode({
   phase, heard, reply, draft, draftReady, onConfirmDraft, onCancelDraft, onEditDraft,
   micLevel, outputLevel, onEnd, onShowChat, notice, usage, onUsageReset, onInterrupt,
+  files = [], fileError = null, onAddFiles, onRemoveFile,
 }) {
   const orbRef = useRef(null);
   const endRef = useRef(null);
@@ -76,7 +78,7 @@ export default function VoiceMode({
       : 0));
 
   return (
-    <section className={`voice-dock is-${phase}`} aria-label="Voice mode">
+    <section className={`voice-dock is-${phase}`} aria-label="Voice mode" {...(onAddFiles ? fileDropProps(onAddFiles) : {})}>
       <div className="voice-card">
         <p className="voice-card-phase" role="status" aria-live="polite">
           <span className="voice-card-dot" aria-hidden="true" />
@@ -88,6 +90,10 @@ export default function VoiceMode({
           {reply ? <p className="voice-card-reply">{reply}</p> : null}
           {!heard && !reply ? <p className="voice-card-heard">Ask about a ticket, or say where to go.</p> : null}
         </div>
+        {onRemoveFile ? <StagedFiles files={files} error={fileError} onRemove={onRemoveFile} /> : null}
+        {files.length && !draft ? (
+          <p className="voice-card-hint">Say which ticket to attach {files.length === 1 ? 'it' : 'them'} to.</p>
+        ) : null}
         {draft ? (
           <div className="voice-draft" role="group" aria-label={`Draft: ${draft.heading}`}>
             <p className="voice-draft-head">{draft.heading}</p>
@@ -122,6 +128,7 @@ export default function VoiceMode({
         <div className="voice-card-actions">
           <UsageMeter usage={usage} onReset={onUsageReset} />
           <span className="voice-card-notice" title={notice}>AI · processed by OpenAI</span>
+          {onAddFiles ? <AttachButton className="voice-card-btn" onAdd={onAddFiles} /> : null}
           <button type="button" className="voice-card-btn" onClick={onShowChat} aria-label="Show chat" title="Continue in chat">
             <Icon name="chat" size={16} aria-hidden="true" />
           </button>

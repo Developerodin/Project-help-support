@@ -88,7 +88,7 @@ export const TRANSITION_ERROR_CATALOG = {
     severity: 'permission',
     title: 'Cannot move this ticket',
     buildMessage: (ctx) => ctx.message || 'You do not have permission to move this ticket on the board.',
-    resolutionSteps: ['Clients can only close Live tickets or reopen Closed tickets.'],
+    resolutionSteps: ['Clients can only close Live tickets.'],
     logLevel: 'none',
     surface: { banner: true, toast: false },
   },

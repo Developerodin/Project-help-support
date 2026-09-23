@@ -1,7 +1,7 @@
 import {
   canTransition, stageIndex, stageLabel,
   GUARD_ESTIMATES_FROM_INDEX, GUARD_OWNERSHIP_FROM_INDEX,
-  validateTicketEstimateDates, REOPEN_TARGET,
+  validateTicketEstimateDates,
   userHasEffectivePermission,
   EXTERNAL_ACCEPTANCE_PERMISSION,
   isPureExternalActor,
@@ -77,15 +77,9 @@ async function assertMayTransition(actor, ticket, to, permissionContext = null) 
       throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this ticket');
     }
 
-    const clientStageMove =
-      (ticket.status === 'live' && to === 'closed')
-      || (ticket.status === 'closed' && to === REOPEN_TARGET);
-    if (!clientStageMove) {
-      throw new ApiError(
-        403,
-        'FORBIDDEN',
-        `Clients may only move Live tickets to Closed, or reopen Closed tickets to ${stageLabel(REOPEN_TARGET)}`,
-      );
+    // Clients accept a release by closing it; the close reason is required below.
+    if (!(ticket.status === 'live' && to === 'closed')) {
+      throw new ApiError(403, 'FORBIDDEN', 'Clients may only move Live tickets to Closed');
     }
     const ctx = await resolvePermissionContext(actor, permissionContext);
     if (!userHasEffectivePermission(actor, EXTERNAL_ACCEPTANCE_PERMISSION, ctx)) {

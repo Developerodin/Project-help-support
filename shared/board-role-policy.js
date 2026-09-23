@@ -1,4 +1,4 @@
-import { ROLE_IDS, ROLE_LABELS } from './enums.js';
+import { ADMIN_ROLES, ROLE_IDS, ROLE_LABELS } from './enums.js';
 import { getUserRoles, hasAnyRole, isExternalUser } from './permissions.js';
 import { userHasEffectivePermission } from './permission-resolution.js';
 import { MATRIX_ROLES } from './permission-resolution.js';
@@ -286,19 +286,27 @@ export function canBoardTransition(
         'Your role cannot close or reopen tickets',
       );
     }
+    // Clients accept a release by closing it (with a reason); nothing else.
     if (from === 'live' && to === 'closed') {
       return { ok: true, isReopen: false, isClose: true, decision: null };
     }
-    if (from === 'closed' && to === REOPEN_TARGET) {
-      return { ok: true, isReopen: true, isClose: false, decision: null };
-    }
-    return refuse(
-      'STAGE_NOT_PERMITTED',
-      `Clients may only move Live tickets to Closed, or reopen Closed tickets to ${stageLabel(REOPEN_TARGET)}`,
-    );
+    return refuse('STAGE_NOT_PERMITTED', 'Clients may only move Live tickets to Closed');
   }
 
   const isReopen = toStage.index < fromStage.index;
+
+  // Admins may move any ticket to any stage, skipping lane rules. A backward
+  // move still counts as a reopen (note required) and closing still needs a reason.
+  if (hasAnyRole(actor, ...ADMIN_ROLES)) {
+    return {
+      ok: true,
+      isReopen,
+      isClose: to === 'closed',
+      decision: isReopen
+        ? (QA_LANE_STAGES.includes(from) ? 'rejected' : null)
+        : (to === 'qa_approved' ? 'approved' : null),
+    };
+  }
 
   if (isReopen) {
     if (to !== REOPEN_TARGET) {

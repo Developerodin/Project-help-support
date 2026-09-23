@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
-  ADMIN_ROLES, CATEGORIES, ENVIRONMENTS, EXTERNAL_ACCEPTANCE_PERMISSION, PRIORITIES, SEVERITIES, STAGES, STAGE_KEYS,
+  ADMIN_ROLES, CATEGORIES, ENVIRONMENTS, ESTIMATE_DATE_EDITOR_ROLES, EXTERNAL_ACCEPTANCE_PERMISSION, PRIORITIES,
+  SEVERITIES, STAGES, STAGE_KEYS,
   can, canAccessRoute, hasAnyRole, isExternalUser, isTicketOverdue, resolveProjectModules, stageIndex, stageLabel,
 } from '@pms/shared';
 import { getTicket, listTickets } from '../tickets/ticket.service.js';
@@ -9,6 +10,7 @@ import { assertModuleAndPage, listProjects } from '../projects/project.service.j
 import { listClients } from '../clients/client.service.js';
 import { listTeams } from '../teams/team.service.js';
 import { listUsers } from '../users/user.service.js';
+import { listProjectTeamMembers } from '../projects/project-team-member.service.js';
 
 /*
  * Every read runs through the same service call the REST API uses, with the
@@ -169,15 +171,67 @@ const PROPOSE_CREATE = fn(
 
 const PROPOSE_UPDATE = fn(
   'propose_update_ticket',
-  'Draft changes to a ticket\'s fields. The user must confirm. Use null for fields that stay the same.',
+  'Draft changes to a ticket\'s fields. The user must confirm. Use null for fields that stay the same. '
+    + 'For assignment use propose_assign; for Blocked use propose_block.',
   {
     ticket_id: TICKET_ID,
     title: nullable({ type: 'string' }),
+    description: nullable({ type: 'string', description: 'The full new description, 10 to 5000 characters.' }),
+    steps_to_reproduce: nullable({ type: 'string' }),
     priority: nullableEnum(PRIORITIES),
     severity: nullableEnum(SEVERITIES),
     category: nullableEnum(CATEGORIES),
+    environment: nullableEnum(ENVIRONMENTS),
     module: nullable({ type: 'string' }),
     page: nullable({ type: 'string' }),
+    due_date: nullable({ type: 'string', description: 'Estimated done date, YYYY-MM-DD.' }),
+  },
+);
+
+const PROPOSE_COMMENT = fn(
+  'propose_comment',
+  'Draft a comment on a ticket\'s discussion, written as the user. The user must confirm.',
+  {
+    ticket_id: TICKET_ID,
+    text: { type: 'string', description: 'The comment, in the user\'s words and language.' },
+    internal: nullable({ type: 'boolean', description: 'True for a team-only note clients can\'t see. Internal users only.' }),
+  },
+);
+
+const PROPOSE_ASSIGN = fn(
+  'propose_assign',
+  'Draft assigning one or more tickets to a person on the project team, or unassigning them. The user must confirm.',
+  {
+    ticket_ids: { type: 'array', items: TICKET_ID, description: 'One ticket, or several for a bulk change (at most 50).' },
+    assignee: nullable({ type: 'string', description: 'Name or email of the person; null to unassign.' }),
+  },
+);
+
+const PROPOSE_BLOCK = fn(
+  'propose_block',
+  'Draft marking a ticket Blocked (with the reason) or clearing Blocked. The user must confirm.',
+  {
+    ticket_id: TICKET_ID,
+    blocked: { type: 'boolean' },
+    reason: nullable({ type: 'string', description: 'What it is waiting on. Required when blocking.' }),
+  },
+);
+
+const WATCH_TICKET = fn(
+  'watch_ticket',
+  'Start or stop watching a ticket (notifications about it), right away.',
+  { ticket_id: TICKET_ID, watch: { type: 'boolean' } },
+);
+
+const PROPOSE_ATTACH = fn(
+  'propose_attach_files',
+  'Draft attaching the user\'s files to a ticket, with an optional comment. The card carries the files the user '
+    + 'added ([Files ready to attach] notes) and lets them add more; nothing uploads until they confirm. Only call it '
+    + 'once the ticket is certain: both the ticket id and its project must be right, or it is refused.',
+  {
+    ticket_id: TICKET_ID,
+    project_key: { type: 'string', description: 'Key of the project the ticket belongs to, e.g. WEB.' },
+    note: nullable({ type: 'string', description: 'Optional comment posted with the files.' }),
   },
 );
 
@@ -249,8 +303,11 @@ export function toolsFor(user, permissionContext) {
   const allowed = (permission) => !external && can(user, permission, permissionContext);
   const tools = [SEARCH_TICKETS, GET_TICKET, GET_DISCUSSION, OPEN_ATTACHMENT, LIST_PROJECTS, NAVIGATE, SWITCH_PROJECT];
   if (external || can(user, 'tickets.create', permissionContext)) tools.push(PROPOSE_CREATE);
-  if (allowed('tickets.edit')) tools.push(PROPOSE_UPDATE);
-  // Stage moves: internal users who work the board, or clients allowed to close/reopen.
+  // Commenting and attaching need only ticket access, as on their REST routes.
+  if (can(user, 'tickets.view', permissionContext) || external) tools.push(PROPOSE_COMMENT, PROPOSE_ATTACH);
+  if (allowed('tickets.view')) tools.push(WATCH_TICKET);
+  if (allowed('tickets.edit')) tools.push(PROPOSE_UPDATE, PROPOSE_ASSIGN, PROPOSE_BLOCK);
+  // Stage moves: internal users who work the board, or clients allowed to close Live tickets.
   const mayMoveStages = external
     ? can(user, EXTERNAL_ACCEPTANCE_PERMISSION, permissionContext)
     : can(user, 'boards.use', permissionContext);
@@ -659,18 +716,144 @@ const HANDLERS = {
 
   async propose_update_ticket(args, ctx) {
     const ticket = await getTicket(ctx.user, args.ticket_id, ctx.permissionContext);
+    const current = { ...ticket, estimatedResolutionAt: day(ticket.estimatedResolutionAt) };
+    const wanted = {
+      title: args.title,
+      description: args.description,
+      stepsToReproduce: args.steps_to_reproduce,
+      priority: args.priority,
+      severity: args.severity,
+      category: args.category,
+      environment: args.environment,
+      module: args.module,
+      page: args.page,
+      estimatedResolutionAt: args.due_date,
+    };
     const changes = {};
-    for (const field of ['title', 'priority', 'severity', 'category', 'module', 'page']) {
-      if (args[field] != null && args[field] !== ticket[field]) changes[field] = args[field];
+    for (const [field, value] of Object.entries(wanted)) {
+      if (value != null && value !== current[field]) changes[field] = value;
     }
     if (!Object.keys(changes).length) throw new ToolError('Nothing would change. Ask what should be different.');
+    // Checked here too, so the card never fails on confirm.
+    if (changes.title && (changes.title.trim().length < 5 || changes.title.length > 200)) {
+      throw new ToolError('Title must be 5 to 200 characters.');
+    }
+    if (changes.description && changes.description.trim().length < 10) {
+      throw new ToolError('Description must be at least 10 characters.');
+    }
+    if (changes.estimatedResolutionAt) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(changes.estimatedResolutionAt) || Number.isNaN(Date.parse(changes.estimatedResolutionAt))) {
+        throw new ToolError('Give the due date as YYYY-MM-DD.');
+      }
+      if (!hasAnyRole(ctx.user, ...ESTIMATE_DATE_EDITOR_ROLES)) {
+        throw new ToolError('Only admins, project admins and developers can change the due date.');
+      }
+    }
     return proposal(ctx, {
       type: 'update_ticket',
       ticketId: ticket.ticketId,
       title: ticket.title,
-      from: Object.fromEntries(Object.keys(changes).map((field) => [field, ticket[field] ?? null])),
+      from: Object.fromEntries(Object.keys(changes).map((field) => [field, current[field] ?? null])),
       changes,
     });
+  },
+
+  async propose_comment(args, ctx) {
+    const ticket = await getTicket(ctx.user, args.ticket_id, ctx.permissionContext);
+    const text = String(args.text || '').trim();
+    if (!text) throw new ToolError('Ask what the comment should say.');
+    if (text.length > 10000) throw new ToolError('Comments can be at most 10000 characters.');
+    const internal = Boolean(args.internal);
+    if (internal && isExternalUser(ctx.user)) throw new ToolError('Clients can\'t post internal notes.');
+    return proposal(ctx, {
+      type: 'comment', ticketId: ticket.ticketId, title: ticket.title, content: text, internal,
+    });
+  },
+
+  async propose_assign(args, ctx) {
+    const ids = [...new Set((args.ticket_ids || []).map((id) => String(id).trim().toUpperCase()).filter(Boolean))];
+    if (!ids.length) throw new ToolError('Say which ticket to assign.');
+    if (ids.length > 50) throw new ToolError('At most 50 tickets at a time.');
+    const tickets = [];
+    for (const id of ids) {
+      // Sequential on purpose: each lookup is access-checked and fails on its own.
+      tickets.push(await getTicket(ctx.user, id, ctx.permissionContext));
+    }
+    let person = null;
+    if (args.assignee) {
+      // Only people on each ticket's project team can be assigned (same rule as the API).
+      const wanted = String(args.assignee).trim().toLowerCase();
+      const projectIds = [...new Set(tickets.map((ticket) => idOf(ticket.project)))];
+      const rosters = await Promise.all(projectIds.map((id) => listProjectTeamMembers(id)));
+      const candidates = new Map();
+      for (const row of rosters[0]) {
+        const { user } = row;
+        const matches = user.email?.toLowerCase() === wanted || user.name?.toLowerCase().includes(wanted);
+        const onEvery = rosters.every((roster) => roster.some((other) => other.user.id === user.id));
+        if (matches && onEvery) candidates.set(user.id, user);
+      }
+      const found = [...candidates.values()];
+      if (!found.length) {
+        const names = [...new Set(rosters.flat().map((row) => row.user.name))].slice(0, 30);
+        throw new ToolError(`No one called "${args.assignee}" is on the project team${projectIds.length > 1 ? ' of every one of these tickets' : ''}. `
+          + `Team members: ${names.join(', ') || 'none'}.`);
+      }
+      if (found.length > 1) {
+        throw new ToolError(`"${args.assignee}" matches ${found.map((user) => `${user.name} (${user.email})`).join(', ')}. Ask which one.`);
+      }
+      [person] = found;
+    }
+    return proposal(ctx, {
+      type: 'assign',
+      ticketIds: tickets.map((ticket) => ticket.ticketId),
+      from: tickets.map((ticket) => ticket.assignedTo?.name ?? null),
+      assigneeId: person?.id ?? null,
+      assigneeName: person?.name ?? null,
+    });
+  },
+
+  async propose_block(args, ctx) {
+    const ticket = await getTicket(ctx.user, args.ticket_id, ctx.permissionContext);
+    if (args.blocked === Boolean(ticket.blocked)) {
+      throw new ToolError(`${ticket.ticketId} is already ${ticket.blocked ? 'blocked' : 'not blocked'}.`);
+    }
+    const reason = String(args.reason || '').trim();
+    if (args.blocked && !reason) throw new ToolError('Ask what the ticket is blocked on, then draft again with the reason.');
+    return proposal(ctx, {
+      type: 'block',
+      ticketId: ticket.ticketId,
+      title: ticket.title,
+      blocked: args.blocked,
+      ...(args.blocked ? { reason: clip(reason, 2000) } : {}),
+    });
+  },
+
+  async watch_ticket(args, ctx) {
+    const ticket = await getTicket(ctx.user, args.ticket_id, ctx.permissionContext);
+    ctx.actions.push({ id: randomUUID(), type: 'watch', ticketId: ticket.ticketId, watch: Boolean(args.watch) });
+    return { status: args.watch ? 'watching' : 'stopped watching', ticket: ticket.ticketId };
+  },
+
+  async propose_attach_files(args, ctx) {
+    // Verify both halves, so files never land on a look-alike ticket in another project.
+    const project = await projectByKey(ctx, args.project_key);
+    const ticket = await getTicket(ctx.user, args.ticket_id, ctx.permissionContext);
+    if (idOf(ticket.project) !== idOf(project)) {
+      throw new ToolError(`${ticket.ticketId} ("${ticket.title}") is in project ${ticket.project?.key ?? 'another project'}, `
+        + `not ${project.key}. Tell the user and ask which one they meant before drafting.`);
+    }
+    const note = String(args.note || '').trim();
+    return {
+      ...proposal(ctx, {
+        type: 'attach_files',
+        ticketId: ticket.ticketId,
+        projectKey: project.key,
+        title: ticket.title,
+        ...(note ? { note: clip(note, 10000) } : {}),
+      }),
+      verified: { ticket: ticket.ticketId, title: ticket.title, project: `${project.key} ${project.name}` },
+      note: 'A card shows the files, ticket and project; nothing is uploaded until the user confirms.',
+    };
   },
 
   async propose_stage_change(args, ctx) {

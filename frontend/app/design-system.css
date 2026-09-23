@@ -5139,3 +5139,25 @@ body:has(.voice-dock) .page{ padding-bottom:120px; }
 @media (max-width:560px){
   .voice-dock{ right:16px; bottom:calc(16px + env(safe-area-inset-bottom, 0px)); }
 }
+
+/* Files waiting in the assistant (chat composer, voice dock, attach card). */
+.assistant-staged{ padding:6px 8px 0; }
+.assistant-staged ul{ display:flex; flex-wrap:wrap; gap:6px; margin:0; padding:0; list-style:none; }
+.assistant-staged-chip{
+  display:inline-flex; align-items:center; gap:5px; max-width:100%; padding:3px 4px 3px 8px;
+  border:1px solid var(--rule); border-radius:999px; background:var(--panel-2); font-size:0.75rem; color:var(--ink-2);
+}
+.assistant-staged-name{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:14rem; color:var(--ink); }
+.assistant-staged-size{ color:var(--ink-3); font-variant-numeric:tabular-nums; }
+.assistant-staged-chip button{
+  display:inline-grid; place-items:center; width:22px; height:22px; border:0; border-radius:50%;
+  background:transparent; color:var(--ink-3); cursor:pointer;
+}
+.assistant-staged-chip button:hover{ background:var(--rule); color:var(--ink); }
+.assistant-staged-chip button:focus-visible{ outline:2px solid var(--sig); outline-offset:1px; }
+.assistant-staged-error{ margin:4px 0 0; font-size:0.75rem; color:var(--alarm); }
+.assistant-attach-field .assistant-staged{ padding:0; }
+.assistant-attach-field .btn{ align-self:flex-start; }
+.assistant-msg-files{ display:flex; align-items:center; gap:4px; margin:4px 0 0; font-size:0.75rem; color:var(--ink-3); }
+.voice-card .assistant-staged{ padding:0; }
+.voice-card-hint{ margin:0; font-size:0.75rem; color:var(--ink-3); }

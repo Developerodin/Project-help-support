@@ -24,7 +24,7 @@ import {
   BOARD_CAPABILITY_LABELS,
 } from './board-role-policy.js';
 
-const CLIENT_STAGE_MOVE_HINT = 'Clients can only close Live tickets or reopen Closed tickets.';
+const CLIENT_STAGE_MOVE_HINT = 'Clients can only close Live tickets.';
 
 function formatPermitteeList(parts) {
   const unique = [...new Set(parts.filter(Boolean))];
@@ -67,6 +67,7 @@ export function canInteractWithBoard(
 ) {
   if (!actor) return false;
   if (isPureExternalActor(actor)) return canExternalCloseReopen(actor, permissionContext);
+  if (hasAnyRole(actor, ...ADMIN_ROLES)) return true;
   return actorHasAnyBoardCapability(actor, boardPolicy);
 }
 
@@ -80,8 +81,9 @@ export function canDragTicket(
   if (!actor || !ticket) return false;
   if (isPureExternalActor(actor)) {
     if (!canExternalCloseReopen(actor, permissionContext)) return false;
-    return ticket.status === 'live' || ticket.status === 'closed';
+    return ticket.status === 'live';
   }
+  if (hasAnyRole(actor, ...ADMIN_ROLES)) return true;
   if (!canInteractWithBoard(actor, boardPolicy)) return false;
   // Draggable when the actor can operate on the ticket's current board.
   const board = laneOf(ticket.status);
@@ -100,7 +102,7 @@ export function canChangeTicketStage(
   if (!actor || !ticket) return false;
   if (isPureExternalActor(actor)) {
     if (!canExternalCloseReopen(actor, permissionContext)) return false;
-    return ticket.status === 'live' || ticket.status === 'closed';
+    return ticket.status === 'live';
   }
   if (!canInteractWithBoard(actor, boardPolicy)) return false;
   return legalDestinations(
@@ -226,7 +228,7 @@ export function getBoardDragBlockReason(
         'Your role cannot close or reopen tickets.',
       );
     }
-    if (ticket.status === 'live' || ticket.status === 'closed') return null;
+    if (ticket.status === 'live') return null;
     return buildBlock(
       'CLIENT_BOARD_MOVE_FORBIDDEN',
       `You don't have permission to move this ticket from ${stageLabel(ticket.status)}. ${CLIENT_STAGE_MOVE_HINT}`,

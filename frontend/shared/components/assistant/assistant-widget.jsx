@@ -13,7 +13,8 @@ import {
   getAssistantStatus, sendAssistantMessage, speakText, transcribeAudio,
 } from '@/shared/api/assistant.js';
 import {
-  createTicket, getTicket, patchTicket, resolveAttachmentDownloadUrl, transitionTicket,
+  addComment, assignTicket, clearBlocked, createTicket, getTicket, patchTicket, resolveAttachmentDownloadUrl, setBlocked,
+  transitionTicket, unwatchTicket, uploadAttachments, watchTicket,
 } from '@/shared/api/tickets.js';
 import { createClient, patchClient, uploadClientLogo } from '@/shared/api/clients.js';
 import { createProject } from '@/shared/api/projects.js';
@@ -27,6 +28,10 @@ import { clearAssistantChats, readSavedChat, saveChat } from '@/shared/lib/assis
 import { useVoiceRecorder, voiceErrorMessage, watchForSpeech } from './use-voice-recorder.js';
 import VoiceMode, { useLevelVar } from './voice-mode.jsx';
 import UsageMeter from './usage-meter.jsx';
+import {
+  AttachButton, StagedFiles, fileDropProps, stageFiles,
+} from './staged-files.jsx';
+import { buildAttachmentFormData } from '@/shared/lib/attachment-config.js';
 
 /** Turns sent per request; the server caps at 30. */
 const HISTORY_LIMIT = 20;
@@ -128,15 +133,29 @@ export function draftNote(action) {
 }
 
 /** Drafts with the same key are revisions of one another. */
-const draftKey = (action) => `${action.type}:${action.ticketId || action.clientId || ''}`;
+const draftKey = (action) => `${action.type}:${action.ticketId || action.ticketIds?.join(',') || action.clientId || ''}`;
 
 /** What the model sees for a past message: its text plus notes for any drafts. */
 export function historyText(message) {
   const notes = (message.actions || []).map(draftNote);
-  return [message.content, ...notes].filter(Boolean).join('\n');
+  const files = message.attached?.length
+    ? [`[Files ready to attach: ${message.attached.map((file) => file.name).join(', ')}]`]
+    : [];
+  return [message.content, ...files, ...notes].filter(Boolean).join('\n');
 }
 
-const FIELD_LABELS = { title: 'Title', priority: 'Priority', severity: 'Severity', category: 'Category', module: 'Module', page: 'Page' };
+const FIELD_LABELS = {
+  title: 'Title',
+  description: 'Description',
+  stepsToReproduce: 'Steps',
+  priority: 'Priority',
+  severity: 'Severity',
+  category: 'Category',
+  environment: 'Environment',
+  module: 'Module',
+  page: 'Page',
+  estimatedResolutionAt: 'Due date',
+};
 
 /** Heading and rows for a drafted change, in the user's terms. */
 export function describeAction(action) {
@@ -185,11 +204,46 @@ export function describeAction(action) {
       rows: [['Name', action.name], ['Logo', action.logoFile?.name || (action.hasLogo ? 'Keep current logo' : 'None')]],
     };
   }
+  if (action.type === 'comment') {
+    return {
+      heading: `${action.internal ? 'Internal note' : 'Comment'} on ${action.ticketId}`,
+      rows: [['Comment', action.content]],
+    };
+  }
+  if (action.type === 'assign') {
+    const many = action.ticketIds.length > 1;
+    return {
+      heading: many ? `Assign ${action.ticketIds.length} tickets` : `Assign ${action.ticketIds[0]}`,
+      rows: [
+        ...(many ? [['Tickets', action.ticketIds.join(', ')]] : [['From', action.from[0] || 'Unassigned']]),
+        ['To', action.assigneeName || 'Unassigned'],
+      ],
+    };
+  }
+  if (action.type === 'block') {
+    return {
+      heading: action.blocked ? `Block ${action.ticketId}` : `Unblock ${action.ticketId}`,
+      rows: action.blocked ? [['Reason', action.reason]] : [['Blocked', 'Clear it']],
+    };
+  }
+  if (action.type === 'attach_files') {
+    return {
+      heading: `Attach files to ${action.ticketId}`,
+      rows: [
+        ['Project', action.projectKey],
+        ['Ticket', action.title],
+        ['Files', action.files?.length ? action.files.map((file) => file.name).join(', ') : 'None chosen yet'],
+        ['Comment', action.note],
+      ].filter(([, value]) => value),
+    };
+  }
   if (action.type === 'update_ticket') {
     return {
       heading: `Update ${action.ticketId}`,
       rows: Object.entries(action.changes).map(([field, to]) => [
-        FIELD_LABELS[field] || field, `${action.from?.[field] ?? 'none'} → ${to}`,
+        FIELD_LABELS[field] || field,
+        // Long text reads badly as "old → new"; show just the new version.
+        field === 'description' || field === 'stepsToReproduce' ? to : `${action.from?.[field] ?? 'none'} → ${to}`,
       ]),
     };
   }
@@ -221,8 +275,34 @@ async function applyAction(action) {
     if (action.logoFile) await uploadClientLogo(clientId, action.logoFile);
     return action.clientId ? `Updated the brand for ${action.name}.` : `Created client ${action.name}.`;
   }
+  if (action.type === 'comment') {
+    // The draft id as clientRef: a retry after a dropped response can't post twice.
+    await addComment(action.ticketId, { content: action.content, internal: action.internal, clientRef: action.id });
+    return `Posted on ${action.ticketId}.`;
+  }
+  if (action.type === 'attach_files') {
+    if (!action.files?.length) throw new Error('Add the files to attach first.');
+    await uploadAttachments(action.ticketId, buildAttachmentFormData(action.files, {
+      clientRef: action.id, commentContent: action.note, commentClientRef: `${action.id}:comment`,
+    }));
+    return `Attached ${action.files.length} file${action.files.length === 1 ? '' : 's'} to ${action.ticketId}.`;
+  }
+  if (action.type === 'assign') {
+    // ponytail: one request per ticket (max 50), so each gets its own revision check.
+    for (const ticketId of action.ticketIds) {
+      const { revision } = await getTicket(ticketId);
+      await assignTicket(ticketId, { assignedTo: action.assigneeId, revision });
+    }
+    const which = action.ticketIds.length > 1 ? `${action.ticketIds.length} tickets` : action.ticketIds[0];
+    return action.assigneeName ? `Assigned ${which} to ${action.assigneeName}.` : `Unassigned ${which}.`;
+  }
   // Fresh revision so a stale draft fails as a conflict instead of overwriting.
   const { revision } = await getTicket(action.ticketId);
+  if (action.type === 'block') {
+    if (action.blocked) await setBlocked(action.ticketId, { reason: action.reason, revision });
+    else await clearBlocked(action.ticketId, { revision });
+    return action.blocked ? `Marked ${action.ticketId} blocked.` : `Cleared blocked on ${action.ticketId}.`;
+  }
   if (action.type === 'update_ticket') {
     await patchTicket(action.ticketId, { ...action.changes, revision });
     return `Updated ${action.ticketId}.`;
@@ -341,6 +421,7 @@ export function draftReady(action) {
   if (action.type === 'client_brand') {
     return Boolean(action.name.trim()) && (!action.logoFile || action.logoFile.size <= MAX_LOGO_BYTES);
   }
+  if (action.type === 'attach_files') return action.files?.length > 0;
   return true;
 }
 
@@ -399,10 +480,49 @@ function BrandDraftFields({ action, onChange }) {
   );
 }
 
+function AttachDraftFields({ action, onChange }) {
+  const busy = action.status === 'busy';
+  const files = action.files || [];
+  return (
+    <div className="assistant-draft">
+      <p className="assistant-field-note is-wide">
+        {action.projectKey} · {action.ticketId}: {action.title}
+      </p>
+      <div className="assistant-field is-wide assistant-attach-field">
+        <span>Files</span>
+        <StagedFiles
+          files={files}
+          error={action.fileError}
+          onRemove={(file) => onChange({ files: files.filter((entry) => entry !== file), fileError: null })}
+        />
+        <AttachButton
+          className="btn btn-sm"
+          disabled={busy}
+          onAdd={(incoming) => {
+            const next = stageFiles(files, incoming);
+            onChange({ files: next.files, fileError: next.error });
+          }}
+        />
+      </div>
+      <label className="assistant-field is-wide">
+        <span>Comment (optional)</span>
+        <textarea
+          rows={2}
+          maxLength={10000}
+          value={action.note || ''}
+          disabled={busy}
+          onChange={(event) => onChange({ note: event.target.value })}
+        />
+      </label>
+    </div>
+  );
+}
+
 const DRAFT_FIELDS = {
   create_ticket: TicketDraftFields,
   create_project: ProjectDraftFields,
   client_brand: BrandDraftFields,
+  attach_files: AttachDraftFields,
 };
 
 function ActionCard({
@@ -500,6 +620,20 @@ export default function AssistantWidget() {
   const [speaking, setSpeaking] = useState(false);
   const [speakOn, setSpeakOn] = useState(false);
   const [handsFree, setHandsFree] = useState(false);
+  // Files added in the chat or voice dock, waiting for a confirmed ticket.
+  const [staged, setStaged] = useState([]);
+  const [stageError, setStageError] = useState(null);
+  const stagedRef = useRef(staged);
+  stagedRef.current = staged;
+  const addFiles = useCallback((incoming) => {
+    const next = stageFiles(stagedRef.current, incoming);
+    setStaged(next.files);
+    setStageError(next.error);
+  }, []);
+  const removeFile = useCallback((file) => {
+    setStaged((prev) => prev.filter((entry) => entry !== file));
+    setStageError(null);
+  }, []);
   const {
     recording, record, stop: stopRecording, level: micLevel,
   } = useVoiceRecorder();
@@ -667,7 +801,8 @@ export default function AssistantWidget() {
   const send = useCallback(async (text) => {
     const content = text.trim();
     if (!content) return null;
-    const next = [...messagesRef.current, { role: 'user', content }];
+    const attached = stagedRef.current.map((file) => ({ name: file.name, size: file.size }));
+    const next = [...messagesRef.current, { role: 'user', content, ...(attached.length ? { attached } : {}) }];
     setMessages(next);
     setInput('');
     setError(null);
@@ -686,7 +821,7 @@ export default function AssistantWidget() {
         ...(handsFreeRef.current ? { mode: 'voice' } : {}),
       });
       const files = actions.filter((action) => action.type === 'attachment');
-      const drafts = actions.filter((action) => !['navigate', 'attachment', 'switch_project'].includes(action.type));
+      const drafts = actions.filter((action) => !['navigate', 'attachment', 'switch_project', 'watch'].includes(action.type));
       const answer = reply || (drafts.length ? 'Review the draft below.' : 'Sorry, I don\'t have an answer for that.');
       // A new draft of the same thing is a revision: retire the older pending card
       // so there is only ever one live version to confirm.
@@ -704,9 +839,19 @@ export default function AssistantWidget() {
           role: 'assistant',
           content: answer,
           files,
-          actions: drafts.map((action) => ({ ...action, status: 'pending' })),
+          actions: drafts.map((action) => ({
+            ...action,
+            status: 'pending',
+            // The card starts with the files the user already added.
+            ...(action.type === 'attach_files' ? { files: stagedRef.current } : {}),
+          })),
         },
       ]);
+      // Watching only changes the user's own notifications, so it needs no card.
+      for (const action of actions.filter((entry) => entry.type === 'watch')) {
+        (action.watch ? watchTicket : unwatchTicket)(action.ticketId)
+          .catch((err) => setError(normalizeApiError(err)?.message || `Couldn't update watching ${action.ticketId}.`));
+      }
       // Same as picking it in the project switcher; before navigate so the new page opens in it.
       const switched = actions.find((action) => action.type === 'switch_project');
       if (switched) setActiveProjectId(switched.projectId);
@@ -740,6 +885,9 @@ export default function AssistantWidget() {
     try {
       const outcome = await applyAction(action);
       updateAction(action.id, { status: 'done' });
+      if (action.type === 'attach_files') {
+        setStaged((prev) => prev.filter((file) => !action.files.includes(file)));
+      }
       // Recorded as an assistant turn so the model knows the change landed.
       setMessages((prev) => [...prev, { role: 'assistant', content: outcome }]);
       return outcome;
@@ -1022,6 +1170,10 @@ export default function AssistantWidget() {
       }}
       micLevel={micLevel}
       outputLevel={outputLevel}
+      files={staged}
+      fileError={stageError}
+      onAddFiles={addFiles}
+      onRemoveFile={removeFile}
       onInterrupt={() => interruptTap.current?.()}
       usage={usage}
       onUsageReset={refreshUsage}
@@ -1083,6 +1235,7 @@ export default function AssistantWidget() {
         aria-modal="false"
         aria-labelledby="assistant-title"
         onKeyDown={(event) => { if (event.key === 'Escape') close(); }}
+        {...fileDropProps(addFiles)}
       >
         <header className="assistant-head">
           <div className="assistant-title">
@@ -1155,6 +1308,12 @@ export default function AssistantWidget() {
             // Index keys are fine: the log only ever appends.
             <div key={index} className={`assistant-msg is-${message.role}${index >= enterFrom ? ' is-new' : ''}`}>
               <div className="assistant-bubble"><MessageText text={message.content} /></div>
+              {message.attached?.length ? (
+                <p className="assistant-msg-files">
+                  <Icon name="clip" size={12} aria-hidden="true" />
+                  {message.attached.map((file) => file.name).join(', ')}
+                </p>
+              ) : null}
               {message.files?.length ? (
                 <div className="assistant-files">
                   {message.files.map((file) => <FileButton key={file.id} file={file} />)}
@@ -1180,6 +1339,7 @@ export default function AssistantWidget() {
 
         {error ? <p className="assistant-error" role="alert">{error}</p> : null}
 
+        <StagedFiles files={staged} error={stageError} onRemove={removeFile} />
         <form
           className="assistant-compose"
           onSubmit={(event) => {
@@ -1199,6 +1359,7 @@ export default function AssistantWidget() {
           >
             <Icon name={recording ? 'stop' : 'mic'} size={18} aria-hidden="true" />
           </button>
+          <AttachButton onAdd={addFiles} disabled={busy} />
           <textarea
             ref={inputRef}
             rows={1}

@@ -106,11 +106,12 @@ export function validateAttachmentBatch(existing, incoming) {
   return { errors, valid };
 }
 
-/** @param {File[]} files @param {{ commentContent?: string, commentClientRef?: string }} [opts] */
+/** @param {File[]} files @param {{ commentContent?: string, clientRef?: string, commentClientRef?: string }} [opts] */
 export function buildAttachmentFormData(files, opts = {}) {
   const form = new FormData();
   for (const file of files) form.append('files', file);
-  form.append('clientRef', crypto.randomUUID());
+  // A fixed clientRef makes a retried upload a no-op instead of a duplicate.
+  form.append('clientRef', opts.clientRef || crypto.randomUUID());
   if (opts.commentContent) form.append('commentContent', opts.commentContent);
   form.append('commentClientRef', opts.commentClientRef || crypto.randomUUID());
   return form;
