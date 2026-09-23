@@ -1,5 +1,6 @@
 'use client';
 
+import { OVERDUE_EXEMPT_STAGES } from '@pms/shared';
 import Link from 'next/link';
 import Icon, { initials, priorityChipClass, priorityLabel, isOverdue } from '../icons.jsx';
 import { daysBetween, formatDateOnly } from './ticket-drawer-utils.js';
@@ -78,9 +79,12 @@ export default function TicketHeader({
           {ticket.estimatedResolutionAt ? (
             <>
               Due {formatDateOnly(ticket.estimatedResolutionAt)}
-              <b className={isOverdue(ticket) ? 'late' : ''}>
-                {` · ${Math.abs(daysBetween(ticket.estimatedResolutionAt))}d ${isOverdue(ticket) ? 'late' : 'left'}`}
-              </b>
+              {/* From Ready for Production on, the deadline no longer runs: no "late"/"left". */}
+              {OVERDUE_EXEMPT_STAGES.includes(ticket.status) ? null : (
+                <b className={isOverdue(ticket) ? 'late' : ''}>
+                  {` · ${Math.abs(daysBetween(ticket.estimatedResolutionAt))}d ${isOverdue(ticket) ? 'late' : 'left'}`}
+                </b>
+              )}
             </>
           ) : <span className="empty">No due date</span>}
         </span>

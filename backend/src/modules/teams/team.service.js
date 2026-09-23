@@ -1,4 +1,4 @@
-import { ROLE_IDS } from '@pms/shared';
+import { OVERDUE_EXEMPT_STAGES, ROLE_IDS } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
 import Project from '../projects/project.model.js';
@@ -91,8 +91,8 @@ const ZERO_STATS = Object.freeze({ total: 0, open: 0, overdue: 0 });
  * team. Served by the existing { team: 1, status: 1 } index.
  *
  * Overdue repeats buildTicketFilter()'s `overdue` clause and the client's
- * isOverdue(): a past estimatedResolutionAt on a ticket that is neither closed
- * nor live. The $type guard is load-bearing and must stay a $type check — a
+ * isOverdue(): a past estimatedResolutionAt on a ticket that hasn't reached
+ * Ready for Production (OVERDUE_EXEMPT_STAGES). The $type guard is load-bearing and must stay a $type check — a
  * MISSING estimate compares as lower than any date, and `$ne: [field, null]`
  * does NOT catch it (missing is not null in an aggregation expression), so a
  * null-guard lets every estimate-less ticket read as overdue.
@@ -170,7 +170,7 @@ async function ticketStatsByTeam(teamIds) {
               $and: [
                 { $eq: [{ $type: '$estimatedResolutionAt' }, 'date'] },
                 { $lt: ['$estimatedResolutionAt', now] },
-                { $not: [{ $in: ['$status', ['closed', 'live']] }] },
+                { $not: [{ $in: ['$status', [...OVERDUE_EXEMPT_STAGES]] }] },
               ],
             }, 1, 0],
           },

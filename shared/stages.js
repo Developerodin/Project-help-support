@@ -35,6 +35,14 @@ export const STAGE_KEYS = Object.freeze(STAGES.map((s) => s.key));
 export const STAGE_BY_KEY = new Map(STAGES.map((s) => [s.key, s]));
 
 export const stageIndex = (key) => (STAGE_BY_KEY.get(key)?.index ?? -1);
+
+/**
+ * Stages where a ticket can no longer be overdue: Ready for Production and every
+ * stage after it. The work is done; only the release remains.
+ */
+export const OVERDUE_EXEMPT_STAGES = Object.freeze(
+  STAGE_KEYS.slice(stageIndex('ready_production')),
+);
 export const stageLabel = (key) => (STAGE_BY_KEY.get(key)?.label ?? key);
 
 /** Ten columns do not fit a screen. Five collapsible lanes; cards still show the exact stage. */

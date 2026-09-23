@@ -5,6 +5,7 @@ import {
   ticketDateKey,
   CATEGORIES,
   STAGE_KEYS,
+  OVERDUE_EXEMPT_STAGES,
   ROLE_IDS,
   ADMIN_ROLES,
   ESTIMATE_DATE_EDITOR_ROLES,
@@ -344,8 +345,8 @@ export async function buildTicketFilter(actor, query = {}, permissionContext = n
   if (query.reopened === 'true' || query.reopened === true) filter.reopenCount = { $gt: 0 };
   if (query.overdue === 'true' || query.overdue === true) {
     filter.estimatedResolutionAt = { $lt: new Date() };
-    // Match frontend isOverdue(): closed and live tickets never count as overdue.
-    if (!filter.status) filter.status = { $nin: ['closed', 'live'] };
+    // Match frontend isOverdue(): Ready for Production and later never count as overdue.
+    if (!filter.status) filter.status = { $nin: [...OVERDUE_EXEMPT_STAGES] };
   }
 
   // Scope resolves against req.user, never against an id in the query string.

@@ -74,14 +74,17 @@ export function daysBetweenDates(from, to = Date.now()) {
   return Math.floor((new Date(to).getTime() - new Date(from).getTime()) / 86400000);
 }
 
+import { OVERDUE_EXEMPT_STAGES } from './stages.js';
+
 /**
- * Matches backend overdue filter and frontend list chips: closed/live never overdue.
+ * Matches backend overdue filter and frontend list chips: nothing from Ready for
+ * Production onward is overdue (OVERDUE_EXEMPT_STAGES).
  * @param {{ estimatedResolutionAt?: Date|string|null, status?: string }} ticket
  * @param {number} [nowMs]
  */
 export function isTicketOverdue(ticket, nowMs = Date.now()) {
   if (!ticket?.estimatedResolutionAt) return false;
-  if (ticket.status === 'closed' || ticket.status === 'live') return false;
+  if (OVERDUE_EXEMPT_STAGES.includes(ticket.status)) return false;
   return new Date(ticket.estimatedResolutionAt).getTime() < nowMs;
 }
 
