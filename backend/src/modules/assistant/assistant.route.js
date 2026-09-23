@@ -30,6 +30,8 @@ const chatSchema = {
       path: Joi.string().max(200).pattern(/^\/[\w\-/]*$/).required(),
       ticketId: Joi.string().pattern(/^[A-Za-z][A-Za-z0-9]{1,9}-\d+$/).allow(null),
       tab: Joi.string().valid(...TICKET_TABS).allow(null),
+      // The project picked in the switcher (null = all projects).
+      project: Joi.string().pattern(/^[A-Za-z][A-Za-z0-9]{1,9}$/).allow(null),
     }),
   }),
 };

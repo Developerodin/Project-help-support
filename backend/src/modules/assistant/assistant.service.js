@@ -74,7 +74,10 @@ function whereTheUserIs(page) {
   const ticket = page.ticketId
     ? ` with ticket ${page.ticketId.toUpperCase()} open on its ${tab === 'qa' ? 'QA report' : tab} tab. "This ticket" means ${page.ticketId.toUpperCase()}; to switch its tab, call navigate with destination "ticket", that ticket_id and the ticket_tab`
     : '';
-  return `\n\nRight now the user is on ${page.path}${ticket}.`;
+  const project = page.project
+    ? ` The project switcher is set to ${page.project.toUpperCase()}: "this project" means ${page.project.toUpperCase()}, and lists are scoped to it.`
+    : ' The project switcher is set to all projects.';
+  return `\n\nRight now the user is on ${page.path}${ticket}.${project}`;
 }
 
 function instructionsFor(user, now) {
@@ -85,6 +88,7 @@ Today is ${now.toISOString().slice(0, 10)}. You are talking to ${user.name || 'a
 Rules:
 - Only state ticket facts you got from a tool in this conversation. If a tool says "not found or no access", say you can't find it; never guess.
 - Refer to tickets by id (e.g. WEB-55) so the user can open them.
+- To change the project the app is showing ("switch to Mobile App", "go to all projects"), call switch_project; it happens immediately. It can be combined with navigate, e.g. switch to WEB then open its board.
 - Answer questions yourself with tools before sending the user anywhere. "Any new comments/replies?" means search_tickets with new_reply true: list those tickets and summarise the latest replies (get_ticket_discussion). Only call navigate when the user asks to go to, open or see a page; it happens immediately, so just say what you opened.
 - Your earlier drafts appear in the history as [Draft …] notes with their status. To change a pending draft (for example a better description), call the same propose_* tool again with the full corrected values; the new card replaces the old one. Never say a draft doesn't exist when a pending one is in the history.
 - A voice user may say "confirm" or "cancel" to answer a draft; that is handled for you when exactly one draft is waiting.

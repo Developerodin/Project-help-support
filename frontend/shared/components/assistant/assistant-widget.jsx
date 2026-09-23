@@ -22,6 +22,7 @@ import { isAbortError } from '@/shared/api/client.js';
 import { TAB_PARAM, TICKET_PARAM } from '@/shared/lib/deep-link.js';
 import { friendlyTransitionError, normalizeApiError } from '@/shared/lib/api-error.js';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
+import { useProject } from '@/shared/contexts/project-context.jsx';
 import { clearAssistantChats, readSavedChat, saveChat } from '@/shared/lib/assistant-chat-storage.js';
 import { useVoiceRecorder, voiceErrorMessage, watchForSpeech } from './use-voice-recorder.js';
 import VoiceMode, { useLevelVar } from './voice-mode.jsx';
@@ -483,6 +484,10 @@ export default function AssistantWidget() {
   const router = useRouter();
   const { user } = useAuth();
   const userId = user?.id ?? null;
+  const { activeProject, setActiveProjectId } = useProject();
+  // Read at send time, so send() keeps a stable identity for the voice loop.
+  const projectKeyRef = useRef(null);
+  projectKeyRef.current = activeProject?.key ?? null;
   const [enabled, setEnabled] = useState(false);
   // Today's allowance for the usage ring: { percent, limitInr, usedInr, resetsAt }.
   const [usage, setUsage] = useState(null);
@@ -677,11 +682,11 @@ export default function AssistantWidget() {
         .map((message) => ({ role: message.role, content: historyText(message).slice(0, 4000) }));
       const { reply, actions = [] } = await sendAssistantMessage(history, {
         signal: controller.signal,
-        page: currentPage(),
+        page: { ...currentPage(), project: projectKeyRef.current },
         ...(handsFreeRef.current ? { mode: 'voice' } : {}),
       });
       const files = actions.filter((action) => action.type === 'attachment');
-      const drafts = actions.filter((action) => action.type !== 'navigate' && action.type !== 'attachment');
+      const drafts = actions.filter((action) => !['navigate', 'attachment', 'switch_project'].includes(action.type));
       const answer = reply || (drafts.length ? 'Review the draft below.' : 'Sorry, I don\'t have an answer for that.');
       // A new draft of the same thing is a revision: retire the older pending card
       // so there is only ever one live version to confirm.
@@ -702,6 +707,9 @@ export default function AssistantWidget() {
           actions: drafts.map((action) => ({ ...action, status: 'pending' })),
         },
       ]);
+      // Same as picking it in the project switcher; before navigate so the new page opens in it.
+      const switched = actions.find((action) => action.type === 'switch_project');
+      if (switched) setActiveProjectId(switched.projectId);
       const destination = actions.find((action) => action.type === 'navigate');
       if (destination) {
         router.push(destination.href);
@@ -720,7 +728,7 @@ export default function AssistantWidget() {
       setBusy(false);
       refreshUsage();
     }
-  }, [router, refreshUsage]);
+  }, [router, refreshUsage, setActiveProjectId]);
 
   /** Applies or rejects a draft. Resolves with a short sentence saying what happened. */
   const resolveDraft = useCallback(async (action, confirm) => {

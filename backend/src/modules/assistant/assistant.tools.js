@@ -236,11 +236,18 @@ const NAVIGATE = fn(
   },
 );
 
+const SWITCH_PROJECT = fn(
+  'switch_project',
+  'Change which project the app shows (the project switcher at the top), right away. '
+    + 'project_key null means "All projects" (internal users only).',
+  { project_key: nullable({ type: 'string', description: 'Key from the project list, e.g. WEB.' }) },
+);
+
 /** Tools offered to this user. Proposals they could never confirm aren't offered. */
 export function toolsFor(user, permissionContext) {
   const external = isExternalUser(user);
   const allowed = (permission) => !external && can(user, permission, permissionContext);
-  const tools = [SEARCH_TICKETS, GET_TICKET, GET_DISCUSSION, OPEN_ATTACHMENT, LIST_PROJECTS, NAVIGATE];
+  const tools = [SEARCH_TICKETS, GET_TICKET, GET_DISCUSSION, OPEN_ATTACHMENT, LIST_PROJECTS, NAVIGATE, SWITCH_PROJECT];
   if (external || can(user, 'tickets.create', permissionContext)) tools.push(PROPOSE_CREATE);
   if (allowed('tickets.edit')) tools.push(PROPOSE_UPDATE);
   // Stage moves: internal users who work the board, or clients allowed to close/reopen.
@@ -585,6 +592,21 @@ const HANDLERS = {
     }
     ctx.actions.push({ id: randomUUID(), type: 'navigate', href, label });
     return { status: 'opened', page: label };
+  },
+
+  async switch_project(args, ctx) {
+    if (!args.project_key) {
+      // Clients always work inside one of their projects; the switcher has no "All" for them.
+      if (isExternalUser(ctx.user)) throw new ToolError('Clients work in one project at a time. Ask which one.');
+      ctx.actions.push({ id: randomUUID(), type: 'switch_project', projectId: null, label: 'All projects' });
+      return { status: 'switched', project: 'All projects' };
+    }
+    // Only projects the switcher would list for this user.
+    const project = await projectByKey(ctx, args.project_key);
+    ctx.actions.push({
+      id: randomUUID(), type: 'switch_project', projectId: idOf(project), label: `${project.key} ${project.name}`,
+    });
+    return { status: 'switched', project: `${project.key} ${project.name}` };
   },
 
   async propose_create_ticket(args, ctx) {
