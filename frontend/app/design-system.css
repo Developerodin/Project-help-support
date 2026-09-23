@@ -4913,6 +4913,29 @@ body:has(.assistant-fab) .page{ padding-bottom:96px; } /* keep the pager clear o
 .assistant-action-note{ color:var(--ink-3); }
 .assistant-action-error{ color:var(--alarm); }
 
+/* Project report: totals first, lists folded away, then the download. */
+.assistant-msg:has(.assistant-report){ max-width:100%; width:100%; }
+.assistant-report{ margin-top:6px; padding:12px; border:1px solid var(--rule); border-radius:var(--r-lg);
+  background:var(--paper); font-size:0.8125rem; display:flex; flex-direction:column; gap:8px; }
+.assistant-report p{ margin:0; }
+.assistant-report-title{ font-weight:600; color:var(--ink); }
+.assistant-report-period{ font-size:0.75rem; color:var(--ink-3); }
+.assistant-report-totals{ margin:2px 0; display:grid; grid-template-columns:repeat(5, 1fr); gap:1px;
+  background:var(--rule-soft); border:1px solid var(--rule-soft); border-radius:var(--r); overflow:hidden; }
+.assistant-report-totals div{ display:flex; flex-direction:column-reverse; gap:1px; padding:6px 4px; background:var(--panel); text-align:center; }
+.assistant-report-totals dt{ font-size:0.6875rem; color:var(--ink-3); }
+.assistant-report-totals dd{ margin:0; font-size:1rem; font-weight:600; color:var(--ink); font-variant-numeric:tabular-nums; }
+.assistant-report-totals .is-alert dd{ color:var(--alarm); }
+.assistant-report-note{ color:var(--ink-2); }
+.assistant-report-list{ border-top:1px solid var(--rule-soft); padding-top:6px; }
+.assistant-report-list summary{ display:flex; align-items:center; gap:6px; min-height:32px; cursor:pointer; font-weight:600; color:var(--ink); }
+.assistant-report-list summary span{ font-weight:400; color:var(--ink-3); font-variant-numeric:tabular-nums; }
+.assistant-report-list summary:focus-visible{ outline:2px solid var(--sig); outline-offset:2px; border-radius:var(--r); }
+.assistant-report-list ul{ margin:4px 0 6px; padding:0; list-style:none; display:grid; gap:6px; }
+.assistant-report-list li{ line-height:1.45; color:var(--ink); overflow-wrap:anywhere; }
+.assistant-report-extra{ display:block; font-size:0.75rem; color:var(--ink-3); }
+.assistant-report-download{ align-self:flex-start; display:inline-flex; align-items:center; gap:6px; min-height:32px; }
+
 .assistant-error{ margin:0; padding:6px 14px; font-size:0.8125rem; color:var(--alarm); }
 .assistant-footer{ display:flex; align-items:center; gap:8px; padding:0 12px 8px; }
 .assistant-disclaimer{ flex:1; margin:0; font-size:0.6875rem; line-height:1.4; color:var(--ink-3); }
@@ -5102,6 +5125,19 @@ body:has(.voice-dock) .page{ padding-bottom:120px; }
 .voice-draft-edit{ margin-left:auto; }
 .voice-draft-error{ font-size:0.75rem; color:var(--alarm); }
 .voice-draft-hint{ font-size:0.6875rem; color:var(--ink-3); }
+.voice-report{ display:flex; flex-direction:column; gap:4px; padding:8px 10px; border-radius:var(--r);
+  border:1px solid var(--rule); background:var(--panel); }
+.voice-report-title{ font-size:0.8125rem; font-weight:600; color:var(--ink); }
+.voice-report-period{ font-size:0.75rem; color:var(--ink-3); }
+.voice-report .btn{ display:inline-flex; align-items:center; gap:5px; }
+/* The chat opened beside voice mode (for a report): the dock moves to its left. */
+.voice-dock.is-beside-panel{ right:calc(20px + min(400px, 100vw - 40px) + 12px); }
+@media (max-width:900px){
+  /* No room beside the chat: keep just the orb, small, above it. */
+  .voice-dock.is-beside-panel{ right:16px; bottom:auto; top:calc(6px + env(safe-area-inset-top, 0px)); }
+  .voice-dock.is-beside-panel .voice-card{ display:none; }
+  .voice-dock.is-beside-panel .voice-orb{ width:44px; height:44px; }
+}
 .voice-card .usage-meter-tip{ left:0; } /* the card scrolls, so keep the tooltip inside it */
 .voice-card-actions{ display:flex; align-items:center; justify-content:flex-end; gap:4px; }
 .voice-card-notice{ margin-right:auto; font-size:0.6875rem; color:var(--ink-3); }

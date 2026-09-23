@@ -32,6 +32,8 @@ import { clearAssistantChats, readSavedChat, saveChat } from '@/shared/lib/assis
 import { useVoiceRecorder, voiceErrorMessage, watchForSpeech } from './use-voice-recorder.js';
 import VoiceMode, { useLevelVar } from './voice-mode.jsx';
 import UsageMeter from './usage-meter.jsx';
+import ReportCard from './report-card.jsx';
+import { downloadReport, reportPeriod, reportTitle } from '@/shared/lib/report-document.js';
 import {
   AttachButton, FileDropZone, StagedFiles, fileDropProps, stageFiles,
 } from './staged-files.jsx';
@@ -164,6 +166,7 @@ const draftKey = (action) => `${action.type}:${action.ticketId || action.ticketI
 /** What the model sees for a past message: its text plus notes for any drafts. */
 export function historyText(message) {
   const notes = (message.actions || []).map(draftNote);
+  if (message.report) notes.push(`[Report shown: ${reportTitle(message.report)}, ${message.report.from} to ${message.report.to}]`);
   const files = message.attached?.length
     ? [`[Files ready to attach: ${message.attached.map((file) => file.name).join(', ')}]`]
     : [];
@@ -956,8 +959,10 @@ export default function AssistantWidget() {
         ...(handsFreeRef.current ? { mode: 'voice' } : {}),
       });
       const files = actions.filter((action) => action.type === 'attachment');
-      const drafts = actions.filter((action) => !['navigate', 'attachment', 'switch_project', 'watch', 'ticket_filters']
-        .includes(action.type));
+      const drafts = actions.filter((action) => ![
+        'navigate', 'attachment', 'switch_project', 'watch', 'ticket_filters', 'report', 'report_download',
+      ].includes(action.type));
+      const report = actions.find((action) => action.type === 'report')?.report;
       const answer = reply || (drafts.length ? 'Review the draft below.' : 'Sorry, I don\'t have an answer for that.');
       // A new draft of the same thing is a revision: retire the older pending card
       // so there is only ever one live version to confirm.
@@ -975,6 +980,7 @@ export default function AssistantWidget() {
           role: 'assistant',
           content: answer,
           files,
+          ...(report ? { report } : {}),
           actions: drafts.map((action) => ({
             ...action,
             status: 'pending',
@@ -983,6 +989,13 @@ export default function AssistantWidget() {
           })),
         },
       ]);
+      // A report is too long for the voice card: open the chat beside it, voice stays on.
+      if (report && handsFreeRef.current) setOpen(true);
+      if (actions.some((action) => action.type === 'report_download')) {
+        const latest = report ? { report, content: answer } : messagesRef.current.findLast((message) => message.report);
+        if (latest) downloadReport(latest.report, latest.content);
+        else setError('There is no report in this chat to download yet.');
+      }
       // Watching only changes the user's own notifications, so it needs no card.
       for (const action of actions.filter((entry) => entry.type === 'watch')) {
         (action.watch ? watchTicket : unwatchTicket)(action.ticketId)
@@ -1293,8 +1306,11 @@ export default function AssistantWidget() {
   };
 
   const close = () => {
-    endHandsFree();
-    stopRecording();
+    // With voice on (the chat was opened beside it for a report), closing only hides the chat.
+    if (!handsFree) {
+      endHandsFree();
+      stopRecording();
+    }
     const finish = () => {
       returnFocus.current = true;
       setClosing(false);
@@ -1329,9 +1345,19 @@ export default function AssistantWidget() {
       : busy || preparingSpeech ? 'thinking'
         : speaking ? 'speaking'
           : 'idle';
+  // The report from the latest reply, for voice mode's shortcut to it.
+  const lastMessage = messages.at(-1);
+  const voiceReport = lastMessage?.report ? {
+    title: reportTitle(lastMessage.report),
+    period: reportPeriod(lastMessage.report),
+    download: () => downloadReport(lastMessage.report, lastMessage.content),
+  } : null;
   const voiceMode = handsFree ? (
     <VoiceMode
       phase={voicePhase}
+      besidePanel={open}
+      report={voiceReport}
+      onShowReport={() => setOpen(true)}
       heard={heard}
       reply={lastReply}
       draft={pendingDraft ? { ...describeAction(pendingDraft), status: pendingDraft.status, error: pendingDraft.error } : null}
@@ -1501,6 +1527,9 @@ export default function AssistantWidget() {
                 <div className="assistant-files">
                   {message.files.map((file) => <FileButton key={file.id} file={file} />)}
                 </div>
+              ) : null}
+              {message.report ? (
+                <ReportCard report={message.report} onDownload={() => downloadReport(message.report, message.content)} />
               ) : null}
               {message.actions?.map((action) => (
                 <ActionCard

@@ -57,6 +57,7 @@ export default function VoiceMode({
   micLevel, outputLevel, onEnd, onShowChat, notice, usage, onUsageReset, onInterrupt,
   files = [], fileError = null, onAddFiles, onRemoveFile,
   draftFiles = null, draftFileError = null, onDraftFiles, onDraftRemoveFile,
+  besidePanel = false, report = null, onShowReport,
 }) {
   const orbRef = useRef(null);
   const endRef = useRef(null);
@@ -84,7 +85,7 @@ export default function VoiceMode({
       : 0));
 
   return (
-    <section className={`voice-dock is-${phase}`} aria-label="Voice mode" {...(onAddFiles ? fileDropProps(onAddFiles) : {})}>
+    <section className={`voice-dock is-${phase}${besidePanel ? ' is-beside-panel' : ''}`} aria-label="Voice mode" {...(onAddFiles ? fileDropProps(onAddFiles) : {})}>
       <div className="voice-card">
         <p className="voice-card-phase" role="status" aria-live="polite">
           <span className="voice-card-dot" aria-hidden="true" />
@@ -96,6 +97,21 @@ export default function VoiceMode({
           {reply ? <p className="voice-card-reply">{reply}</p> : null}
           {!heard && !reply ? <p className="voice-card-heard">Ask about a ticket, or say where to go.</p> : null}
         </div>
+        {report ? (
+          <div className="voice-report" role="group" aria-label={report.title}>
+            <p className="voice-report-title">{report.title}</p>
+            <p className="voice-report-period">{report.period}</p>
+            <div className="voice-draft-actions">
+              {besidePanel ? null : (
+                <button type="button" className="btn btn-sm" onClick={onShowReport}>Show report</button>
+              )}
+              <button type="button" className="btn btn-sm btn-ghost" onClick={report.download}>
+                <Icon name="download" size={14} aria-hidden="true" />
+                Download
+              </button>
+            </div>
+          </div>
+        ) : null}
         {onRemoveFile ? <StagedFiles files={files} error={fileError} onRemove={onRemoveFile} /> : null}
         {files.length && !draft ? (
           <p className="voice-card-hint">Say which ticket to attach {files.length === 1 ? 'it' : 'them'} to.</p>

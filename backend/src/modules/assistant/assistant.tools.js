@@ -4,14 +4,15 @@ import {
   NOTIFICATION_EVENTS, SEVERITIES, STAGES, STAGE_KEYS,
   can, canAccessRoute, canEditTicket, hasAnyRole, isExternalUser, isTicketOverdue, notificationEventLabel, resolveProjectModules, stageIndex, stageLabel,
 } from '@pms/shared';
-import { getTicket, listTickets } from '../tickets/ticket.service.js';
+import { buildTicketFilter, getTicket, listTickets } from '../tickets/ticket.service.js';
+import Ticket from '../tickets/ticket.model.js';
 import { allowedTransitions, checkGuards, previewTransition } from '../tickets/transition.service.js';
 import { assertModuleAndPage, listProjects } from '../projects/project.service.js';
 import { listClients } from '../clients/client.service.js';
 import { listTeams } from '../teams/team.service.js';
 import { listUsers } from '../users/user.service.js';
 import { listProjectTeamMembers } from '../projects/project-team-member.service.js';
-import { dashboard as analyticsDashboard } from '../tickets/analytics.service.js';
+import { computeDelivery, computeTimeInStage, dashboard as analyticsDashboard } from '../tickets/analytics.service.js';
 import { ANALYTICS_ROLES } from '../tickets/analytics.access.js';
 
 /*
@@ -393,6 +394,25 @@ const GET_ANALYTICS = fn(
   },
 );
 
+const CREATE_REPORT = fn(
+  'create_project_report',
+  'Build a status report for one project over a period (default the last 7 days): where tickets stand, what was '
+    + 'created and finished in the period, what is overdue or blocked, the bottleneck stage, and open tickets per '
+    + 'owner. It is shown to the user as a report card they can download as a document.',
+  {
+    project_key: { type: 'string', description: 'Project key, e.g. WEB.' },
+    days: nullable({ type: 'integer', description: 'Report on the last N days, 1 to 90 (default 7).' }),
+    from: nullable({ type: 'string', description: 'Period start, YYYY-MM-DD; use with to instead of days.' }),
+    to: nullable({ type: 'string', description: 'Period end, YYYY-MM-DD (inclusive).' }),
+  },
+);
+
+const DOWNLOAD_REPORT = fn(
+  'download_report',
+  'Download the latest report in this chat as a document (the user asked to download, save or export it).',
+  {},
+);
+
 const SWITCH_PROJECT = fn(
   'switch_project',
   'Change which project the app shows (the project switcher at the top), right away. '
@@ -424,7 +444,7 @@ export function toolsFor(user, permissionContext) {
   const admin = !external && hasAnyRole(user, ...ADMIN_ROLES);
   if (admin) tools.push(SEARCH_USERS);
   // Same gate as the analytics REST routes (analytics.access.js).
-  if (!external && hasAnyRole(user, ...ANALYTICS_ROLES)) tools.push(GET_ANALYTICS);
+  if (!external && hasAnyRole(user, ...ANALYTICS_ROLES)) tools.push(GET_ANALYTICS, CREATE_REPORT, DOWNLOAD_REPORT);
   if (allowed('teams.view')) tools.push(LIST_TEAMS);
   if (allowed('clients.view')) tools.push(LIST_CLIENTS);
   if (allowed('projects.manage') && allowed('clients.view')) tools.push(PROPOSE_CREATE_PROJECT);
@@ -496,6 +516,19 @@ async function projectByKey(ctx, key) {
 }
 
 class ToolError extends Error {}
+
+const MAX_REPORT_DAYS = 90;
+
+/** The report's period: from/to when given (to inclusive), else the last `days` days up to now. */
+function reportPeriod(args) {
+  const to = args.to ? new Date(`${args.to}T23:59:59.999Z`) : new Date();
+  const days = Math.min(MAX_REPORT_DAYS, Math.max(1, args.days ?? 7));
+  const from = args.from ? new Date(`${args.from}T00:00:00.000Z`) : new Date(to.getTime() - days * 86400000);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) throw new ToolError('Use dates like 2026-09-01.');
+  if (from > to) throw new ToolError('The period starts after it ends.');
+  if (to - from > MAX_REPORT_DAYS * 86400000) throw new ToolError(`Keep the period to ${MAX_REPORT_DAYS} days or less.`);
+  return { from, to };
+}
 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -878,6 +911,80 @@ const HANDLERS = {
       created_vs_closed_by_week: data.trend.points.slice(-12),
       breakdown: { by: data.drill.dimension, rows: data.drill.rows.slice(0, 15) },
     };
+  },
+
+  async create_project_report(args, ctx) {
+    const project = await projectByKey(ctx, args.project_key);
+    const { from, to } = reportPeriod(args);
+    const filter = await buildTicketFilter(ctx.user, { project: String(project.id) }, ctx.permissionContext);
+    // ponytail: loads the project's tickets in memory like analytics does (its ceiling is 10k tickets);
+    // move the period counts into an aggregation if projects grow past that.
+    const tickets = await Ticket.find(filter)
+      .select('ticketId title status priority blocked blockerReason estimatedResolutionAt createdAt closedAt stageHistory assignedTo')
+      .populate('assignedTo', 'name')
+      .lean();
+    const inPeriod = (date) => date && new Date(date) >= from && new Date(date) <= to;
+    const brief = (ticket) => ({
+      id: ticket.ticketId, title: clip(ticket.title, 120), stage: stageLabel(ticket.status), priority: ticket.priority,
+    });
+    const LIST = 15;
+    const open = tickets.filter((ticket) => ticket.status !== 'closed');
+    const created = tickets.filter((ticket) => inPeriod(ticket.createdAt));
+    // Finished: went Live or was closed in the period.
+    const finished = tickets.filter((ticket) => inPeriod(ticket.closedAt)
+      || (ticket.stageHistory || []).some((entry) => entry.to === 'live' && inPeriod(entry.at)));
+    const overdue = open.filter((ticket) => isTicketOverdue(ticket));
+    const blocked = open.filter((ticket) => ticket.blocked);
+    const owners = new Map();
+    for (const ticket of open) {
+      const name = ticket.assignedTo?.name || 'Unassigned';
+      owners.set(name, (owners.get(name) || 0) + 1);
+    }
+    const byStage = new Map();
+    for (const ticket of tickets) byStage.set(ticket.status, (byStage.get(ticket.status) || 0) + 1);
+    const timeInStage = computeTimeInStage(tickets);
+    const delivery = computeDelivery(tickets, { windowDays: 90 });
+    const report = {
+      project: { key: project.key, name: project.name },
+      from: day(from),
+      to: day(to),
+      totals: {
+        tickets: tickets.length,
+        open: open.length,
+        created: created.length,
+        finished: finished.length,
+        overdue: overdue.length,
+        blocked: blocked.length,
+      },
+      by_stage: STAGE_KEYS.filter((key) => byStage.get(key)).map((key) => ({ stage: stageLabel(key), count: byStage.get(key) })),
+      bottleneck: timeInStage.bottleneck
+        ? { stage: stageLabel(timeInStage.bottleneck), median_hours: timeInStage.byStage[timeInStage.bottleneck].medianHours }
+        : null,
+      lead_time_median_hours: delivery.leadTime.medianHours,
+      cycle_time_median_hours: delivery.cycleTime.medianHours,
+      created_tickets: created.slice(0, LIST).map(brief),
+      finished_tickets: finished.slice(0, LIST).map(brief),
+      overdue_tickets: overdue.slice(0, LIST).map((ticket) => ({
+        ...brief(ticket), owner: ticket.assignedTo?.name || 'Unassigned', due: day(ticket.estimatedResolutionAt),
+      })),
+      blocked_tickets: blocked.slice(0, LIST).map((ticket) => ({
+        ...brief(ticket), reason: ticket.blockerReason ? clip(ticket.blockerReason, 200) : null,
+      })),
+      open_by_owner: [...owners.entries()].map(([name, count]) => ({ name, open: count }))
+        .sort((a, b) => b.open - a.open).slice(0, 10),
+    };
+    ctx.actions.push({ id: randomUUID(), type: 'report', report });
+    return {
+      status: 'shown',
+      note: 'The report card is on screen and can be downloaded. Reply with a short summary: the few things that '
+        + 'matter most (progress, risks, who is overloaded). Don\'t read the lists out.',
+      report,
+    };
+  },
+
+  async download_report(_args, ctx) {
+    ctx.actions.push({ id: randomUUID(), type: 'report_download' });
+    return { status: 'downloading', note: 'The latest report in this chat is downloading as a document.' };
   },
 
   async navigate(args, ctx) {
