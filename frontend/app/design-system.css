@@ -5073,7 +5073,7 @@ body:has(.voice-dock) .page{ padding-bottom:120px; }
 
 .voice-card{
   display:flex; flex-direction:column; gap:6px;
-  width:min(320px, calc(100vw - 40px - 76px)); max-height:calc(100dvh - 120px); overflow-y:auto; padding:10px 12px 8px;
+  width:min(360px, calc(100vw - 40px - 76px)); max-height:calc(100dvh - 120px); overflow-y:auto; padding:10px 12px 8px;
   background:var(--paper); border:1px solid var(--rule); border-radius:var(--r-lg);
   box-shadow:0 8px 24px oklch(0.245 0.014 262 / 0.16);
 }
@@ -5082,10 +5082,10 @@ body:has(.voice-dock) .page{ padding-bottom:120px; }
 .voice-card-dot{ width:7px; height:7px; border-radius:50%; background:var(--ink-3); }
 .voice-dock.is-listening .voice-card-dot{ background:var(--alarm); }
 .voice-dock.is-speaking .voice-card-dot{ background:var(--sig); }
-.voice-card-captions{ display:flex; flex-direction:column; gap:4px; }
 .voice-card-heard{ font-size:0.8125rem; color:var(--ink-3); }
-.voice-card-reply{ font-size:0.875rem; line-height:1.45; color:var(--ink);
-  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+/* Full text, wrapped; a long reply scrolls in place so the draft and buttons stay in view. */
+.voice-card-captions{ display:flex; flex-direction:column; gap:4px; max-height:9.5em; overflow-y:auto; overscroll-behavior:contain; }
+.voice-card-reply{ font-size:0.875rem; line-height:1.5; color:var(--ink); overflow-wrap:anywhere; }
 /* Compact draft preview: voice mode's stand-in for the chat's full card. */
 .voice-draft{ display:flex; flex-direction:column; gap:6px; padding:8px 10px; border-radius:var(--r);
   border:1px solid var(--sig-line); background:color-mix(in oklch, var(--sig-wash) 60%, var(--paper)); }
@@ -5093,8 +5093,11 @@ body:has(.voice-dock) .page{ padding-bottom:120px; }
 .voice-draft dl{ margin:0; display:grid; gap:2px; font-size:0.75rem; }
 .voice-draft dl div{ display:grid; grid-template-columns:62px 1fr; gap:6px; }
 .voice-draft dt{ color:var(--ink-3); }
-.voice-draft dd{ margin:0; min-width:0; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.voice-draft .is-long dd{ white-space:normal; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+.voice-draft dd{ margin:0; min-width:0; color:var(--ink); line-height:1.45; overflow-wrap:anywhere; }
+/* Free text (comment, details, reason) gets its own full-width block, read in full. */
+.voice-draft .is-long{ grid-template-columns:1fr; gap:2px; }
+.voice-draft .is-long dd{ white-space:pre-wrap; font-size:0.8125rem; max-height:8.5em; overflow-y:auto; overscroll-behavior:contain;
+  padding:6px 8px; border-radius:var(--r); background:var(--paper); border:1px solid var(--rule); }
 .voice-draft-actions{ display:flex; flex-wrap:wrap; gap:4px; }
 .voice-draft-edit{ margin-left:auto; }
 .voice-draft-error{ font-size:0.75rem; color:var(--alarm); }

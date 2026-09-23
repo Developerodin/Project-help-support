@@ -277,7 +277,12 @@ async function applyAction(action) {
   }
   if (action.type === 'comment') {
     // The draft id as clientRef: a retry after a dropped response can't post twice.
-    await addComment(action.ticketId, { content: action.content, internal: action.internal, clientRef: action.id });
+    await addComment(action.ticketId, {
+      content: action.content,
+      internal: action.internal,
+      clientRef: action.id,
+      ...(action.mentions?.length ? { mentions: action.mentions } : {}),
+    });
     return `Posted on ${action.ticketId}.`;
   }
   if (action.type === 'attach_files') {
@@ -569,8 +574,9 @@ function ActionCard({
 /** Spoken answers to a waiting draft, and "stop" for hands-free. Anything else goes to the model. */
 export function matchVoiceCommand(text) {
   const said = String(text).toLowerCase().replace(/[.,!?]/g, '').trim();
-  if (/^(yes|yeah|yep|confirm|confirm it|confirmed|do it|go ahead|ok|okay|sure)( please)?$/.test(said)) return 'confirm';
-  if (/^(no|nope|cancel|cancel it|never mind|nevermind|don't|do not)$/.test(said)) return 'cancel';
+  // English, and the Hindi/Hinglish people actually say ("haan", "theek hai", "kar do", "nahi").
+  if (/^(yes|yeah|yep|confirm|confirm it|confirmed|do it|go ahead|ok|okay|sure|haan|han|haan ji|ji haan|ha ji|theek hai|thik hai|achha|acha|accha|achcha|kar do|karo|post kar do|post karo|bhej do|हाँ|हां|ठीक है|कर दो)( please| ji)?$/.test(said)) return 'confirm';
+  if (/^(no|nope|cancel|cancel it|never mind|nevermind|don't|do not|nahi|nahin|na|mat karo|rehne do|cancel karo|cancel kar do|नहीं|रहने दो)( please| ji)?$/.test(said)) return 'cancel';
   if (/^(stop|stop listening|goodbye|bye|that's all|that is all|thanks that's all|thank you that's all)$/.test(said)) return 'stop';
   return null;
 }

@@ -63,22 +63,43 @@ const LANGUAGE_HINT = 'The speaker talks about software tickets and projects in 
   + 'or Hinglish (Hindi mixed with English). Transcribe English and Hinglish in Latin script and Hindi in Devanagari.';
 const ARABIC_SCRIPT = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFC]/;
 
-/** Project keys and names the speaker may say, so "TES4" isn't heard as "TS4". */
+/** Words of the app itself, so "discussion" isn't heard as "registration". */
+const APP_WORDS = 'Discussion, Details, Attachments, History, QA report, Board, Tickets, UI & QA, comment, reply.';
+
+/**
+ * Project keys and names the speaker may say, so "TES4" isn't heard as "TS4".
+ * A plain word list, not instructions: the transcriber sometimes echoes its
+ * prompt on near-silent audio, and a list is easy to recognise and drop.
+ */
 function vocabularyHint(vocabulary) {
-  if (!vocabulary?.length) return '';
-  const terms = vocabulary.slice(0, 40).map((project) => `${project.key} (${project.name})`).join(', ');
-  return ` Project keys and names that may be said, spelled exactly: ${terms}. Ticket ids look like KEY-NUMBER, e.g. ${vocabulary[0].key}-5.`;
+  const projects = (vocabulary || []).slice(0, 40).map((project) => `${project.key} (${project.name}), ${project.key}-2`);
+  return ` ${[APP_WORDS, ...projects].join('; ')}`;
+}
+
+const normalise = (text) => String(text).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+
+/**
+ * True when the "transcript" is really a piece of our own prompt, which the
+ * model produces for silence or noise. Real speech is never a verbatim chunk of it.
+ */
+export function isPromptEcho(text, prompt) {
+  const said = normalise(text);
+  if (said.split(' ').length < 4) return false; // "Board", "TES4-2": short real answers
+  return normalise(prompt).includes(said);
 }
 
 async function transcribeOnce(config, audio, language, vocabulary) {
+  const prompt = LANGUAGE_HINT + vocabularyHint(vocabulary);
   const form = new FormData();
   form.append('file', new Blob([audio.buffer], { type: audio.mimetype }), audio.originalname || 'audio.webm');
   form.append('model', config.assistant.transcribeModel);
-  form.append('prompt', LANGUAGE_HINT + vocabularyHint(vocabulary));
+  form.append('prompt', prompt);
   if (language) form.append('language', language);
   const res = await call(config, '/audio/transcriptions', { method: 'POST', body: form });
   const data = await res.json();
-  return String(data.text || '').trim();
+  const text = String(data.text || '').trim();
+  // An echoed prompt is not something the user said: treat it as silence.
+  return isPromptEcho(text, prompt) ? '' : text;
 }
 
 /**

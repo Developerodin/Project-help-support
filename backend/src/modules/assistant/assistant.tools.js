@@ -77,6 +77,21 @@ const GET_DISCUSSION = fn(
   { ticket_id: TICKET_ID },
 );
 
+/** Tickets scanned for recent comments: the most recently updated ones. */
+const RECENT_TICKETS = 25;
+const RECENT_COMMENTS = 40;
+
+const RECENT_COMMENTS_TOOL = fn(
+  'recent_comments',
+  'The latest discussion comments across a project (or all the user\'s projects), newest first, with the ticket each '
+    + 'belongs to. Use it for "what\'s new in the comments", "any updates on WEB", "what did the client say this week".',
+  {
+    project_key: nullable({ type: 'string', description: 'Project key; null for every project the user can see.' }),
+    days: nullable({ type: 'integer', description: 'How far back, 1 to 30. Null for 7.' }),
+    only_unread: nullable({ type: 'boolean', description: 'True for only tickets with replies this user has not read.' }),
+  },
+);
+
 const OPEN_ATTACHMENT = fn(
   'open_attachment',
   'Give the user a button to open one of a ticket\'s files (ids come from get_ticket or get_ticket_discussion). '
@@ -190,11 +205,16 @@ const PROPOSE_UPDATE = fn(
 
 const PROPOSE_COMMENT = fn(
   'propose_comment',
-  'Draft a comment on a ticket\'s discussion, written as the user. The user must confirm.',
+  'Draft a comment or reply on a ticket\'s discussion, written as the user. The user must confirm.',
   {
     ticket_id: TICKET_ID,
     text: { type: 'string', description: 'The comment, in the user\'s words and language.' },
     internal: nullable({ type: 'boolean', description: 'True for a team-only note clients can\'t see. Internal users only.' }),
+    mention: {
+      type: ['array', 'null'],
+      items: { type: 'string' },
+      description: 'Names of people on this ticket to @mention (e.g. the person being replied to); null for none.',
+    },
   },
 );
 
@@ -301,7 +321,9 @@ const SWITCH_PROJECT = fn(
 export function toolsFor(user, permissionContext) {
   const external = isExternalUser(user);
   const allowed = (permission) => !external && can(user, permission, permissionContext);
-  const tools = [SEARCH_TICKETS, GET_TICKET, GET_DISCUSSION, OPEN_ATTACHMENT, LIST_PROJECTS, NAVIGATE, SWITCH_PROJECT];
+  const tools = [
+    SEARCH_TICKETS, GET_TICKET, GET_DISCUSSION, RECENT_COMMENTS_TOOL, OPEN_ATTACHMENT, LIST_PROJECTS, NAVIGATE, SWITCH_PROJECT,
+  ];
   if (external || can(user, 'tickets.create', permissionContext)) tools.push(PROPOSE_CREATE);
   // Commenting and attaching need only ticket access, as on their REST routes.
   if (can(user, 'tickets.view', permissionContext) || external) tools.push(PROPOSE_COMMENT, PROPOSE_ATTACH);
@@ -478,6 +500,45 @@ const HANDLERS = {
         text: clip(comment.content, 2000),
         attachments: (comment.attachments || []).map(fileSummary),
       })),
+    };
+  },
+
+  async recent_comments(args, ctx) {
+    const days = Math.min(30, Math.max(1, Number(args.days) || 7));
+    const since = Date.now() - days * 24 * 60 * 60 * 1000;
+    const query = { page: 1, limit: RECENT_TICKETS, sortBy: 'updatedAt:desc' };
+    if (args.project_key) query.project = idOf(await projectByKey(ctx, args.project_key));
+    if (args.only_unread) query.newReply = true;
+    // Same access-checked list and ticket reads as the app, so clients only get
+    // their own tickets and never internal notes.
+    // ponytail: scans the 25 most recently updated tickets; a comments index if projects get busier.
+    const page = await listTickets(ctx.user, query, ctx.permissionContext);
+    const recent = page.results.filter((ticket) => new Date(ticket.updatedAt).getTime() >= since);
+    const comments = [];
+    for (const summary of recent) {
+      // Sequential on purpose: at most 25 reads, each access-checked on its own.
+      const ticket = await getTicket(ctx.user, summary.ticketId, ctx.permissionContext);
+      for (const comment of ticket.comments || []) {
+        if (new Date(comment.createdAt).getTime() < since) continue;
+        comments.push({
+          ticket: ticket.ticketId,
+          ticket_title: ticket.title,
+          stage: stageLabel(ticket.status),
+          by: comment.commentedBy?.name ?? null,
+          at: comment.createdAt ? new Date(comment.createdAt).toISOString().slice(0, 16).replace('T', ' ') : null,
+          internal: Boolean(comment.internal),
+          files: (comment.attachments || []).length,
+          text: clip(comment.content, 500),
+        });
+      }
+    }
+    comments.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+    return {
+      since: day(since),
+      tickets_checked: recent.length,
+      total: comments.length,
+      comments: comments.slice(0, RECENT_COMMENTS),
+      ...(comments.length > RECENT_COMMENTS ? { note: `Showing the newest ${RECENT_COMMENTS}; narrow by project or days for more.` } : {}),
     };
   },
 
@@ -765,8 +826,33 @@ const HANDLERS = {
     if (text.length > 10000) throw new ToolError('Comments can be at most 10000 characters.');
     const internal = Boolean(args.internal);
     if (internal && isExternalUser(ctx.user)) throw new ToolError('Clients can\'t post internal notes.');
+    // Mentions: only people already on this ticket (reporter, owner, anyone in its discussion).
+    const people = new Map();
+    for (const person of [ticket.createdBy, ticket.assignedTo, ...(ticket.comments || []).map((c) => c.commentedBy)]) {
+      if (person?.name && idOf(person) && idOf(person) !== idOf(ctx.user)) people.set(idOf(person), person.name);
+    }
+    const mentioned = [];
+    for (const name of args.mention || []) {
+      const wanted = String(name).trim().toLowerCase();
+      const matches = [...people].filter(([, full]) => full.toLowerCase().includes(wanted));
+      if (matches.length !== 1) {
+        throw new ToolError(matches.length
+          ? `"${name}" matches ${matches.map(([, full]) => full).join(', ')}. Ask which one.`
+          : `No one called "${name}" is on ${ticket.ticketId}. People on it: ${[...people.values()].join(', ') || 'none'}.`);
+      }
+      mentioned.push({ id: matches[0][0], name: matches[0][1] });
+    }
+    // The app links a mention by its "@Full Name" text plus the id, as the comment box does.
+    const missing = mentioned.filter((person) => !text.includes(`@${person.name}`));
+    const content = [...missing.map((person) => `@${person.name}`), text].join(' ');
+    if (content.length > 10000) throw new ToolError('Comments can be at most 10000 characters.');
     return proposal(ctx, {
-      type: 'comment', ticketId: ticket.ticketId, title: ticket.title, content: text, internal,
+      type: 'comment',
+      ticketId: ticket.ticketId,
+      title: ticket.title,
+      content,
+      internal,
+      mentions: mentioned.map((person) => person.id),
     });
   },
 

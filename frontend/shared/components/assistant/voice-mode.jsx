@@ -47,6 +47,9 @@ export function useLevelVar(elementRef, cssVar, pickLevel, active = true) {
  * It never covers the page, so people keep working while they talk. The
  * conversation loop itself lives in the widget; this only shows it.
  */
+/** Draft rows holding free text: shown full width and in full, not squeezed onto one line. */
+const LONG_FIELDS = new Set(['Details', 'Comment', 'Description', 'Steps', 'Reason', 'About']);
+
 export default function VoiceMode({
   phase, heard, reply, draft, draftReady, onConfirmDraft, onCancelDraft, onEditDraft,
   micLevel, outputLevel, onEnd, onShowChat, notice, usage, onUsageReset, onInterrupt,
@@ -99,9 +102,9 @@ export default function VoiceMode({
             <p className="voice-draft-head">{draft.heading}</p>
             <dl>
               {draft.rows.map(([label, value]) => (
-                <div key={label} className={label === 'Details' ? 'is-long' : undefined}>
+                <div key={label} className={LONG_FIELDS.has(label) ? 'is-long' : undefined}>
                   <dt>{label}</dt>
-                  <dd>{value}</dd>
+                  <dd tabIndex={LONG_FIELDS.has(label) ? 0 : undefined}>{value}</dd>
                 </div>
               ))}
             </dl>
