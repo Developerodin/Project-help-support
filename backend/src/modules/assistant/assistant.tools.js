@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import {
-  ADMIN_ROLES, CATEGORIES, ENVIRONMENTS, ESTIMATE_DATE_EDITOR_ROLES, EXTERNAL_ACCEPTANCE_PERMISSION, PRIORITIES,
-  SEVERITIES, STAGES, STAGE_KEYS,
-  can, canAccessRoute, canEditTicket, hasAnyRole, isExternalUser, isTicketOverdue, resolveProjectModules, stageIndex, stageLabel,
+  ADMIN_ROLES, CATEGORIES, DEFAULT_NOTIFICATION_PREFS, ENVIRONMENTS, ESTIMATE_DATE_EDITOR_ROLES, EXTERNAL_ACCEPTANCE_PERMISSION, PRIORITIES,
+  NOTIFICATION_EVENTS, SEVERITIES, STAGES, STAGE_KEYS,
+  can, canAccessRoute, canEditTicket, hasAnyRole, isExternalUser, isTicketOverdue, notificationEventLabel, resolveProjectModules, stageIndex, stageLabel,
 } from '@pms/shared';
 import { getTicket, listTickets } from '../tickets/ticket.service.js';
 import { allowedTransitions, checkGuards, previewTransition } from '../tickets/transition.service.js';
@@ -167,6 +167,34 @@ const LIST_PROJECTS = fn(
   {},
 );
 
+const GET_NOTIFICATION_SETTINGS = fn(
+  'get_notification_settings',
+  "The user's own notification settings: for each event, whether it reaches them in the app and by email.",
+  {},
+);
+
+const PROPOSE_NOTIFICATION_SETTINGS = fn(
+  'propose_notification_settings',
+  "Draft a change to the user's own notification settings. The user must confirm. Pass only the events that "
+    + 'change, with null for a channel that stays as it is; or restore_defaults true (and changes null) to reset them all.',
+  {
+    changes: {
+      type: ['array', 'null'],
+      items: {
+        type: 'object',
+        properties: {
+          event: { type: 'string', enum: [...NOTIFICATION_EVENTS] },
+          in_app: { type: ['boolean', 'null'] },
+          email: { type: ['boolean', 'null'] },
+        },
+        required: ['event', 'in_app', 'email'],
+        additionalProperties: false,
+      },
+    },
+    restore_defaults: nullable({ type: 'boolean' }),
+  },
+);
+
 const PROPOSE_CREATE = fn(
   'propose_create_ticket',
   'Draft a new ticket. The user sees it as a card and must confirm; nothing is created until they do.',
@@ -308,21 +336,39 @@ export const TICKET_TABS = Object.freeze(['discussion', 'details', 'attachments'
 
 const NAVIGATE = fn(
   'navigate',
-  'Open a page for the user right away: go to a page, open a ticket (optionally on a tab), switch the open '
-    + 'ticket to another tab, or show a filtered ticket list. Filters and view apply only to destination '
-    + '"tickets"; ticket_id and ticket_tab only to "ticket". Use null for the rest.',
+  'Open a page for the user right away: go to a page, open a ticket (optionally on a tab), or switch the open '
+    + 'ticket to another tab. ticket_id and ticket_tab only apply to destination "ticket"; null otherwise. '
+    + 'To filter the ticket list use set_ticket_filters.',
   {
     destination: { type: 'string', enum: Object.keys(DESTINATIONS) },
     ticket_id: nullable(TICKET_ID),
     ticket_tab: nullableEnum(TICKET_TABS),
-    view: nullableEnum(['table', 'modules']),
-    query: nullable({ type: 'string' }),
-    stage: nullableEnum(STAGE_KEYS),
-    priority: nullableEnum(PRIORITIES),
-    module: nullable({ type: 'string', description: 'Exact module label.' }),
-    scope: nullableEnum(['assigned', 'reported', 'unassigned']),
-    overdue: nullable({ type: 'boolean' }),
+  },
+);
+
+/** "any" clears a filter; null leaves it as it is on screen. */
+const ANY = 'any';
+
+const SET_TICKET_FILTERS = fn(
+  'set_ticket_filters',
+  'Change the filters on the Tickets page, right away (it opens the page if needed). Only the filters you pass '
+    + 'change; null leaves one as it is on screen. Use "any" to clear a filter ("any stage", "any priority"), '
+    + 'false to turn a toggle off, and clear_all true to reset everything first.',
+  {
+    stage: nullableEnum([...STAGE_KEYS, ANY]),
+    priority: nullableEnum([...PRIORITIES, ANY]),
+    category: nullableEnum([...CATEGORIES, ANY]),
+    severity: nullableEnum([...SEVERITIES, ANY]),
+    scope: nullableEnum(['all', 'assigned', 'reported', 'unassigned']),
+    owner: nullable({ type: 'string', description: 'Owner\'s name as shown in the Owner filter, or "any".' }),
+    module: nullable({ type: 'string', description: 'Exact module label, or "any".' }),
+    search: nullable({ type: 'string', description: 'Search box text; "" clears it.' }),
     blocked: nullable({ type: 'boolean' }),
+    overdue: nullable({ type: 'boolean' }),
+    reopened: nullable({ type: 'boolean' }),
+    new_reply: nullable({ type: 'boolean' }),
+    view: nullableEnum(['table', 'modules']),
+    clear_all: nullable({ type: 'boolean' }),
   },
 );
 
@@ -339,6 +385,7 @@ export function toolsFor(user, permissionContext) {
   const allowed = (permission) => !external && can(user, permission, permissionContext);
   const tools = [
     SEARCH_TICKETS, GET_TICKET, GET_DISCUSSION, RECENT_COMMENTS_TOOL, OPEN_ATTACHMENT, LIST_PROJECTS, NAVIGATE, SWITCH_PROJECT,
+    SET_TICKET_FILTERS, GET_NOTIFICATION_SETTINGS, PROPOSE_NOTIFICATION_SETTINGS,
   ];
   if (external || can(user, 'tickets.create', permissionContext)) tools.push(PROPOSE_CREATE);
   // Commenting and attaching need only ticket access, as on their REST routes.
@@ -479,6 +526,12 @@ async function userByEmail(ctx, email) {
   if (!person) throw new ToolError(`No user with email ${email}. Use search_users to find the right address.`);
   if (person.status !== 'active') throw new ToolError(`${person.name} is ${person.status}; only active users can join a team.`);
   return person;
+}
+
+/** One of the user's notification settings; unset ones are the defaults, as on the settings page. */
+function notificationSetting(user, channel, event) {
+  const prefs = user.notificationPrefs?.[channel];
+  return prefs?.get?.(event) ?? prefs?.[event] ?? DEFAULT_NOTIFICATION_PREFS[channel][event];
 }
 
 function proposal(ctx, action) {
@@ -725,6 +778,39 @@ const HANDLERS = {
     }));
   },
 
+  async get_notification_settings(_args, ctx) {
+    return NOTIFICATION_EVENTS.map((event) => ({
+      event,
+      label: notificationEventLabel(event),
+      in_app: notificationSetting(ctx.user, 'inApp', event),
+      email: notificationSetting(ctx.user, 'email', event),
+    }));
+  },
+
+  async propose_notification_settings(args, ctx) {
+    const wanted = args.restore_defaults
+      ? NOTIFICATION_EVENTS.map((event) => ({
+        event, in_app: DEFAULT_NOTIFICATION_PREFS.inApp[event], email: DEFAULT_NOTIFICATION_PREFS.email[event],
+      }))
+      : args.changes || [];
+    // Only real changes go on the card, each with where it stands now.
+    const settings = [];
+    for (const { event, in_app: inApp, email } of wanted) {
+      const setting = { event, label: notificationEventLabel(event) };
+      for (const [channel, to] of [['inApp', inApp], ['email', email]]) {
+        const from = notificationSetting(ctx.user, channel, event);
+        if (to != null && to !== from) setting[channel] = { from, to };
+      }
+      if (setting.inApp || setting.email) settings.push(setting);
+    }
+    if (!settings.length) {
+      throw new ToolError(args.restore_defaults
+        ? 'The settings are already the defaults.'
+        : 'Those settings are already that way; nothing to change.');
+    }
+    return proposal(ctx, { type: 'notification_settings', settings, ...(args.restore_defaults ? { reset: true } : {}) });
+  },
+
   async navigate(args, ctx) {
     const destination = DESTINATIONS[args.destination];
     if (!destination) throw new ToolError(`Unknown destination ${args.destination}.`);
@@ -745,22 +831,44 @@ const HANDLERS = {
         href += `&tab=${tab}`;
         label = `${ticket.ticketId} (${tab === 'qa' ? 'QA report' : tab})`;
       }
-    } else if (args.destination === 'tickets') {
-      // Same param names the ticket list reads from its URL (ticket-list-query.js).
-      const params = new URLSearchParams();
-      if (args.view === 'modules') params.set('view', 'modules');
-      if (args.query) params.set('q', args.query);
-      if (args.stage) params.set('status', args.stage);
-      if (args.priority) params.set('priority', args.priority);
-      if (args.module) params.set('module', args.module);
-      if (args.scope) params.set('scope', args.scope);
-      if (args.overdue) params.set('overdue', '1');
-      if (args.blocked) params.set('blocked', '1');
-      const search = params.toString();
-      if (search) href = `${href}?${search}`;
     }
     ctx.actions.push({ id: randomUUID(), type: 'navigate', href, label });
     return { status: 'opened', page: label };
+  },
+
+  async set_ticket_filters(args, ctx) {
+    if (!canAccessRoute('/tickets', ctx.user, ctx.permissionContext)) {
+      throw new ToolError('The user doesn\'t have access to the Tickets page.');
+    }
+    // Keys are the ticket list's own filter names (ticket-preferences.js); '' is "any".
+    const filters = {};
+    const pick = (key, value) => {
+      if (value == null) return;
+      filters[key] = value === ANY ? '' : value;
+    };
+    pick('status', args.stage);
+    pick('priority', args.priority);
+    pick('category', args.category);
+    pick('severity', args.severity);
+    pick('scope', args.scope);
+    pick('module', args.module);
+    if (args.search != null) filters.q = String(args.search).trim().slice(0, 200);
+    for (const [key, value] of [['blocked', args.blocked], ['overdue', args.overdue],
+      ['reopened', args.reopened], ['newReply', args.new_reply]]) {
+      if (value != null) filters[key] = Boolean(value);
+    }
+    // The owner filter takes an id the page knows; it matches the name among its owners.
+    const owner = args.owner == null ? undefined : (args.owner === ANY ? '' : String(args.owner).trim());
+    if (owner === '') filters.assignedTo = '';
+    ctx.actions.push({
+      id: randomUUID(),
+      type: 'ticket_filters',
+      filters,
+      ...(owner ? { ownerName: owner } : {}),
+      ...(args.clear_all ? { reset: true } : {}),
+      ...(args.view ? { view: args.view } : {}),
+    });
+    return { status: 'applied', note: 'The Tickets page now shows these filters. Say what changed in a few words.' };
   },
 
   async switch_project(args, ctx) {

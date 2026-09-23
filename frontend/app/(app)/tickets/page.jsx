@@ -53,6 +53,9 @@ import { showToast } from '@/shared/lib/toast.js';
 import { useNotificationPollInterval } from '@/shared/lib/notification-swr.js';
 import { REALTIME_BACKSTOP_MS } from '@/shared/hooks/use-ticket-realtime.js';
 import { useRealtime, useRealtimeEvent } from '@/shared/contexts/realtime-context.jsx';
+import {
+  ASSISTANT_TICKET_FILTERS_EVENT, nextTicketFilters, takeTicketFilters,
+} from '@/shared/lib/assistant-ticket-filters.js';
 import TicketFilters from '@/shared/components/tickets/ticket-filters.jsx';
 import TicketTable from '@/shared/components/tickets/ticket-table.jsx';
 import TicketModuleGroups from '@/shared/components/tickets/ticket-module-groups.jsx';
@@ -382,6 +385,26 @@ function TicketListPage() {
     const next = params.toString();
     writeSearch(next ? `?${next}` : '');
   };
+
+  // Filter changes asked of the assistant: taken when the page opens (it may have
+  // opened the page for them) and whenever another arrives while it is open.
+  const [assistantFilters, setAssistantFilters] = useState(null);
+  useEffect(() => {
+    const take = () => {
+      const action = takeTicketFilters();
+      if (action) setAssistantFilters(action);
+    };
+    take();
+    window.addEventListener(ASSISTANT_TICKET_FILTERS_EVENT, take);
+    return () => window.removeEventListener(ASSISTANT_TICKET_FILTERS_EVENT, take);
+  }, []);
+  useEffect(() => {
+    // Wait for the saved view, or the change would be merged into the wrong filters.
+    if (!assistantFilters || !ready) return;
+    setAssistantFilters(null);
+    applyFilters(nextTicketFilters(viewFilters, assistantFilters, ownerOptions ?? []));
+    if (assistantFilters.view) setView(assistantFilters.view === 'modules');
+  }, [assistantFilters, ready]); // Applied once per request, against the view on screen at that moment.
 
   const handleSort = (column) => {
     const nextSort = cycleTicketSort(viewSort, column);

@@ -19,12 +19,15 @@ import {
 import { createClient, patchClient, uploadClientLogo } from '@/shared/api/clients.js';
 import { createProject } from '@/shared/api/projects.js';
 import { createTeam } from '@/shared/api/teams.js';
+import { resetNotificationPrefs, updateNotificationPrefs } from '@/shared/api/users.js';
+import { mutateNotifications } from '@/shared/lib/notification-swr.js';
 import { isAbortError } from '@/shared/api/client.js';
 import { TAB_PARAM, TICKET_PARAM } from '@/shared/lib/deep-link.js';
 import { friendlyTransitionError, normalizeApiError } from '@/shared/lib/api-error.js';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import { useProject } from '@/shared/contexts/project-context.jsx';
 import { useRealtime } from '@/shared/contexts/realtime-context.jsx';
+import { requestTicketFilters } from '@/shared/lib/assistant-ticket-filters.js';
 import { clearAssistantChats, readSavedChat, saveChat } from '@/shared/lib/assistant-chat-storage.js';
 import { useVoiceRecorder, voiceErrorMessage, watchForSpeech } from './use-voice-recorder.js';
 import VoiceMode, { useLevelVar } from './voice-mode.jsx';
@@ -250,6 +253,16 @@ export function describeAction(action) {
       rows: action.blocked ? [['Reason', action.reason]] : [['Blocked', 'Clear it']],
     };
   }
+  if (action.type === 'notification_settings') {
+    const onOff = (value) => (value ? 'on' : 'off');
+    return {
+      heading: action.reset ? 'Restore default notifications' : 'Change notifications',
+      rows: action.settings.map((setting) => [setting.label, [['In app', setting.inApp], ['Email', setting.email]]
+        .filter(([, change]) => change)
+        .map(([channel, change]) => `${channel} ${onOff(change.from)} → ${onOff(change.to)}`)
+        .join(', ')]),
+    };
+  }
   if (action.type === 'attach_files') {
     return {
       heading: `Attach files to ${action.ticketId}`,
@@ -360,6 +373,18 @@ async function applyAction(action) {
       clientRef: action.id, commentContent: action.note, commentClientRef: `${action.id}:comment`,
     }));
     return `Attached ${action.files.length} file${action.files.length === 1 ? '' : 's'} to ${action.ticketId}.`;
+  }
+  if (action.type === 'notification_settings') {
+    if (action.reset) {
+      await resetNotificationPrefs();
+      return 'Restored the default notification settings.';
+    }
+    const body = { inApp: {}, email: {} };
+    action.settings.forEach((setting) => ['inApp', 'email'].forEach((channel) => {
+      if (setting[channel]) body[channel][setting.event] = setting[channel].to;
+    }));
+    await updateNotificationPrefs(body);
+    return 'Updated your notification settings.';
   }
   if (action.type === 'assign') {
     // ponytail: one request per ticket (max 50), so each gets its own revision check.
@@ -676,7 +701,7 @@ function readSpeakPref() {
 
 export default function AssistantWidget() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const userId = user?.id ?? null;
   const { activeProject, setActiveProjectId } = useProject();
   const { publish } = useRealtime();
@@ -931,7 +956,8 @@ export default function AssistantWidget() {
         ...(handsFreeRef.current ? { mode: 'voice' } : {}),
       });
       const files = actions.filter((action) => action.type === 'attachment');
-      const drafts = actions.filter((action) => !['navigate', 'attachment', 'switch_project', 'watch'].includes(action.type));
+      const drafts = actions.filter((action) => !['navigate', 'attachment', 'switch_project', 'watch', 'ticket_filters']
+        .includes(action.type));
       const answer = reply || (drafts.length ? 'Review the draft below.' : 'Sorry, I don\'t have an answer for that.');
       // A new draft of the same thing is a revision: retire the older pending card
       // so there is only ever one live version to confirm.
@@ -965,6 +991,12 @@ export default function AssistantWidget() {
       // Same as picking it in the project switcher; before navigate so the new page opens in it.
       const switched = actions.find((action) => action.type === 'switch_project');
       if (switched) setActiveProjectId(switched.projectId);
+      // Filters go to the Tickets page itself, which merges them into what it shows.
+      const filters = actions.find((action) => action.type === 'ticket_filters');
+      if (filters) {
+        requestTicketFilters(filters);
+        if (window.location.pathname !== '/tickets') router.push('/tickets');
+      }
       const destination = actions.find((action) => action.type === 'navigate');
       if (destination) {
         router.push(destination.href);
@@ -998,6 +1030,12 @@ export default function AssistantWidget() {
       if (action.type === 'attach_files') {
         setStaged((prev) => prev.filter((file) => !action.files.includes(file)));
       }
+      if (action.type === 'notification_settings') {
+        // So an open settings page, and the notification list, show the new settings.
+        // The change already landed; a failed refresh only leaves the page stale until reload.
+        refreshUser().catch(() => {});
+        mutateNotifications();
+      }
       // Refresh the ticket drawer and list on screen, which the server doesn't
       // notify about the user's own changes.
       const ticketIds = action.ticketIds || (action.ticketId ? [action.ticketId] : []);
@@ -1027,7 +1065,7 @@ export default function AssistantWidget() {
       });
       return message;
     }
-  }, [publish]);
+  }, [publish, refreshUser]);
 
   /**
    * Everything the user says or types lands here. "Confirm"/"cancel" answers
