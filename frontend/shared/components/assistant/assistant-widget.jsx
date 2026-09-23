@@ -130,8 +130,22 @@ export function matchVoiceCommand(text) {
   return null;
 }
 
-/** Push-to-talk chord: hold Ctrl+Alt+Space (Ctrl+Option+Space on a Mac). */
-export const isTalkShortcut = (event) => event.code === 'Space' && event.ctrlKey && event.altKey;
+/** How long Space must be held before the mic opens, so a tap never records. */
+const HOLD_TO_TALK_MS = 250;
+
+/**
+ * Push-to-talk is a plain Space hold, but only where Space means nothing else:
+ * not while typing, and not on a control that Space would press.
+ */
+export function isTalkKey(event) {
+  if (event.code !== 'Space' || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return false;
+  const target = event.target;
+  if (!(target instanceof Element)) return true;
+  return !target.closest(
+    'input, textarea, select, button, a[href], summary, audio, video, [contenteditable]:not([contenteditable="false"]), '
+      + '[role="button"], [role="checkbox"], [role="switch"], [role="menuitem"], [role="option"], [role="tab"], [role="textbox"]',
+  );
+}
 
 function readSpeakPref() {
   try {
@@ -371,20 +385,30 @@ export default function AssistantWidget() {
     endHandsFree();
   }, [endHandsFree, handleUtterance, record, speak, stopAudio, transcribe]);
 
-  // Push-to-talk from anywhere in the app: hold the chord, release to send.
+  // Push-to-talk from anywhere in the app: hold Space, release to send.
   useEffect(() => {
     if (!enabled) return undefined;
+    let holdTimer = null;
     const onDown = (event) => {
-      if (!isTalkShortcut(event)) return;
+      if (!isTalkKey(event)) return;
+      // Space would otherwise scroll the page on every tap and auto-repeat.
       event.preventDefault();
-      if (event.repeat || pushToTalk.current || handsFreeRef.current || busy || transcribing) return;
-      pushToTalk.current = true;
-      setOpen(true);
-      talkOnce({ autoStop: false });
+      if (event.repeat || holdTimer || pushToTalk.current) return;
+      if (handsFreeRef.current || busy || transcribing) return;
+      holdTimer = window.setTimeout(() => {
+        holdTimer = null;
+        pushToTalk.current = true;
+        setOpen(true);
+        talkOnce({ autoStop: false });
+      }, HOLD_TO_TALK_MS);
     };
     const onUp = (event) => {
-      if (!pushToTalk.current) return;
-      if (event.code === 'Space' || event.key === 'Control' || event.key === 'Alt') {
+      if (event.code !== 'Space') return;
+      if (holdTimer) {
+        window.clearTimeout(holdTimer); // a tap, not a hold
+        holdTimer = null;
+      }
+      if (pushToTalk.current) {
         pushToTalk.current = false;
         stopRecording();
       }
@@ -392,6 +416,7 @@ export default function AssistantWidget() {
     window.addEventListener('keydown', onDown);
     window.addEventListener('keyup', onUp);
     return () => {
+      window.clearTimeout(holdTimer);
       window.removeEventListener('keydown', onDown);
       window.removeEventListener('keyup', onUp);
     };
@@ -427,7 +452,7 @@ export default function AssistantWidget() {
         type="button"
         className="assistant-fab"
         aria-label="Open assistant"
-        title="Assistant (hold Ctrl+Alt+Space to talk)"
+        title="Assistant (hold Space to talk)"
         onClick={() => setOpen(true)}
       >
         <Icon name="chat" size={22} aria-hidden="true" />
@@ -486,7 +511,7 @@ export default function AssistantWidget() {
           <div className="assistant-empty">
             <p>
               Ask about your tickets, file a new one, or say where to go, like &ldquo;open the board&rdquo; or
-              &ldquo;show overdue tickets&rdquo;. Tap the mic to talk, or hold <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd> anywhere.
+              &ldquo;show overdue tickets&rdquo;. Tap the mic to talk, or hold <kbd>Space</kbd> anywhere outside a text box.
             </p>
             <div className="assistant-suggestions">
               {SUGGESTIONS.map((suggestion) => (

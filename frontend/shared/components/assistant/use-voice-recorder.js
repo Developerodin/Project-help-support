@@ -39,12 +39,17 @@ function pickMimeType() {
 export function useVoiceRecorder() {
   const [recording, setRecording] = useState(false);
   const active = useRef(null);
+  // stop() can arrive while the mic is still starting (a quick key release);
+  // remember it so the recording ends as soon as it begins.
+  const stopRequested = useRef(false);
 
   const stop = useCallback(() => {
     if (active.current?.state === 'recording') active.current.stop();
+    else stopRequested.current = true;
   }, []);
 
   const record = useCallback(async ({ autoStop = false } = {}) => {
+    stopRequested.current = false;
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       throw new VoiceError('unsupported');
     }
@@ -103,6 +108,7 @@ export function useVoiceRecorder() {
       active.current = recorder;
       recorder.start();
       setRecording(true);
+      if (stopRequested.current) recorder.stop();
     });
   }, []);
 
