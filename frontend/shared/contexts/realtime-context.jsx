@@ -16,6 +16,7 @@ import { useTicketRealtime } from '@/shared/hooks/use-ticket-realtime.js';
 const RealtimeContext = createContext({
   connected: false,
   subscribe: () => () => {},
+  publish: () => {},
 });
 
 export function RealtimeProvider({ children }) {
@@ -42,7 +43,10 @@ export function RealtimeProvider({ children }) {
     return () => { handlers.current.delete(handler); };
   }, []);
 
-  const value = useMemo(() => ({ connected, subscribe }), [connected, subscribe]);
+  // The server never echoes a change back to the user who made it (their own
+  // screen already knows). A change made outside the screen showing it, like the
+  // assistant posting a comment, announces itself here with `self: true`.
+  const value = useMemo(() => ({ connected, subscribe, publish: onEvent }), [connected, subscribe, onEvent]);
   return <RealtimeContext.Provider value={value}>{children}</RealtimeContext.Provider>;
 }
 

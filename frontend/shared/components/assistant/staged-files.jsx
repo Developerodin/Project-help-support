@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { useId, useRef, useState } from 'react';
 import Icon from '../icons.jsx';
 import {
   ATTACHMENT_ACCEPT, ATTACHMENT_HINT, formatFileSize, validateAttachmentBatch,
@@ -68,6 +68,67 @@ export function StagedFiles({ files, error, onRemove }) {
         </ul>
       ) : null}
       {error ? <p className="assistant-staged-error" role="alert">{error}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * The same drop area as the ticket's Attachments tab (its .file-drop styles):
+ * drag files in, or click / Enter / Space to browse.
+ */
+export function FileDropZone({ onAdd, disabled, hasFiles }) {
+  const inputRef = useRef(null);
+  const hintId = useId();
+  const [over, setOver] = useState(false);
+  const browse = () => { if (!disabled) inputRef.current?.click(); };
+  return (
+    <div
+      className={['file-drop', 'attach-dropzone', 'assistant-dropzone', over ? 'over' : '', disabled ? 'disabled' : '']
+        .filter(Boolean).join(' ')}
+      role="button"
+      tabIndex={disabled ? -1 : 0}
+      aria-labelledby={hintId}
+      aria-disabled={disabled || undefined}
+      onClick={browse}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          browse();
+        }
+      }}
+      onDragEnter={(event) => { if (!disabled) { event.preventDefault(); setOver(true); } }}
+      onDragOver={(event) => { if (!disabled) event.preventDefault(); }}
+      onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setOver(false); }}
+      onDrop={(event) => {
+        if (disabled) return;
+        event.preventDefault();
+        // Handled here, not by the panel or dock around it, so files aren't added twice.
+        event.stopPropagation();
+        setOver(false);
+        if (event.dataTransfer?.files?.length) onAdd(event.dataTransfer.files);
+      }}
+    >
+      <Icon name="clip" size={18} aria-hidden="true" />
+      <p className="file-drop-title" id={hintId}>
+        {hasFiles ? 'Add more: drag here or ' : 'Drag files here or '}
+        <span className="browse">browse</span>
+      </p>
+      <p className="file-drop-hint">{ATTACHMENT_HINT}</p>
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        className="sr-only"
+        accept={ATTACHMENT_ACCEPT}
+        aria-label="Choose files to attach"
+        tabIndex={-1}
+        disabled={disabled}
+        data-testid="assistant-drop-input"
+        onChange={(event) => {
+          onAdd(event.target.files || []);
+          event.target.value = '';
+        }}
+      />
     </div>
   );
 }

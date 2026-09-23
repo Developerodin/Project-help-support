@@ -308,7 +308,8 @@ function TicketListPage() {
     if (!event?.type) return;
     if (event.type !== 'ticket.comment' && event.type !== 'ticket.updated') return;
     if (viewProjectId && event.projectId && event.projectId !== viewProjectId) return;
-    if (event.type === 'ticket.comment' && event.ticketId && event.ticketId === openTicketId) {
+    // Other people's replies, and any change the user made elsewhere (the assistant).
+    if ((event.type === 'ticket.comment' || event.self) && event.ticketId && event.ticketId === openTicketId) {
       setDrawerRefreshNonce((nonce) => nonce + 1);
     }
     reload();

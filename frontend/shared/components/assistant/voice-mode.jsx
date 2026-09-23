@@ -3,7 +3,9 @@
 import { useEffect, useRef } from 'react';
 import Icon from '../icons.jsx';
 import UsageMeter from './usage-meter.jsx';
-import { AttachButton, StagedFiles, fileDropProps } from './staged-files.jsx';
+import {
+  AttachButton, FileDropZone, StagedFiles, fileDropProps,
+} from './staged-files.jsx';
 
 const PHASE_LABEL = {
   listening: 'Listening',
@@ -54,6 +56,7 @@ export default function VoiceMode({
   phase, heard, reply, draft, draftReady, onConfirmDraft, onCancelDraft, onEditDraft,
   micLevel, outputLevel, onEnd, onShowChat, notice, usage, onUsageReset, onInterrupt,
   files = [], fileError = null, onAddFiles, onRemoveFile,
+  draftFiles = null, draftFileError = null, onDraftFiles, onDraftRemoveFile,
 }) {
   const orbRef = useRef(null);
   const endRef = useRef(null);
@@ -101,13 +104,19 @@ export default function VoiceMode({
           <div className="voice-draft" role="group" aria-label={`Draft: ${draft.heading}`}>
             <p className="voice-draft-head">{draft.heading}</p>
             <dl>
-              {draft.rows.map(([label, value]) => (
+              {draft.rows.filter(([label]) => !(draftFiles && label === 'Files')).map(([label, value]) => (
                 <div key={label} className={LONG_FIELDS.has(label) ? 'is-long' : undefined}>
                   <dt>{label}</dt>
                   <dd tabIndex={LONG_FIELDS.has(label) ? 0 : undefined}>{value}</dd>
                 </div>
               ))}
             </dl>
+            {draftFiles ? (
+              <div className="voice-draft-files">
+                <StagedFiles files={draftFiles} error={draftFileError} onRemove={onDraftRemoveFile} />
+                <FileDropZone onAdd={onDraftFiles} disabled={draft.status === 'busy'} hasFiles={draftFiles.length > 0} />
+              </div>
+            ) : null}
             {draft.error ? <p className="voice-draft-error" role="alert">{draft.error}</p> : null}
             <div className="voice-draft-actions">
               <button

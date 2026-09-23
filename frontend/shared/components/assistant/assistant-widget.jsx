@@ -24,12 +24,13 @@ import { TAB_PARAM, TICKET_PARAM } from '@/shared/lib/deep-link.js';
 import { friendlyTransitionError, normalizeApiError } from '@/shared/lib/api-error.js';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import { useProject } from '@/shared/contexts/project-context.jsx';
+import { useRealtime } from '@/shared/contexts/realtime-context.jsx';
 import { clearAssistantChats, readSavedChat, saveChat } from '@/shared/lib/assistant-chat-storage.js';
 import { useVoiceRecorder, voiceErrorMessage, watchForSpeech } from './use-voice-recorder.js';
 import VoiceMode, { useLevelVar } from './voice-mode.jsx';
 import UsageMeter from './usage-meter.jsx';
 import {
-  AttachButton, StagedFiles, fileDropProps, stageFiles,
+  AttachButton, FileDropZone, StagedFiles, fileDropProps, stageFiles,
 } from './staged-files.jsx';
 import { buildAttachmentFormData } from '@/shared/lib/attachment-config.js';
 
@@ -46,6 +47,28 @@ export function currentPage() {
     ticketId: params.get(TICKET_PARAM),
     tab: params.get(TICKET_PARAM) ? (params.get(TAB_PARAM) || 'discussion') : null,
   };
+}
+
+/** The opening of a reply is voiced on its own once it is at least this long. */
+const FIRST_PART_MIN = 24;
+
+/**
+ * Splits a reply for speaking: a short opening (whole sentences, at least
+ * FIRST_PART_MIN characters) and the rest. The opening is quick to synthesise,
+ * so the voice starts almost as soon as the text arrives, and the rest is ready
+ * by the time it finishes. Two parts at most, to stay well inside the voice rate limit.
+ */
+export function speechParts(text) {
+  const clean = String(text).slice(0, 2000).trim();
+  const sentences = clean.match(/[^.!?।]+(?:[.!?।]+|$)\s*/g) || [clean];
+  let opening = '';
+  let index = 0;
+  while (index < sentences.length && opening.length < FIRST_PART_MIN) {
+    opening += sentences[index];
+    index += 1;
+  }
+  const rest = sentences.slice(index).join('').trim();
+  return rest ? [opening.trim(), rest] : [clean];
 }
 
 /** Errors that mean voice mode can't usefully go on; anything else it rides out. */
@@ -247,11 +270,46 @@ export function describeAction(action) {
       ]),
     };
   }
+  if (action.ticketIds) {
+    return {
+      heading: `Move ${action.ticketIds.length} tickets`,
+      rows: [['Tickets', action.ticketIds.join(', ')], ['To', stageLabel(action.to)], ['Note', action.note]]
+        .filter(([, value]) => value),
+    };
+  }
   return {
     heading: `Move ${action.ticketId}`,
     rows: [['Stage', `${stageLabel(action.from)} → ${stageLabel(action.to)}`], ['Note', action.note]]
       .filter(([, value]) => value),
   };
+}
+
+/**
+ * Runs `work` on each ticket in turn. If one fails, the error says which were
+ * already done (`done`) and which are left (`remaining`), so the card can be
+ * retried for the rest instead of repeating the ones that went through.
+ */
+async function eachTicket(ticketIds, work) {
+  for (const [index, ticketId] of ticketIds.entries()) {
+    try {
+      await work(ticketId);
+    } catch (err) {
+      err.done = ticketIds.slice(0, index);
+      err.remaining = ticketIds.slice(index);
+      throw err;
+    }
+  }
+}
+
+/** The move itself, with a fresh revision so a stale card fails as a conflict. */
+async function moveTicket(action, ticketId) {
+  const { revision } = await getTicket(ticketId);
+  await transitionTicket(ticketId, {
+    to: action.to,
+    revision,
+    // Closing requires a reason; the assistant collected it as the note.
+    ...(action.note ? { [action.asReason ? 'reason' : 'note']: action.note } : {}),
+  });
 }
 
 /** Applies a confirmed draft through the normal API for that thing; returns what happened. */
@@ -294,12 +352,16 @@ async function applyAction(action) {
   }
   if (action.type === 'assign') {
     // ponytail: one request per ticket (max 50), so each gets its own revision check.
-    for (const ticketId of action.ticketIds) {
+    await eachTicket(action.ticketIds, async (ticketId) => {
       const { revision } = await getTicket(ticketId);
       await assignTicket(ticketId, { assignedTo: action.assigneeId, revision });
-    }
+    });
     const which = action.ticketIds.length > 1 ? `${action.ticketIds.length} tickets` : action.ticketIds[0];
     return action.assigneeName ? `Assigned ${which} to ${action.assigneeName}.` : `Unassigned ${which}.`;
+  }
+  if (action.type === 'stage_change' && action.ticketIds) {
+    await eachTicket(action.ticketIds, (ticketId) => moveTicket(action, ticketId));
+    return `Moved ${action.ticketIds.length} tickets to ${stageLabel(action.to)}.`;
   }
   // Fresh revision so a stale draft fails as a conflict instead of overwriting.
   const { revision } = await getTicket(action.ticketId);
@@ -312,12 +374,7 @@ async function applyAction(action) {
     await patchTicket(action.ticketId, { ...action.changes, revision });
     return `Updated ${action.ticketId}.`;
   }
-  await transitionTicket(action.ticketId, {
-    to: action.to,
-    revision,
-    // Closing requires a reason; the assistant collected it as the note.
-    ...(action.note ? { [action.asReason ? 'reason' : 'note']: action.note } : {}),
-  });
+  await moveTicket(action, action.ticketId);
   return `Moved ${action.ticketId} to ${stageLabel(action.to)}.`;
 }
 
@@ -500,9 +557,9 @@ function AttachDraftFields({ action, onChange }) {
           error={action.fileError}
           onRemove={(file) => onChange({ files: files.filter((entry) => entry !== file), fileError: null })}
         />
-        <AttachButton
-          className="btn btn-sm"
+        <FileDropZone
           disabled={busy}
+          hasFiles={files.length > 0}
           onAdd={(incoming) => {
             const next = stageFiles(files, incoming);
             onChange({ files: next.files, fileError: next.error });
@@ -611,6 +668,7 @@ export default function AssistantWidget() {
   const { user } = useAuth();
   const userId = user?.id ?? null;
   const { activeProject, setActiveProjectId } = useProject();
+  const { publish } = useRealtime();
   // Read at send time, so send() keeps a stable identity for the voice loop.
   const projectKeyRef = useRef(null);
   projectKeyRef.current = activeProject?.key ?? null;
@@ -654,6 +712,8 @@ export default function AssistantWidget() {
   const returnFocus = useRef(false);
   const speakButtonRef = useRef(null);
   const [lastReply, setLastReply] = useState('');
+  // Between the reply arriving and its voice starting: still "thinking" to the user.
+  const [preparingSpeech, setPreparingSpeech] = useState(false);
 
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
@@ -730,7 +790,10 @@ export default function AssistantWidget() {
     outputContext.current.resume().catch(() => {});
   }, []);
 
+  // Bumped on every stop, so a reply still being voiced knows not to play its next part.
+  const speechSeq = useRef(0);
   const stopAudio = useCallback(() => {
+    speechSeq.current += 1;
     const audio = audioRef.current;
     if (!audio) return;
     audio.pause();
@@ -749,17 +812,8 @@ export default function AssistantWidget() {
       .catch(() => { /* the ring keeps its last value */ });
   }, []);
 
-  /** Reads text aloud; resolves when playback ends, is stopped, or fails. */
-  const speak = useCallback(async (text) => {
-    stopAudio();
-    let blob;
-    try {
-      blob = await speakText(text.slice(0, 2000));
-      refreshUsage();
-    } catch {
-      return; // reading aloud is a bonus; the text is already on screen
-    }
-    if (!speakOnRef.current && !handsFreeRef.current) return; // switched off meanwhile
+  /** Plays one clip; resolves when it ends, is stopped, or fails. */
+  const playClip = useCallback((blob) => {
     const audio = new Audio(URL.createObjectURL(blob));
     audioRef.current = audio;
     // Meter the reply's loudness for the voice-mode blob. Only through a context
@@ -781,8 +835,7 @@ export default function AssistantWidget() {
         }, 50);
       } catch { /* play it unmetered */ }
     }
-    setSpeaking(true);
-    await new Promise((resolve) => {
+    return new Promise((resolve) => {
       audio.onended = () => {
         audio.onended = null;
         audio.onerror = null;
@@ -790,14 +843,49 @@ export default function AssistantWidget() {
         outputLevel.current = 0;
         if (audioRef.current === audio) audioRef.current = null;
         URL.revokeObjectURL(audio.src);
-        setSpeaking(false);
         resolve();
       };
       audio.onerror = audio.onended;
       // Wrapped so a play() that throws or returns nothing still settles the turn.
       Promise.resolve().then(() => audio.play()).catch(() => audio.onended?.());
     });
-  }, [stopAudio]);
+  }, []);
+
+  /**
+   * Reads text aloud; resolves when playback ends, is stopped, or fails.
+   * `onPart(index, parts)` fires as each part starts playing, so a caption can
+   * show the words as they are spoken rather than ahead of the voice.
+   */
+  const speak = useCallback(async (text, { onPart } = {}) => {
+    stopAudio();
+    const seq = speechSeq.current;
+    const parts = speechParts(text);
+    // Both requested at once: the rest is synthesised while the opening plays.
+    const clips = parts.map((part) => speakText(part));
+    clips.forEach((clip) => clip.catch(() => {})); // a failed later part must not surface as unhandled
+    setPreparingSpeech(true);
+    try {
+      for (const [index, clip] of clips.entries()) {
+        let blob;
+        try {
+          blob = await clip;
+        } catch {
+          return; // reading aloud is a bonus; the text is on screen either way
+        }
+        if (seq !== speechSeq.current) return; // interrupted or replaced
+        if (!speakOnRef.current && !handsFreeRef.current) return; // switched off meanwhile
+        setPreparingSpeech(false);
+        setSpeaking(true);
+        onPart?.(index, parts);
+        await playClip(blob);
+        if (seq !== speechSeq.current) return;
+      }
+    } finally {
+      setPreparingSpeech(false);
+      setSpeaking(false);
+      refreshUsage();
+    }
+  }, [stopAudio, playClip, refreshUsage]);
 
   const updateAction = (id, patch) => setMessages((prev) => prev.map((message) => (message.actions
     ? { ...message, actions: message.actions.map((action) => (action.id === id ? { ...action, ...patch } : action)) }
@@ -894,17 +982,36 @@ export default function AssistantWidget() {
       if (action.type === 'attach_files') {
         setStaged((prev) => prev.filter((file) => !action.files.includes(file)));
       }
+      // Refresh the ticket drawer and list on screen, which the server doesn't
+      // notify about the user's own changes.
+      const ticketIds = action.ticketIds || (action.ticketId ? [action.ticketId] : []);
+      const type = action.type === 'comment' || action.type === 'attach_files' ? 'ticket.comment' : 'ticket.updated';
+      ticketIds.forEach((ticketId) => publish({ type, ticketId, self: true }));
       // Recorded as an assistant turn so the model knows the change landed.
       setMessages((prev) => [...prev, { role: 'assistant', content: outcome }]);
       return outcome;
     } catch (err) {
-      const message = (action.type === 'stage_change'
+      const reason = (action.type === 'stage_change'
         ? friendlyTransitionError(err)
         : normalizeApiError(err))?.message || 'That didn\'t work. Try again.';
-      updateAction(action.id, { status: 'pending', error: message });
+      if (!err.done?.length) {
+        updateAction(action.id, { status: 'pending', error: reason });
+        return reason;
+      }
+      // Part of a batch went through: show those as done, keep the rest on the card.
+      err.done.forEach((ticketId) => publish({ type: 'ticket.updated', ticketId, self: true }));
+      const skip = err.done.length;
+      const message = `Done: ${err.done.join(', ')}. ${err.remaining[0]}: ${reason}`;
+      updateAction(action.id, {
+        status: 'pending',
+        error: message,
+        ticketIds: err.remaining,
+        ...(action.froms ? { froms: action.froms.slice(skip) } : {}),
+        ...(Array.isArray(action.from) ? { from: action.from.slice(skip) } : {}),
+      });
       return message;
     }
-  }, []);
+  }, [publish]);
 
   /**
    * Everything the user says or types lands here. "Confirm"/"cancel" answers
@@ -1006,8 +1113,11 @@ export default function AssistantWidget() {
     if (!current()) return 'done';
     if (answer === 'stop') return 'stop';
     if (answer === null) return VOICE_FATAL_CODES.has(lastErrorCode.current) ? 'fatal' : 'error';
-    setLastReply(answer);
-    await speak(answer);
+    // The caption follows the voice, part by part, instead of running ahead of it.
+    await speak(answer, {
+      onPart: (index, parts) => { if (current()) setLastReply(parts.slice(0, index + 1).join(' ')); },
+    });
+    if (current()) setLastReply(answer); // in full, whether or not it could be spoken
     return 'done';
   }, [handleUtterance, speak, transcribe]);
 
@@ -1158,7 +1268,7 @@ export default function AssistantWidget() {
     .at(-1);
   const voicePhase = recording ? 'listening'
     : transcribing ? 'transcribing'
-      : busy ? 'thinking'
+      : busy || preparingSpeech ? 'thinking'
         : speaking ? 'speaking'
           : 'idle';
   const voiceMode = handsFree ? (
@@ -1168,6 +1278,15 @@ export default function AssistantWidget() {
       reply={lastReply}
       draft={pendingDraft ? { ...describeAction(pendingDraft), status: pendingDraft.status, error: pendingDraft.error } : null}
       draftReady={pendingDraft ? draftReady(pendingDraft) : false}
+      draftFiles={pendingDraft?.type === 'attach_files' ? (pendingDraft.files || []) : null}
+      draftFileError={pendingDraft?.fileError ?? null}
+      onDraftFiles={(incoming) => {
+        const next = stageFiles(pendingDraft.files || [], incoming);
+        updateAction(pendingDraft.id, { files: next.files, fileError: next.error });
+      }}
+      onDraftRemoveFile={(file) => updateAction(pendingDraft.id, {
+        files: (pendingDraft.files || []).filter((entry) => entry !== file), fileError: null,
+      })}
       onConfirmDraft={async () => setLastReply(await resolveDraft(pendingDraft, true))}
       onCancelDraft={async () => setLastReply(await resolveDraft(pendingDraft, false))}
       onEditDraft={() => {

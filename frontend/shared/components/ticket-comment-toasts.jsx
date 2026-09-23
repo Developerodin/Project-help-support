@@ -18,6 +18,8 @@ export default function TicketCommentToasts() {
 
   useRealtimeEvent((event) => {
     if (event?.type !== 'ticket.comment' || !event.ticketId) return;
+    // Your own comment (posted through the assistant): nothing to announce.
+    if (event.self) return;
 
     // The bell row for this comment is already written; pull it now rather than
     // let the badge lag a poll behind the popup.

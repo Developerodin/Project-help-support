@@ -5164,3 +5164,8 @@ body:has(.voice-dock) .page{ padding-bottom:120px; }
 .assistant-msg-files{ display:flex; align-items:center; gap:4px; margin:4px 0 0; font-size:0.75rem; color:var(--ink-3); }
 .voice-card .assistant-staged{ padding:0; }
 .voice-card-hint{ margin:0; font-size:0.75rem; color:var(--ink-3); }
+
+/* The Attachments-tab drop area, sized for the assistant's cards. */
+.assistant-dropzone{ padding:12px; gap:4px; }
+.assistant-dropzone .file-drop-hint{ font-size:0.6875rem; }
+.voice-draft-files{ display:flex; flex-direction:column; gap:6px; }

@@ -255,13 +255,17 @@ const PROPOSE_ATTACH = fn(
   },
 );
 
+/** Most tickets one stage-move card may carry. */
+const MAX_STAGE_BATCH = 50;
+
 const PROPOSE_STAGE = fn(
   'propose_stage_change',
-  'Draft moving a ticket to another stage. The user must confirm.',
+  'Draft moving one ticket, or several at once, to a stage. One card covers them all; the user must confirm. '
+    + 'Each ticket is checked against this user\'s stage rules; ones that can\'t move are left off with the reason.',
   {
-    ticket_id: TICKET_ID,
+    ticket_ids: { type: 'array', items: TICKET_ID, description: `One ticket, or up to ${MAX_STAGE_BATCH} to move together.` },
     to_stage: { type: 'string', enum: [...STAGE_KEYS] },
-    note: nullable({ type: 'string', description: 'Optional note for the stage history.' }),
+    note: nullable({ type: 'string', description: 'Note for the stage history; the reason when closing.' }),
   },
 );
 
@@ -329,10 +333,12 @@ export function toolsFor(user, permissionContext) {
   if (can(user, 'tickets.view', permissionContext) || external) tools.push(PROPOSE_COMMENT, PROPOSE_ATTACH);
   if (allowed('tickets.view')) tools.push(WATCH_TICKET);
   if (allowed('tickets.edit')) tools.push(PROPOSE_UPDATE, PROPOSE_ASSIGN, PROPOSE_BLOCK);
-  // Stage moves: internal users who work the board, or clients allowed to close Live tickets.
+  // Stage moves: admins (who may move anything), internal users who work the board, or
+  // clients allowed to close Live tickets. Each move is still checked against the
+  // stage rules (previewTransition) before a card is drafted.
   const mayMoveStages = external
     ? can(user, EXTERNAL_ACCEPTANCE_PERMISSION, permissionContext)
-    : can(user, 'boards.use', permissionContext);
+    : hasAnyRole(user, ...ADMIN_ROLES) || can(user, 'boards.use', permissionContext);
   if (mayMoveStages) tools.push(PROPOSE_STAGE);
   // Same gates as the REST routes these mirror; the user directory is admin-only there too.
   const admin = !external && hasAnyRole(user, ...ADMIN_ROLES);
@@ -943,30 +949,65 @@ const HANDLERS = {
   },
 
   async propose_stage_change(args, ctx) {
-    const ticket = await getTicket(ctx.user, args.ticket_id, ctx.permissionContext);
-    // Same checks as the real move, so the user never gets a card that fails on confirm.
-    const check = await previewTransition(ctx.user, ticket.ticketId, args.to_stage, ctx.permissionContext);
-    if (!check.ok) {
-      const options = (await allowedTransitions(ctx.user, ticket.ticketId, ctx.permissionContext)).map(stageLabel);
-      throw new ToolError(`${check.reason} ${options.length
-        ? `This user can move ${ticket.ticketId} to: ${options.join(', ')}.`
-        : `This user can't move ${ticket.ticketId} to any stage.`}`);
+    const ids = [...new Set((args.ticket_ids || []).map((id) => String(id).trim().toUpperCase()).filter(Boolean))];
+    if (!ids.length) throw new ToolError('Say which ticket to move.');
+    if (ids.length > MAX_STAGE_BATCH) throw new ToolError(`At most ${MAX_STAGE_BATCH} tickets at a time.`);
+    const movable = [];
+    const skipped = [];
+    let needsReason = false;
+    let needsNote = false;
+    for (const id of ids) {
+      // Sequential on purpose: each ticket is access-checked and judged on its own.
+      let ticket;
+      try {
+        ticket = await getTicket(ctx.user, id, ctx.permissionContext);
+      } catch (err) {
+        if (err?.statusCode !== 403 && err?.statusCode !== 404) throw err;
+        skipped.push({ ticket: id, reason: 'Not found, or no access.' });
+        continue;
+      }
+      // Same checks as the real move, so the user never gets a card that fails on confirm.
+      const check = await previewTransition(ctx.user, ticket.ticketId, args.to_stage, ctx.permissionContext);
+      if (!check.ok) {
+        skipped.push({ ticket: ticket.ticketId, reason: check.reason });
+        continue;
+      }
+      needsReason ||= check.needsReason;
+      needsNote ||= check.needsNote;
+      movable.push(ticket);
     }
-    if ((check.needsReason || check.needsNote) && !args.note) {
-      throw new ToolError(check.needsReason
-        ? 'Closing needs a reason. Ask the user why it is being closed, then draft again with it as the note.'
-        : 'Reopening needs a note. Ask the user what is wrong, then draft again with it as the note.');
+    if (!movable.length) {
+      if (ids.length === 1) {
+        const options = skipped[0].reason === 'Not found, or no access.'
+          ? []
+          : (await allowedTransitions(ctx.user, ids[0], ctx.permissionContext)).map(stageLabel);
+        throw new ToolError(`${skipped[0].reason} ${options.length
+          ? `This user can move ${ids[0]} to: ${options.join(', ')}.`
+          : `This user can't move ${ids[0]} there.`}`);
+      }
+      throw new ToolError(`None of these can move to ${stageLabel(args.to_stage)}: `
+        + `${skipped.map((entry) => `${entry.ticket} (${entry.reason})`).join('; ')}`);
     }
-    return proposal(ctx, {
+    if ((needsReason || needsNote) && !args.note) {
+      throw new ToolError(needsReason
+        ? 'Closing needs a reason. Ask the user why, then draft again with it as the note.'
+        : 'Moving a ticket back needs a note. Ask the user what is wrong, then draft again with it as the note.');
+    }
+    const one = movable.length === 1 ? movable[0] : null;
+    const result = proposal(ctx, {
       type: 'stage_change',
-      ticketId: ticket.ticketId,
-      title: ticket.title,
-      from: ticket.status,
+      // A single ticket keeps the one-ticket shape the card and history notes use.
+      ...(one
+        ? { ticketId: one.ticketId, title: one.title, from: one.status }
+        : { ticketIds: movable.map((ticket) => ticket.ticketId), froms: movable.map((ticket) => ticket.status) }),
       to: args.to_stage,
       ...(args.note ? { note: args.note } : {}),
       // Closing takes the note as its reason.
-      ...(check.needsReason ? { asReason: true } : {}),
+      ...(needsReason ? { asReason: true } : {}),
     });
+    return skipped.length
+      ? { ...result, left_off: skipped, tell_user: 'Say which tickets were left off the card and why.' }
+      : result;
   },
 };
 
