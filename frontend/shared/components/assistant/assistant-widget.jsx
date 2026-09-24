@@ -57,26 +57,37 @@ export function currentPage() {
   };
 }
 
-/** The opening of a reply is voiced on its own once it is at least this long. */
-const FIRST_PART_MIN = 24;
-
 /**
- * Splits a reply for speaking: a short opening (whole sentences, at least
- * FIRST_PART_MIN characters) and the rest. The opening is quick to synthesise,
- * so the voice starts almost as soon as the text arrives, and the rest is ready
- * by the time it finishes. Two parts at most, to stay well inside the voice rate limit.
+ * A playable URL for a streamed mp3 reply. Where the browser can feed mp3 to a
+ * MediaSource (Chrome, Edge, Firefox) it plays as it arrives; elsewhere
+ * (Safari, iOS) it waits for the whole clip.
+ * ponytail: plain MediaSource only; try ManagedMediaSource if Safari's wait matters.
  */
-export function speechParts(text) {
-  const clean = String(text).slice(0, 2000).trim();
-  const sentences = clean.match(/[^.!?।]+(?:[.!?।]+|$)\s*/g) || [clean];
-  let opening = '';
-  let index = 0;
-  while (index < sentences.length && opening.length < FIRST_PART_MIN) {
-    opening += sentences[index];
-    index += 1;
+async function playableUrl(response) {
+  if (!response.body || !window.MediaSource?.isTypeSupported?.('audio/mpeg')) {
+    return URL.createObjectURL(await response.blob());
   }
-  const rest = sentences.slice(index).join('').trim();
-  return rest ? [opening.trim(), rest] : [clean];
+  const source = new MediaSource();
+  source.addEventListener('sourceopen', async () => {
+    const buffer = source.addSourceBuffer('audio/mpeg');
+    const reader = response.body.getReader();
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        // Closed: the clip was stopped and its element let go of it.
+        if (done || source.readyState !== 'open') break;
+        buffer.appendBuffer(value);
+        await new Promise((resolve) => { buffer.addEventListener('updateend', resolve, { once: true }); });
+      }
+      if (source.readyState === 'open') source.endOfStream();
+    } catch {
+      if (source.readyState === 'open') source.endOfStream('network');
+    } finally {
+      // Stops the download (and the server's synthesis) when playback was cut short.
+      reader.cancel().catch(() => {});
+    }
+  }, { once: true });
+  return URL.createObjectURL(source);
 }
 
 /** Errors that mean voice mode can't usefully go on; anything else it rides out. */
@@ -887,9 +898,9 @@ export default function AssistantWidget() {
       .catch(() => { /* the ring keeps its last value */ });
   }, []);
 
-  /** Plays one clip; resolves when it ends, is stopped, or fails. */
-  const playClip = useCallback((blob) => {
-    const audio = new Audio(URL.createObjectURL(blob));
+  /** Plays one clip from its URL; resolves when it ends, is stopped, or fails. */
+  const playClip = useCallback((src) => {
+    const audio = new Audio(src);
     audioRef.current = audio;
     // Meter the reply's loudness for the voice-mode blob. Only through a context
     // started by a user gesture (voice mode's); a suspended one would mute it.
@@ -917,7 +928,10 @@ export default function AssistantWidget() {
         window.clearInterval(meter);
         outputLevel.current = 0;
         if (audioRef.current === audio) audioRef.current = null;
-        URL.revokeObjectURL(audio.src);
+        URL.revokeObjectURL(src);
+        // Lets go of a still-streaming MediaSource, which ends its download.
+        audio.removeAttribute('src');
+        audio.load();
         resolve();
       };
       audio.onerror = audio.onended;
@@ -927,36 +941,34 @@ export default function AssistantWidget() {
   }, []);
 
   /**
-   * Reads text aloud; resolves when playback ends, is stopped, or fails.
-   * `onPart(index, parts)` fires as each part starts playing, so a caption can
+   * Reads text aloud as one streamed clip; resolves when playback ends, is
+   * stopped, or fails. `onStart` fires as the voice starts, so a caption can
    * show the words as they are spoken rather than ahead of the voice.
    */
-  const speak = useCallback(async (text, { onPart } = {}) => {
+  const speak = useCallback(async (text, { onStart } = {}) => {
     stopAudio();
     const seq = speechSeq.current;
-    const parts = speechParts(text);
-    // One language (voice and accent) for the whole reply, so its parts match.
-    const language = speechLanguage(text);
-    // Both requested at once: the rest is synthesised while the opening plays.
-    const clips = parts.map((part) => speakText(part, { language }));
-    clips.forEach((clip) => clip.catch(() => {})); // a failed later part must not surface as unhandled
     setPreparingSpeech(true);
     try {
-      for (const [index, clip] of clips.entries()) {
-        let blob;
-        try {
-          blob = await clip;
-        } catch {
-          return; // reading aloud is a bonus; the text is on screen either way
-        }
-        if (seq !== speechSeq.current) return; // interrupted or replaced
-        if (!speakOnRef.current && !handsFreeRef.current) return; // switched off meanwhile
-        setPreparingSpeech(false);
-        setSpeaking(true);
-        onPart?.(index, parts);
-        await playClip(blob);
-        if (seq !== speechSeq.current) return;
+      let response;
+      let src;
+      try {
+        // The route takes at most 2000 characters; voice replies are far shorter.
+        response = await speakText(String(text).slice(0, 2000).trim(), { language: speechLanguage(text) });
+        src = await playableUrl(response);
+      } catch {
+        return; // reading aloud is a bonus; the text is on screen either way
       }
+      // Interrupted, replaced or switched off while the audio was on its way.
+      if (seq !== speechSeq.current || (!speakOnRef.current && !handsFreeRef.current)) {
+        URL.revokeObjectURL(src);
+        response.body?.cancel().catch(() => {});
+        return;
+      }
+      setPreparingSpeech(false);
+      setSpeaking(true);
+      onStart?.();
+      await playClip(src);
     } finally {
       setPreparingSpeech(false);
       setSpeaking(false);
@@ -1221,10 +1233,8 @@ export default function AssistantWidget() {
     if (!current()) return 'done';
     if (answer === 'stop') return 'stop';
     if (answer === null) return VOICE_FATAL_CODES.has(lastErrorCode.current) ? 'fatal' : 'error';
-    // The caption follows the voice, part by part, instead of running ahead of it.
-    await speak(answer, {
-      onPart: (index, parts) => { if (current()) setLastReply(parts.slice(0, index + 1).join(' ')); },
-    });
+    // The caption appears with the voice instead of running ahead of it.
+    await speak(answer, { onStart: () => { if (current()) setLastReply(answer); } });
     if (current()) setLastReply(answer); // in full, whether or not it could be spoken
     return 'done';
   }, [handleUtterance, speak, transcribe]);

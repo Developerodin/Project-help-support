@@ -35,7 +35,7 @@ async function call(config, path, { signal, ...init }) {
 
 /** One Responses API turn. `input` is the running item list (messages, calls, outputs). */
 export async function createResponse(config, {
-  instructions, input, tools, signal, toolChoice,
+  instructions, input, tools, signal, toolChoice, quick = false,
 }) {
   const res = await call(config, '/responses', {
     method: 'POST',
@@ -47,6 +47,8 @@ export async function createResponse(config, {
       input,
       tools,
       ...(toolChoice ? { tool_choice: toolChoice } : {}),
+      // Voice: someone is waiting to hear it, and the reply is a sentence or two anyway.
+      ...(quick ? { reasoning: { effort: 'low' }, text: { verbosity: 'low' } } : {}),
       // Nothing is kept on OpenAI's side; reasoning state rides along encrypted instead.
       store: false,
       include: ['reasoning.encrypted_content'],
@@ -120,10 +122,7 @@ export async function transcribe(config, audio, { vocabulary } = {}) {
   return { text: await transcribeOnce(config, audio, 'hi', vocabulary), attempts: 2 };
 }
 
-/**
- * How the voice should sound, the same for every clip of a reply (it is voiced
- * in two parts; without this each part can come out at its own pace and pitch).
- */
+/** How the voice should sound: even, so a long reply doesn't drift in pace or pitch. */
 const STEADY = 'Speak in a calm, steady, friendly tone at an even, moderate pace and a constant volume, like a '
   + 'helpful teammate. No dramatic emphasis, no sudden pitch changes, no rushing at the end. Read ticket ids like '
   + 'TES4-2 letter by letter: "T E S 4 dash 2".';
@@ -136,14 +135,16 @@ const VOICE_STYLE = {
 };
 
 /**
- * Text to speech; returns an mp3 Buffer. `language` ('hi' or 'en') picks the
- * voice and accent; decide it once per reply so its parts sound alike.
+ * Text to speech; returns the upstream Response, whose mp3 body streams in as it
+ * is synthesised, so playback can start before the clip is done. `language`
+ * ('hi' or 'en') picks the voice and accent.
  */
-export async function speak(config, text, { language = speechLanguage(text) } = {}) {
+export async function speak(config, text, { language = speechLanguage(text), signal } = {}) {
   const lang = language === 'hi' ? 'hi' : 'en';
   const voice = lang === 'hi' ? config.assistant.speechVoiceHindi || config.assistant.speechVoice : config.assistant.speechVoice;
-  const res = await call(config, '/audio/speech', {
+  return call(config, '/audio/speech', {
     method: 'POST',
+    signal,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: config.assistant.speechModel,
@@ -154,5 +155,4 @@ export async function speak(config, text, { language = speechLanguage(text) } = 
       response_format: 'mp3',
     }),
   });
-  return Buffer.from(await res.arrayBuffer());
 }

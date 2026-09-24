@@ -22,10 +22,7 @@ export function transcribeAudio(audio, options) {
   return apiFetch('/assistant/transcribe', { method: 'POST', formData, ...options });
 }
 
-/** @returns {Promise<Blob>} mp3 audio of `text` read aloud */
-export async function speakText(text, { language, ...options } = {}) {
-  const response = await apiFetchResponse('/assistant/speech', {
-    method: 'POST', body: { text, ...(language ? { language } : {}) }, ...options,
-  });
-  return response.blob();
-}
+/** @returns {Promise<Response>} mp3 of `text` read aloud; its body streams in as it is synthesised */
+export const speakText = (text, { language, ...options } = {}) => apiFetchResponse('/assistant/speech', {
+  method: 'POST', body: { text, ...(language ? { language } : {}) }, ...options,
+});

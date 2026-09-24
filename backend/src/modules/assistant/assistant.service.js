@@ -1,5 +1,6 @@
 import { LANES, STAGES, isExternalUser } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
+import logger from '../../platform/logger.js';
 import { createResponse } from './openai.client.js';
 import { projectRoster, runTool, toolsFor } from './assistant.tools.js';
 
@@ -146,13 +147,19 @@ export async function chat(config, user, permissionContext, messages, {
     + whereTheUserIs(page);
   const input = messages.map((message) => ({ role: message.role, content: message.content }));
   const usage = { inputTokens: 0, outputTokens: 0 };
+  const quick = mode === 'voice';
+  /** One model round, timed so a slow turn shows which round (and how many) it spent on. */
+  const respond = async (round, request) => {
+    const started = Date.now();
+    const response = await createResponse(config, { ...request, signal, quick });
+    logger.info('assistant: model round', { mode, round, ms: Date.now() - started });
+    return response;
+  };
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
     // Sequential on purpose: each round depends on the previous tool results.
     if (signal?.aborted) throw new ApiError(499, 'ASSISTANT_CANCELLED', 'The request was cancelled.');
-    const response = await createResponse(config, {
-      instructions, input, tools, signal,
-    });
+    const response = await respond(round, { instructions, input, tools });
     usage.inputTokens += Number(response.usage?.input_tokens) || 0;
     usage.outputTokens += Number(response.usage?.output_tokens) || 0;
     const calls = (response.output || []).filter((item) => item.type === 'function_call');
@@ -168,12 +175,11 @@ export async function chat(config, user, permissionContext, messages, {
 
   // Out of lookups: answer from what was found instead of giving up.
   try {
-    const final = await createResponse(config, {
+    const final = await respond(MAX_TOOL_ROUNDS, {
       instructions: `${instructions}\n\nYou have used all your lookups for this message. Answer now from what you found; if something is still missing, say what and ask one short question.`,
       input,
       tools,
       toolChoice: 'none',
-      signal,
     });
     usage.inputTokens += Number(final.usage?.input_tokens) || 0;
     usage.outputTokens += Number(final.usage?.output_tokens) || 0;

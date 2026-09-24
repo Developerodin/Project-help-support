@@ -1,9 +1,12 @@
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import express from 'express';
 import Joi from 'joi';
 import multer from 'multer';
 import { can } from '@pms/shared';
 import { auth } from '../../platform/auth.js';
 import { ApiError } from '../../platform/errors.js';
+import logger from '../../platform/logger.js';
 import { MongoRateLimitStore, makeLimiter } from '../../platform/rateLimit.js';
 import { validate } from '../../platform/validate.js';
 import { chat } from './assistant.service.js';
@@ -114,7 +117,9 @@ export default function assistantRoutes(config) {
       // One turn at a time per user, refused once today's allowance is spent.
       const { reply, actions } = await withChatLock(req.user, async () => {
         await checkAllowance(config, req.user);
+        const started = Date.now();
         const turn = await chat(config, req.user, req.permissionContext, messages, { mode, page, signal: cancelled.signal });
+        logger.info('assistant: chat timing', { mode, ms: Date.now() - started });
         await recordUsage(config, req.user, turn.usage);
         return turn;
       });
@@ -136,8 +141,10 @@ export default function assistantRoutes(config) {
         }
         await checkAllowance(config, req.user);
         // The user's project keys and names help the transcriber spell them right.
+        const started = Date.now();
         const vocabulary = await projectRoster({ user: req.user, permissionContext: req.permissionContext, projects: null });
         const { text, attempts } = await transcribe(config, req.file, { vocabulary });
+        logger.info('assistant: transcribe timing', { bytes: req.file.size, attempts, ms: Date.now() - started });
         await recordUsage(config, req.user, { transcribeSeconds: estimateAudioSeconds(req.file.size) * attempts });
         res.json({ text });
       } catch (err) {
@@ -149,10 +156,24 @@ export default function assistantRoutes(config) {
   router.post('/speech', requireAssistant(config), voiceLimiter, validate(speechSchema), async (req, res, next) => {
     try {
       await checkAllowance(config, req.user);
-      const audio = await speak(config, req.body.text, req.body.language ? { language: req.body.language } : {});
+      // Interrupted or left: stop synthesising audio nobody will hear.
+      const cancelled = new AbortController();
+      res.on('close', () => { if (!res.writableEnded) cancelled.abort(); });
+      const started = Date.now();
+      const upstream = await speak(config, req.body.text, { language: req.body.language, signal: cancelled.signal });
+      const firstAudioMs = Date.now() - started;
+      // Billed once synthesis starts, whether or not all of it gets played.
       await recordUsage(config, req.user, { speechChars: req.body.text.length });
-      res.set('Content-Type', 'audio/mpeg').send(audio);
+      // Passed through as it is synthesised, so the browser starts playing early.
+      res.set('Content-Type', 'audio/mpeg');
+      await pipeline(Readable.fromWeb(upstream.body), res);
+      logger.info('assistant: speech timing', {
+        chars: req.body.text.length, firstAudioMs, ms: Date.now() - started,
+      });
     } catch (err) {
+      // Mid-stream (usually the user interrupting): the response is already under
+      // way, and pipeline has closed it; there is no error to send.
+      if (res.headersSent) return;
       next(err);
     }
   });
