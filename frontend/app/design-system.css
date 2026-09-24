@@ -4834,11 +4834,25 @@ body:has(.assistant-fab) .page{ padding-bottom:96px; } /* keep the pager clear o
 .assistant-fab{
   display:grid; place-items:center; width:52px; height:52px; border-radius:50%;
   background:var(--sig); color:var(--sig-ink); border:0; cursor:pointer;
+  position:relative;
   box-shadow:0 6px 18px oklch(0.245 0.014 262 / 0.22);
   transition:background 120ms ease-out, transform 120ms ease-out;
 }
 .assistant-fab:hover{ background:var(--sig-hi); }
 .assistant-fab:active{ transform:scale(0.96); }
+/* Mouse only: lift on hover, spring back from the press. */
+@media (hover:hover) and (prefers-reduced-motion:no-preference){
+  .assistant-fab{ transition:background 120ms ease-out, box-shadow 150ms ease-out,
+    transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+  .assistant-fab:hover{ transform:translateY(-1px); box-shadow:0 10px 24px oklch(0.245 0.014 262 / 0.28); }
+  .assistant-fab:active{ transform:scale(0.96); transition-duration:120ms, 120ms, 80ms; }
+}
+/* A reply landed while the chat was shut. The label says it too, not just the colour. */
+.assistant-fab-dot{ position:absolute; top:2px; right:2px; width:12px; height:12px; border-radius:50%;
+  background:var(--alarm); border:2px solid var(--paper); }
+@media (prefers-reduced-motion:no-preference){
+  .assistant-fab-dot{ animation:assistant-pop-in 220ms cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+}
 .assistant-fab:focus-visible{ outline:2px solid var(--sig); outline-offset:3px; }
 /* Voice mode's own entry: secondary to the chat button, so lighter and smaller. */
 .assistant-fab.is-voice{ width:44px; height:44px; background:var(--paper); color:var(--sig);
@@ -4864,6 +4878,14 @@ body:has(.assistant-fab) .page{ padding-bottom:96px; } /* keep the pager clear o
 .assistant-icon-btn:focus-visible{ outline:2px solid var(--sig); outline-offset:1px; }
 .assistant-icon-btn:disabled{ opacity:0.45; cursor:not-allowed; }
 .assistant-icon-btn[aria-pressed="true"]{ color:var(--sig); background:var(--sig-wash); }
+/* Voice mode on: the waveform bars bounce like an equaliser. */
+@media (prefers-reduced-motion:no-preference){
+  .assistant-icon-btn[aria-pressed="true"] .assistant-voice-icon path{
+    transform-box:fill-box; transform-origin:center; animation:assistant-eq 900ms ease-in-out infinite alternate; }
+  .assistant-icon-btn[aria-pressed="true"] .assistant-voice-icon path:nth-child(2n){ animation-delay:-300ms; }
+  .assistant-icon-btn[aria-pressed="true"] .assistant-voice-icon path:nth-child(3n){ animation-delay:-600ms; }
+}
+@keyframes assistant-eq{ from{ transform:scaleY(0.45); } to{ transform:scaleY(1); } }
 
 .assistant-log{ flex:1; overflow-y:auto; overscroll-behavior:contain; padding:14px 14px 6px;
   display:flex; flex-direction:column; gap:10px; }

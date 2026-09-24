@@ -753,7 +753,11 @@ export default function AssistantWidget() {
   const [lastReply, setLastReply] = useState('');
   // Between the reply arriving and its voice starting: still "thinking" to the user.
   const [preparingSpeech, setPreparingSpeech] = useState(false);
+  // Replies that landed while the panel was shut; cleared when it opens.
+  const [unread, setUnread] = useState(0);
 
+  const openRef = useRef(open);
+  openRef.current = open;
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
   const speakOnRef = useRef(speakOn);
@@ -809,7 +813,10 @@ export default function AssistantWidget() {
 
   // Before paint, so reopening the panel doesn't replay every message's entrance.
   useLayoutEffect(() => {
-    if (open) setEnterFrom(messagesRef.current.length);
+    if (open) {
+      setEnterFrom(messagesRef.current.length);
+      setUnread(0);
+    }
   }, [open]);
 
   // Live rings: the mic follows your voice while recording, the speaker follows the reply.
@@ -989,6 +996,8 @@ export default function AssistantWidget() {
           })),
         },
       ]);
+      // Voice mode already said it out loud, so only a silent, unseen reply counts.
+      if (!openRef.current && !handsFreeRef.current) setUnread((count) => count + 1);
       // A report is too long for the voice card: open the chat beside it, voice stays on.
       if (report && handsFreeRef.current) setOpen(true);
       if (actions.some((action) => action.type === 'report_download')) {
@@ -1014,7 +1023,10 @@ export default function AssistantWidget() {
       if (destination) {
         router.push(destination.href);
         // On a phone the sheet covers the page, so get out of the way (unless talking hands-free).
-        if (!handsFreeRef.current && window.matchMedia?.('(max-width: 560px)')?.matches) setOpen(false);
+        if (!handsFreeRef.current && window.matchMedia?.('(max-width: 560px)')?.matches) {
+          if (openRef.current) setUnread((count) => count + 1); // closed before it could be read
+          setOpen(false);
+        }
       }
       return answer;
     } catch (err) {
@@ -1414,11 +1426,12 @@ export default function AssistantWidget() {
               ref={fabRef}
               type="button"
               className="assistant-fab"
-              aria-label="Open assistant"
+              aria-label={unread ? `Open assistant, ${unread} new ${unread === 1 ? 'reply' : 'replies'}` : 'Open assistant'}
               title="Assistant (hold Space to talk)"
               onClick={() => setOpen(true)}
             >
               <Icon name="chat" size={22} aria-hidden="true" />
+              {unread ? <span className="assistant-fab-dot" aria-hidden="true" /> : null}
             </button>
           </div>
         )}
@@ -1479,7 +1492,7 @@ export default function AssistantWidget() {
             startHandsFree();
           }}
           >
-            <Icon name="voice" size={18} aria-hidden="true" />
+            <Icon name="voice" size={18} className="assistant-voice-icon" aria-hidden="true" />
           </button>
           <button
             type="button"
