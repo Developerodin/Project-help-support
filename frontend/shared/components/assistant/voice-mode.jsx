@@ -57,7 +57,7 @@ export default function VoiceMode({
   micLevel, outputLevel, onEnd, onShowChat, notice, usage, onUsageReset, onInterrupt,
   files = [], fileError = null, onAddFiles, onRemoveFile,
   draftFiles = null, draftFileError = null, onDraftFiles, onDraftRemoveFile,
-  besidePanel = false, report = null, onShowReport,
+  besidePanel = false, report = null, onShowReport, leaving = false,
 }) {
   const orbRef = useRef(null);
   const endRef = useRef(null);
@@ -71,10 +71,11 @@ export default function VoiceMode({
 
   // Esc ends it from anywhere, since the dock doesn't hold focus.
   useEffect(() => {
+    if (leaving) return undefined;
     const onKey = (event) => { if (event.key === 'Escape') onEnd(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onEnd]);
+  }, [onEnd, leaving]);
 
   // While the assistant works or talks, the user can cut in (by speaking, or tapping the orb).
   const interruptible = phase === 'transcribing' || phase === 'thinking' || phase === 'speaking';
@@ -85,7 +86,14 @@ export default function VoiceMode({
       : 0));
 
   return (
-    <section className={`voice-dock is-${phase}${besidePanel ? ' is-beside-panel' : ''}`} aria-label="Voice mode" {...(onAddFiles ? fileDropProps(onAddFiles) : {})}>
+    <section
+      className={`voice-dock is-${phase}${besidePanel ? ' is-beside-panel' : ''}${leaving ? ' is-leaving' : ''}`}
+      aria-label="Voice mode"
+      // Ended and playing its exit: out of reach of clicks, focus and screen readers.
+      inert={leaving}
+      aria-hidden={leaving || undefined}
+      {...(onAddFiles && !leaving ? fileDropProps(onAddFiles) : {})}
+    >
       <div className="voice-card">
         <p className="voice-card-phase" role="status" aria-live="polite">
           <span className="voice-card-dot" aria-hidden="true" />

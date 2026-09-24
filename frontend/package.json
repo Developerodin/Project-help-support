@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev -p 3002",
+    "dev:https": "next dev -p 3002 --experimental-https --experimental-https-key ../certs/dev-key.pem --experimental-https-cert ../certs/dev-cert.pem --experimental-https-ca ../certs/dev-ca.pem",
     "build": "next build",
     "start": "next start",
     "test": "vitest run"

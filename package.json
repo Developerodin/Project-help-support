@@ -6,6 +6,7 @@
   "engines": { "node": ">=20.0.0" },
   "scripts": {
     "dev": "npm run dev -w @pms/frontend",
+    "dev:https": "npm run dev:https -w @pms/frontend",
     "dev:backend": "npm run dev -w @pms/backend",
     "test": "npm test --workspaces --if-present",
     "lint": "eslint ."

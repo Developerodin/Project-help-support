@@ -18,11 +18,14 @@ const MIN_BYTES = 1000;
 export class VoiceError extends Error {
   constructor(reason) {
     super(reason);
-    this.reason = reason; // 'unsupported' | 'blocked'
+    this.reason = reason; // 'insecure' | 'unsupported' | 'blocked'
   }
 }
 
 export function voiceErrorMessage(error) {
+  if (error?.reason === 'insecure') {
+    return 'Voice needs a secure connection. Open the app over https (or on localhost) to talk to the assistant.';
+  }
   if (error?.reason === 'unsupported') return 'Voice isn\'t supported in this browser.';
   if (error?.reason === 'blocked') {
     return 'Microphone access is blocked. Allow it in your browser settings to talk to the assistant.';
@@ -124,7 +127,8 @@ export function useVoiceRecorder() {
   const record = useCallback(async ({ autoStop = false } = {}) => {
     stopRequested.current = false;
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      throw new VoiceError('unsupported');
+      // Browsers hide the mic API on plain-http pages (anything but localhost), so say that, not "unsupported".
+      throw new VoiceError(window.isSecureContext === false ? 'insecure' : 'unsupported');
     }
     let stream;
     try {

@@ -69,6 +69,14 @@ const CHAT_PRICES = {
 };
 const chatPricesFor = (model) => CHAT_PRICES[model] ?? CHAT_PRICES['gpt-5.6-sol'];
 
+function readHttps(env) {
+  if (!present(env.HTTPS_KEY_FILE) && !present(env.HTTPS_CERT_FILE)) return null;
+  if (!present(env.HTTPS_KEY_FILE) || !present(env.HTTPS_CERT_FILE)) {
+    throw new Error('Config error: set both HTTPS_KEY_FILE and HTTPS_CERT_FILE, or neither.');
+  }
+  return { keyFile: env.HTTPS_KEY_FILE.trim(), certFile: env.HTTPS_CERT_FILE.trim() };
+}
+
 function readCsvSet(env, key) {
   if (!present(env[key])) return new Set();
   return new Set(
@@ -221,6 +229,9 @@ export function loadConfig(env = process.env) {
     nodeEnv,
     isProduction,
     port: present(env.PORT) ? Number(env.PORT) : 4000,
+    // Local https (scripts/dev-https-certs.sh), so LAN devices get the mic. Both paths or neither.
+    // ponytail: production terminates TLS at nginx and leaves these unset.
+    https: readHttps(env),
     mongoUrl: env.MONGODB_URL.trim(),
     frontendBaseUrl: env.FRONTEND_BASE_URL.trim().replace(/\/$/, ''),
     corsOrigins: env.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean),

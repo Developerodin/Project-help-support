@@ -43,6 +43,9 @@ import { buildAttachmentFormData } from '@/shared/lib/attachment-config.js';
 const HISTORY_LIMIT = 20;
 /** Matches the panel's exit animation in design-system.css. */
 const PANEL_EXIT_MS = 160;
+/** Matches voice mode's exit animation in design-system.css. */
+const VOICE_EXIT_MS = 200;
+const prefersReducedMotion = () => Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches);
 const SPEAK_KEY = 'assistant.speak';
 /** Where the user is, so the assistant understands "this ticket" and "the details tab". */
 export function currentPage() {
@@ -422,6 +425,26 @@ async function applyAction(action) {
  * short-lived signed link, and the download route re-checks access), and the
  * tab is opened first so the browser doesn't treat it as a popup.
  */
+/** The assistant's own mark: a chat bubble holding a spark, so it reads as "ask the assistant", not "comments". */
+function AssistantMark({ size = 22 }) {
+  return (
+    <svg className="assistant-mark" width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M2.99 16.34a2 2 0 0 1 .1 1.17l-1.07 3.29a1 1 0 0 0 1.24 1.17l3.41-1a2 2 0 0 1 1.1.1 10 10 0 1 0-4.78-4.73"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        className="assistant-mark-spark"
+        d="M12 7.2c.45 2.5 2 4.05 4.5 4.5-2.5.45-4.05 2-4.5 4.5-.45-2.5-2-4.05-4.5-4.5 2.5-.45 4.05-2 4.5-4.5Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
 function FileButton({ file }) {
   const [state, setState] = useState('idle');
   const open = async () => {
@@ -723,6 +746,9 @@ export default function AssistantWidget() {
   const [speaking, setSpeaking] = useState(false);
   const [speakOn, setSpeakOn] = useState(false);
   const [handsFree, setHandsFree] = useState(false);
+  // Voice mode just ended: the dock stays a moment, inert, to play its exit.
+  const [voiceLeaving, setVoiceLeaving] = useState(false);
+  const wasHandsFree = useRef(false);
   // Files added in the chat or voice dock, waiting for a confirmed ticket.
   const [staged, setStaged] = useState([]);
   const [stageError, setStageError] = useState(null);
@@ -1317,6 +1343,18 @@ export default function AssistantWidget() {
     } catch { /* storage blocked: preference lasts this visit */ }
   };
 
+  useEffect(() => {
+    const ended = wasHandsFree.current && !handsFree;
+    wasHandsFree.current = handsFree;
+    if (!ended || prefersReducedMotion()) {
+      setVoiceLeaving(false);
+      return undefined;
+    }
+    setVoiceLeaving(true);
+    const timer = window.setTimeout(() => setVoiceLeaving(false), VOICE_EXIT_MS);
+    return () => window.clearTimeout(timer);
+  }, [handsFree]);
+
   const close = () => {
     // With voice on (the chat was opened beside it for a report), closing only hides the chat.
     if (!handsFree) {
@@ -1329,7 +1367,7 @@ export default function AssistantWidget() {
       setOpen(false);
     };
     // Play the exit animation first, unless the user prefers no motion.
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) finish();
+    if (prefersReducedMotion()) finish();
     else {
       setClosing(true);
       window.setTimeout(finish, PANEL_EXIT_MS);
@@ -1364,8 +1402,9 @@ export default function AssistantWidget() {
     period: reportPeriod(lastMessage.report),
     download: () => downloadReport(lastMessage.report, lastMessage.content),
   } : null;
-  const voiceMode = handsFree ? (
+  const voiceMode = handsFree || voiceLeaving ? (
     <VoiceMode
+      leaving={!handsFree}
       phase={voicePhase}
       besidePanel={open}
       report={voiceReport}
@@ -1420,7 +1459,7 @@ export default function AssistantWidget() {
               title="Voice mode: talk with the assistant"
               onClick={startHandsFree}
             >
-              <Icon name="voice" size={20} aria-hidden="true" />
+              <Icon name="voice" size={20} className="assistant-voice-icon" aria-hidden="true" />
             </button>
             <button
               ref={fabRef}
@@ -1430,7 +1469,7 @@ export default function AssistantWidget() {
               title="Assistant (hold Space to talk)"
               onClick={() => setOpen(true)}
             >
-              <Icon name="chat" size={22} aria-hidden="true" />
+              <AssistantMark />
               {unread ? <span className="assistant-fab-dot" aria-hidden="true" /> : null}
             </button>
           </div>

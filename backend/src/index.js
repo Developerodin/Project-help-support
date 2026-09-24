@@ -1,4 +1,6 @@
 import './platform/loadEnv.js';
+import { readFileSync } from 'node:fs';
+import https from 'node:https';
 import { loadConfig } from './platform/config.js';
 import { connectDb } from './platform/db.js';
 import { createApp } from './app.js';
@@ -67,6 +69,7 @@ async function start() {
 
   if (!config.features.email) logger.warn('Email capability disabled — SMTP group not configured');
   if (!config.features.attachments) logger.warn('Attachment capability disabled — storage group not configured');
+  if (!config.features.assistant) logger.warn('Assistant disabled — OPENAI_API_KEY not set');
 
   await connectDb(config.mongoUrl);
   await replayAuditOutboxOnBoot();
@@ -87,8 +90,11 @@ async function start() {
     deliverReset: buildResetDeliverer(config),
   });
 
-  app.listen(config.port, () => {
-    logger.info(`API listening on :${config.port} (${config.nodeEnv})`);
+  const server = config.https
+    ? https.createServer({ key: readFileSync(config.https.keyFile), cert: readFileSync(config.https.certFile) }, app)
+    : app;
+  server.listen(config.port, () => {
+    logger.info(`API listening on ${config.https ? 'https' : 'http'} :${config.port} (${config.nodeEnv})`);
   });
 }
 

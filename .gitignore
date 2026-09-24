@@ -39,3 +39,6 @@ graphify-out/
 **/*.spec.ts
 **/*.spec.tsx
 .next-prod/
+
+# Local https certificates and private keys (scripts/dev-https-certs.sh).
+certs/
