@@ -200,6 +200,13 @@ export default function ProjectsPage() {
     resultsTruncated: false,
   });
   const [companyExpanded, setCompanyExpanded] = useState({});
+  // A page past the end (the assistant's "last page", an old link) goes to the last one,
+  // as Tickets and People do. Only once a real total is in, not the initial guess.
+  useEffect(() => {
+    if (!projectPage.loaded || page <= projectPage.totalPages) return;
+    writeProjectSearch({ search: urlSearch, limit, page: Math.max(1, projectPage.totalPages) });
+  }, [projectPage, page]); // Only a new total or page can put the page past the end.
+
   const [loading, setLoading] = useState(true);
   const hasLoadedOnce = useRef(false);
   const [error, setError] = useState(null);
@@ -238,6 +245,7 @@ export default function ProjectsPage() {
       totalResults: projectListPage.totalResults ?? 0,
       totalPages: projectListPage.totalPages ?? 1,
       resultsTruncated: Boolean(projectListPage.resultsTruncated),
+      loaded: true,
     });
     setCompanyExpanded((prev) => mergeCompanyExpandedState(
       { ...readStoredExpanded(COMPANY_EXPANDED_STORAGE_KEY), ...prev },

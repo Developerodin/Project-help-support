@@ -15,18 +15,23 @@ export const ASSISTANT_TICKET_FILTERS_EVENT = 'assistant:ticket-filters';
  */
 export const ASSISTANT_MODULE_VIEW_EVENT = 'assistant:module-view';
 
-/** The waiting request per event, kept until the page (or view) takes it. */
+/**
+ * The waiting request per event, kept until the page (or view) takes it. One
+ * nobody takes soon (the page never opened, or had nothing to show) is dropped,
+ * so it can't surprise the user when they open that page later.
+ */
 const queued = new Map();
+const EXPIRES_MS = 15000;
 
 function hand(event, request) {
-  queued.set(event, request);
+  queued.set(event, { request, at: Date.now() });
   window.dispatchEvent(new Event(event));
 }
 
 function take(event) {
-  const request = queued.get(event) ?? null;
+  const entry = queued.get(event);
   queued.delete(event);
-  return request;
+  return entry && Date.now() - entry.at < EXPIRES_MS ? entry.request : null;
 }
 
 /** Hands a filter change to the Tickets page (now, or when it next opens). */

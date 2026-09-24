@@ -413,6 +413,15 @@ function TicketListPage() {
       writeSearch(withPageParam(withLimitParam(window.location.search, assistantFilters.limit), 1));
       patchPreferences({ limit: assistantFilters.limit });
     }
+    // Paging asked for with the filters goes after them (they start the list at page 1).
+    const { paging } = assistantFilters;
+    if (paging) {
+      const current = pageFromSearch(window.location.search);
+      // "last" leans on applyListResponse pulling a too-high page back to the last one.
+      setPage({
+        next: current + 1, previous: current - 1, first: 1, last: 100000,
+      }[paging.direction] ?? paging.page);
+    }
   }, [assistantFilters, ready]); // Applied once per request, against the view on screen at that moment.
 
   const handleSort = (column) => {
@@ -585,6 +594,8 @@ function TicketListPage() {
             tickets={listPage.results}
             onOpen={open}
             busy={tableBusy}
+            loaded={!loading}
+            storageScope={`${user?.id ?? 'anon'}:${viewProjectId || 'all'}`}
             canCreate={canCreateTicket}
           />
         </>

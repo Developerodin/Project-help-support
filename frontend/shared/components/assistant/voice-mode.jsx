@@ -57,7 +57,7 @@ export default function VoiceMode({
   micLevel, outputLevel, onEnd, onShowChat, notice, usage, onUsageReset, onInterrupt,
   files = [], fileError = null, onAddFiles, onRemoveFile,
   draftFiles = null, draftFileError = null, onDraftFiles, onDraftRemoveFile,
-  besidePanel = false, report = null, onShowReport, leaving = false,
+  besidePanel = false, report = null, onShowReport, leaving = false, error = null,
 }) {
   const orbRef = useRef(null);
   const endRef = useRef(null);
@@ -105,6 +105,8 @@ export default function VoiceMode({
           {reply ? <p className="voice-card-reply">{reply}</p> : null}
           {!heard && !reply ? <p className="voice-card-heard">Ask about a ticket, or say where to go.</p> : null}
         </div>
+        {/* What the app couldn't do, even though the reply may say it did. */}
+        {error ? <p className="voice-draft-error" role="alert">{error}</p> : null}
         {report ? (
           <div className="voice-report" role="group" aria-label={report.title}>
             <p className="voice-report-title">{report.title}</p>

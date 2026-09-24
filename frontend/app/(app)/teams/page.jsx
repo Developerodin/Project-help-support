@@ -115,6 +115,13 @@ export default function TeamsPage() {
     resultsTruncated: false,
   });
   const [metrics, setMetrics] = useState(null);
+  // A page past the end (the assistant's "last page", an old link) goes to the last one,
+  // as Tickets and People do. Only once a real total is in, not the initial guess.
+  useEffect(() => {
+    if (!teamPage.loaded || page <= teamPage.totalPages) return;
+    writeTeamsSearch({ search: urlSearch, limit, scope, status, page: Math.max(1, teamPage.totalPages) });
+  }, [teamPage, page]); // Only a new total or page can put the page past the end.
+
   const [activeUserTotal, setActiveUserTotal] = useState(null);
   const [loading, setLoading] = useState(true);
   const hasLoadedOnce = useRef(false);
@@ -171,6 +178,7 @@ export default function TeamsPage() {
         totalResults: listPage.totalResults ?? 0,
         totalPages: listPage.totalPages ?? 1,
         resultsTruncated: Boolean(listPage.resultsTruncated),
+        loaded: true,
       });
       await reloadMetrics();
     } catch (err) {
@@ -214,6 +222,7 @@ export default function TeamsPage() {
             totalResults: listPage.totalResults ?? 0,
             totalPages: listPage.totalPages ?? 1,
             resultsTruncated: Boolean(listPage.resultsTruncated),
+            loaded: true,
           });
         }
         if (!cancelled) await reloadMetrics();

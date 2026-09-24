@@ -205,20 +205,25 @@ function ModuleGroup({
 const lower = (names) => names.map((name) => String(name).trim().toLowerCase());
 
 /**
- * Module names the assistant asked for (null = all), matched to the groups on
- * screen. The `except` ones get the opposite, so "collapse all but X" leaves X open.
+ * The modules a step applies to: the named ones (the server checked and spelled
+ * them, so they count even before their cards render), or every module on screen
+ * for null. The `except` ones get the opposite, so "collapse all but X" leaves X open.
  */
 function namedGroups(groups, modules, except = []) {
-  const all = groups.map((group) => group.module);
-  const wanted = modules == null ? null : lower(modules);
-  const kept = lower(except);
-  const targets = all.filter((name) => (wanted == null || wanted.includes(name.toLowerCase()))
-    && !kept.includes(name.toLowerCase()));
-  const spared = all.filter((name) => kept.includes(name.toLowerCase()));
-  return { targets, spared };
+  const onScreen = groups.map((group) => group.module);
+  // A card's own spelling when it is showing, so the stored names match its clicks.
+  const spell = (name) => onScreen.find((label) => label.toLowerCase() === String(name).trim().toLowerCase()) ?? name;
+  const kept = lower(except ?? []);
+  const targets = (modules ? modules.map(spell) : onScreen).filter((name) => !kept.includes(name.toLowerCase()));
+  return { targets, spared: (except ?? []).map(spell) };
 }
 
-export default function TicketModuleGroups({ tickets, onOpen, busy = false, canCreate = false }) {
+export default function TicketModuleGroups({
+  tickets, onOpen, busy = false, loaded = true, storageScope = '', canCreate = false,
+}) {
+  // Collapsed modules are remembered per user and project: the same name in another
+  // project (or for someone else on this browser) is a different card.
+  const collapsedKey = storageScope ? `${COLLAPSED_KEY}:${storageScope}` : COLLAPSED_KEY;
   const [collapsed, setCollapsed] = useState(() => new Set());
   const [sort, setSort] = useState('name');
   // Modules showing every ticket rather than the first few ("Show more").
@@ -227,15 +232,15 @@ export default function TicketModuleGroups({ tickets, onOpen, busy = false, canC
   // don't visibly animate shut on page load.
   const [animate, setAnimate] = useState(false);
   useEffect(() => {
-    setCollapsed(new Set(readStored(COLLAPSED_KEY, [])));
+    setCollapsed(new Set(readStored(collapsedKey, [])));
     setSort(readStored(SORT_KEY, 'name') === 'urgency' ? 'urgency' : 'name');
     const timer = window.setTimeout(() => setAnimate(true), 50);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [collapsedKey]);
 
   const saveCollapsed = (next) => {
     setCollapsed(next);
-    writeStored(COLLAPSED_KEY, [...next]);
+    writeStored(collapsedKey, [...next]);
   };
 
   const chooseSort = (next) => {
@@ -263,7 +268,8 @@ export default function TicketModuleGroups({ tickets, onOpen, busy = false, canC
   };
 
   // Steps from the assistant: taken now (it may have opened this view for them)
-  // and whenever more arrive; applied once the tickets are here to match names against.
+  // and whenever more arrive; applied once the full grouped list has loaded, not
+  // the table page still showing while it loads.
   const [assistantSteps, setAssistantSteps] = useState(null);
   useEffect(() => {
     const takeSteps = () => {
@@ -275,7 +281,7 @@ export default function TicketModuleGroups({ tickets, onOpen, busy = false, canC
     return () => window.removeEventListener(ASSISTANT_MODULE_VIEW_EVENT, takeSteps);
   }, []);
   useEffect(() => {
-    if (!assistantSteps || (busy && !tickets.length)) return;
+    if (!assistantSteps || !loaded) return;
     setAssistantSteps(null);
     for (const step of assistantSteps) {
       if (step.order) chooseSort(step.order === 'attention' ? 'urgency' : 'name');
@@ -294,7 +300,7 @@ export default function TicketModuleGroups({ tickets, onOpen, busy = false, canC
             if (collapse) next.delete(name);
             else next.add(name);
           }
-          writeStored(COLLAPSED_KEY, [...next]);
+          writeStored(collapsedKey, [...next]);
           return next;
         });
       } else {
@@ -308,7 +314,7 @@ export default function TicketModuleGroups({ tickets, onOpen, busy = false, canC
         });
       }
     }
-  }, [assistantSteps, busy, tickets]); // Applied once per request, against the modules on screen.
+  }, [assistantSteps, loaded, tickets]); // Applied once per request, against the modules on screen.
 
   const toggleAll = () => {
     const next = new Set(collapsed);

@@ -56,7 +56,49 @@ export function currentPage() {
     path: window.location.pathname,
     ticketId: params.get(TICKET_PARAM),
     tab: params.get(TICKET_PARAM) ? (params.get(TAB_PARAM) || 'discussion') : null,
+    // Filters, view and page, so "next page" or "remove that filter" is not a guess.
+    query: window.location.search.slice(0, 1000),
   };
+}
+
+/**
+ * Runs `fn` once the address shows `href` (the push has landed) and the new page
+ * has had a moment to render.
+ * ponytail: a fixed 400ms for the list to load; a slow list can still scroll short.
+ */
+function whenAt(href, fn) {
+  const started = Date.now();
+  const tick = () => {
+    if (`${window.location.pathname}${window.location.search}` === href) window.setTimeout(fn, 400);
+    else if (Date.now() - started < 3000) window.setTimeout(tick, 50);
+  };
+  tick();
+}
+
+function scrollWindow(direction) {
+  const screen = window.innerHeight * 0.8;
+  const top = { down: window.scrollY + screen, up: window.scrollY - screen, top: 0 }[direction]
+    ?? document.documentElement.scrollHeight;
+  window.scrollTo({ top, behavior: 'smooth' });
+}
+
+/** A short line per thing the app did for a reply, so the next turn knows (and "undo" isn't a guess). */
+function actionNote(action) {
+  switch (action.type) {
+    case 'navigate': return `opened ${action.label}`;
+    case 'switch_project': return `switched the project to ${action.label}`;
+    case 'ticket_filters': return `set Tickets filters ${JSON.stringify({
+      ...action.filters, ...(action.view ? { view: action.view } : {}), ...(action.sort ? { sort: action.sort } : {}),
+      ...(action.limit ? { rows: action.limit } : {}), ...(action.reset ? { reset: true } : {}),
+    })}`;
+    case 'people_filters': return 'set People filters';
+    case 'page_filters': return `set filters on ${action.path} ${JSON.stringify(action.params)}`;
+    case 'module_view': return `module view: ${[action.action, action.modules ? action.modules.join(', ') : action.action && 'all',
+      action.except ? `except ${action.except.join(', ')}` : '', action.order ? `order ${action.order}` : ''].filter(Boolean).join(' ')}`;
+    case 'change_page': return `went to the ${action.direction === 'number' ? `page ${action.page}` : `${action.direction} page`}`;
+    case 'scroll': return `scrolled ${action.direction}`;
+    default: return null;
+  }
 }
 
 /**
@@ -183,6 +225,8 @@ const draftKey = (action) => `${action.type}:${action.ticketId || action.ticketI
 export function historyText(message) {
   const notes = (message.actions || []).map(draftNote);
   if (message.report) notes.push(`[Report shown: ${reportTitle(message.report)}, ${message.report.from} to ${message.report.to}]`);
+  if (message.did?.length) notes.push(`[Done in the app: ${message.did.join('; ')}]`);
+  if (message.failed?.length) notes.push(`[Not done, the app said: ${message.failed.join('; ')}]`);
   const files = message.attached?.length
     ? [`[Files ready to attach: ${message.attached.map((file) => file.name).join(', ')}]`]
     : [];
@@ -987,7 +1031,9 @@ export default function AssistantWidget() {
     const content = text.trim();
     if (!content) return null;
     const attached = stagedRef.current.map((file) => ({ name: file.name, size: file.size }));
-    const next = [...messagesRef.current, { role: 'user', content, ...(attached.length ? { attached } : {}) }];
+    const turn = `${Date.now()}-${Math.random()}`;
+    const asked = { role: 'user', content, ...(attached.length ? { attached } : {}) };
+    const next = [...messagesRef.current, asked];
     setMessages(next);
     setInput('');
     setError(null);
@@ -1025,6 +1071,7 @@ export default function AssistantWidget() {
           : message)),
         {
           role: 'assistant',
+          turn,
           content: answer,
           files,
           ...(report ? { report } : {}),
@@ -1040,96 +1087,120 @@ export default function AssistantWidget() {
       if (!openRef.current && !handsFreeRef.current) setUnread((count) => count + 1);
       // A report is too long for the voice card: open the chat beside it, voice stays on.
       if (report && handsFreeRef.current) setOpen(true);
+      // What the app couldn't do is shown (chat and voice) and noted on the reply,
+      // so the next turn knows the reply above it was wrong about it.
+      const failed = [];
+      const fail = (text) => {
+        failed.push(text);
+        setError(text);
+      };
+      const noteOnReply = (patch) => setMessages((prev) => prev.map((message) => (message.turn === turn
+        ? { ...message, ...patch(message) } : message)));
       if (actions.some((action) => action.type === 'report_download')) {
         const latest = report ? { report, content: answer } : messagesRef.current.findLast((message) => message.report);
         if (latest) downloadReport(latest.report, latest.content);
-        else setError('There is no report in this chat to download yet.');
+        else fail('There is no report in this chat to download yet.');
       }
       // Watching only changes the user's own notifications, so it needs no card.
       for (const action of actions.filter((entry) => entry.type === 'watch')) {
-        (action.watch ? watchTicket : unwatchTicket)(action.ticketId)
-          .catch((err) => setError(normalizeApiError(err)?.message || `Couldn't update watching ${action.ticketId}.`));
+        (action.watch ? watchTicket : unwatchTicket)(action.ticketId).catch((err) => {
+          const text = normalizeApiError(err)?.message || `Couldn't update watching ${action.ticketId}.`;
+          setError(text);
+          noteOnReply((message) => ({ failed: [...(message.failed || []), text] }));
+        });
       }
-      // Same as picking it in the project switcher; before navigate so the new page opens in it.
-      const switched = actions.find((action) => action.type === 'switch_project');
+      // Same as picking it in the project switcher; before the page change so it opens in it.
+      // The server allows one action of each kind, all for one page, per turn.
+      const one = (type) => actions.find((action) => action.type === type);
+      const switched = one('switch_project');
       if (switched) setActiveProjectId(switched.projectId);
-      // Filters go to the Tickets page itself, which merges them into what it shows.
-      // Module-view steps need the By module view: ask for it with the filters (one request).
-      const moduleSteps = actions.filter((action) => action.type === 'module_view');
-      const inModuleView = window.location.pathname === '/tickets'
-        && new URLSearchParams(window.location.search).get('view') === 'modules';
-      let filters = actions.find((action) => action.type === 'ticket_filters');
-      if (moduleSteps.length && !inModuleView) filters = { filters: {}, ...filters, view: 'modules' };
-      if (moduleSteps.length) requestModuleView(moduleSteps);
-      if (filters) {
-        requestTicketFilters(filters);
-        if (window.location.pathname !== '/tickets') router.push('/tickets');
-      }
-      // ponytail: scrolls the window only; a page with its own scroll area (the ticket drawer) needs a target.
-      const scroll = actions.find((action) => action.type === 'scroll');
-      if (scroll) {
-        const screen = window.innerHeight * 0.8;
-        const top = { down: window.scrollY + screen, up: window.scrollY - screen, top: 0 }[scroll.direction]
-          ?? document.documentElement.scrollHeight;
-        window.scrollTo({ top, behavior: 'smooth' });
-      }
-      // People reads its search and filters from the URL, so open it with them (from page 1).
-      const people = actions.find((action) => action.type === 'people_filters');
+
+      // Every page change of this turn builds one address, pushed once at the end.
+      const here = () => new URL(window.location.href);
+      const fresh = (path) => (window.location.pathname === path ? here() : new URL(path, window.location.origin));
+      const destination = one('navigate');
+      let target = destination ? new URL(destination.href, window.location.origin) : null;
+
+      // People and the other URL-driven pages: merge into the one on screen, from page 1.
+      const people = one('people_filters');
       if (people) {
-        const onPeople = window.location.pathname === '/users';
-        const params = new URLSearchParams(onPeople ? window.location.search : '');
-        params.delete('q');
-        params.delete('page');
+        target ??= fresh('/users');
+        target.searchParams.delete('q');
+        target.searchParams.delete('page');
         for (const key of ['search', 'role', 'status', 'limit']) {
           if (people[key] === undefined) continue;
-          if (people[key] === 'any' || people[key] === '') params.delete(key);
-          else params.set(key, people[key]);
+          if (people[key] === 'any' || people[key] === '') target.searchParams.delete(key);
+          else target.searchParams.set(key, people[key]);
         }
-        const query = params.toString();
-        router.push(`/users${query ? `?${query}` : ''}`);
       }
-      // Other pages read their filters from the URL too: merge into the one on screen, from page 1.
-      const pageFilters = actions.find((action) => action.type === 'page_filters');
+      const pageFilters = one('page_filters');
       if (pageFilters) {
-        const onIt = window.location.pathname === pageFilters.path;
-        const params = new URLSearchParams(onIt ? window.location.search : '');
-        params.delete('page');
+        target ??= fresh(pageFilters.path);
+        target.searchParams.delete('page');
         for (const [key, value] of Object.entries(pageFilters.params)) {
-          if (value == null) params.delete(key);
-          else params.set(key, value);
+          if (value == null) target.searchParams.delete(key);
+          else target.searchParams.set(key, value);
         }
-        const query = params.toString();
-        router.push(`${pageFilters.path}${query ? `?${query}` : ''}`);
       }
-      // Tickets and People keep their page in ?page= and pull a too-high page back to the last one.
-      const paging = actions.find((action) => action.type === 'change_page');
-      if (paging) {
-        const url = new URL(window.location.href);
-        if (!PAGED_LISTS.includes(url.pathname)) {
-          setError('Paging works on the Tickets, People, Projects and Teams lists.');
+
+      // The Tickets page takes its filters itself (it merges them into the saved view).
+      // Module-view steps need the By module view: ask for it with the filters (one request).
+      const moduleSteps = actions.filter((action) => action.type === 'module_view');
+      const inModuleView = window.location.pathname === '/tickets' && here().searchParams.get('view') === 'modules';
+      let filters = one('ticket_filters');
+      if (moduleSteps.length && !inModuleView) filters = { filters: {}, ...filters, view: 'modules' };
+
+      // Paging applies to where this turn lands; with Tickets filters the page does it after them.
+      const paging = one('change_page');
+      if (paging && filters) filters = { filters: {}, ...filters, paging };
+      else if (paging) {
+        target ??= here();
+        if (!PAGED_LISTS.includes(target.pathname)) {
+          fail('Paging works on the Tickets, People, Projects and Teams lists.');
         } else {
-          const current = Number(url.searchParams.get('page')) || 1;
+          const current = Number(target.searchParams.get('page')) || 1;
           // ponytail: "last" asks for a huge page and lets the list clamp it (one extra fetch).
           const next = {
             next: current + 1, previous: Math.max(1, current - 1), first: 1, last: 100000,
           }[paging.direction] ?? paging.page;
-          url.searchParams.set('page', String(next));
-          router.push(`${url.pathname}${url.search}`);
+          target.searchParams.set('page', String(next));
         }
       }
-      const destination = actions.find((action) => action.type === 'navigate');
-      if (destination) {
-        router.push(destination.href);
-        // On a phone the sheet covers the page, so get out of the way (unless talking hands-free).
-        if (!handsFreeRef.current && window.matchMedia?.('(max-width: 560px)')?.matches) {
-          if (openRef.current) setUnread((count) => count + 1); // closed before it could be read
-          setOpen(false);
-        }
+      if (moduleSteps.length) requestModuleView(moduleSteps);
+      if (filters) {
+        requestTicketFilters(filters);
+        if (!target && window.location.pathname !== '/tickets') target = new URL('/tickets', window.location.origin);
+      }
+
+      const href = target ? `${target.pathname}${target.search}` : null;
+      const moving = href && href !== `${window.location.pathname}${window.location.search}`;
+      if (moving) router.push(href);
+
+      // ponytail: scrolls the window only; a page with its own scroll area (the ticket drawer) needs a target.
+      const scroll = one('scroll');
+      if (scroll) {
+        if (moving) whenAt(href, () => scrollWindow(scroll.direction));
+        else if (filters) window.setTimeout(() => scrollWindow(scroll.direction), 600); // after the list redraws
+        else scrollWindow(scroll.direction);
+      }
+
+      const did = actions.map(actionNote).filter(Boolean);
+      if (did.length || failed.length) noteOnReply(() => ({ did, failed }));
+      // On a phone the sheet covers the page, so get out of the way (unless talking hands-free),
+      // but not when there is a card to confirm or a failure to read.
+      if (destination && !handsFreeRef.current && !drafts.length && !failed.length
+        && window.matchMedia?.('(max-width: 560px)')?.matches) {
+        if (openRef.current) setUnread((count) => count + 1); // closed before it could be read
+        setOpen(false);
       }
       return answer;
     } catch (err) {
-      // An interruption cancels the request on purpose: nothing to report.
-      if (isAbortError(err) || controller.signal.aborted) return null;
+      // An interruption cancels the request on purpose: nothing to report. The question
+      // goes too, so a retracted "open the board" can't win the next turn.
+      if (isAbortError(err) || controller.signal.aborted) {
+        setMessages((prev) => prev.filter((message) => message !== asked));
+        return null;
+      }
       lastErrorCode.current = normalizeApiError(err)?.code ?? null;
       setError(normalizeApiError(err)?.message || 'The assistant could not answer. Try again.');
       return null;
@@ -1508,6 +1579,7 @@ export default function AssistantWidget() {
       usage={usage}
       onUsageReset={refreshUsage}
       notice={AI_NOTICE}
+      error={error}
       onEnd={endHandsFree}
       onShowChat={() => {
         endHandsFree();

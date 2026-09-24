@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
@@ -28,6 +28,10 @@ export default function NotificationsPage() {
   const searchParams = useSearchParams();
   const unreadOnly = searchParams.get('unread') === '1';
   const [page, setPage] = useState(1);
+  // Unread on/off from anywhere (the toggle, the assistant, back/forward) starts at page 1.
+  useEffect(() => {
+    setPage(1);
+  }, [unreadOnly]);
   const limit = NOTIFICATION_INBOX_LIMIT;
   const refreshInterval = useNotificationPollInterval();
   const { projectId, projectLoading } = useNotificationProjectScope();
