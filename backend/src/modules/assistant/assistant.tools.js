@@ -419,10 +419,12 @@ const MODULE_VIEW = fn(
   "Work the Tickets page's By module view, right away (it switches to that view if needed): collapse or expand "
     + 'module cards, show all or only the first few tickets in them ("show more"/"show fewer"), and order the cards '
     + 'A-Z ("name") or by what needs attention. modules null means every module; otherwise module names as on the '
-    + 'cards ("No module" for tickets without one). Call it again for a second step, e.g. collapse all then expand one.',
+    + 'cards ("No module" for tickets without one). except gets the opposite: "collapse all but Master Catalog" is '
+    + 'action collapse, modules null, except ["Master Catalog"] (it stays open), all in one call.',
   {
     action: nullableEnum(['collapse', 'expand', 'show_all', 'show_fewer']),
     modules: { type: ['array', 'null'], items: { type: 'string' } },
+    except: { type: ['array', 'null'], items: { type: 'string' } },
     order: nullableEnum(['name', 'attention']),
   },
 );
@@ -600,6 +602,40 @@ export async function projectRoster(ctx) {
 async function projectsFor(ctx) {
   ctx.projects ??= (await listProjects({ limit: 100 }, ctx.user, ctx.permissionContext)).results;
   return ctx.projects;
+}
+
+const NO_MODULE = 'No module';
+
+/**
+ * Module names the user can see: each accessible project's modules, plus names
+ * already on its tickets (a module renamed since still shows on the page).
+ * ponytail: across all accessible projects, not just the one in the switcher.
+ */
+async function moduleNamesFor(ctx) {
+  if (!ctx.moduleNames) {
+    const projects = await projectsFor(ctx);
+    const configured = projects.flatMap((project) => resolveProjectModules(project).map((module) => module.label));
+    const used = await Ticket.distinct('module', { project: { $in: projects.map(idOf) } });
+    ctx.moduleNames = [...new Set([...configured, ...used].map((name) => String(name ?? '').trim()).filter(Boolean))];
+  }
+  return ctx.moduleNames;
+}
+
+/** The names as the page spells them; an unknown one fails with the real list, so it can be corrected. */
+async function knownModules(ctx, names) {
+  const known = [...await moduleNamesFor(ctx), NO_MODULE];
+  const matched = [];
+  const unknown = [];
+  for (const name of names) {
+    const hit = known.find((label) => label.toLowerCase() === String(name).trim().toLowerCase());
+    if (hit) matched.push(hit);
+    else unknown.push(name);
+  }
+  if (unknown.length) {
+    throw new ToolError(`No module named ${unknown.map((name) => `"${name}"`).join(', ')}. `
+      + `Modules: ${known.slice(0, 60).join(', ')}. If one of these is what the user meant, use it; otherwise ask.`);
+  }
+  return matched;
 }
 
 async function projectByKey(ctx, key) {
@@ -1134,11 +1170,17 @@ const HANDLERS = {
     const action = ['collapse', 'expand', 'show_all', 'show_fewer'].includes(args.action) ? args.action : null;
     const order = ['name', 'attention'].includes(args.order) ? args.order : null;
     if (!action && !order) throw new ToolError('Pass an action (collapse, expand, show_all, show_fewer) or an order.');
-    const modules = Array.isArray(args.modules)
-      ? args.modules.map((name) => String(name).trim().slice(0, 100)).filter(Boolean).slice(0, 50)
-      : null;
+    const names = (list) => (Array.isArray(list)
+      ? list.map((name) => String(name).trim().slice(0, 100)).filter(Boolean).slice(0, 50)
+      : null);
+    let modules = names(args.modules);
     if (modules && !modules.length) throw new ToolError('Name at least one module, or pass modules null for all.');
-    ctx.actions.push({ id: randomUUID(), type: 'module_view', action, modules, order });
+    let except = names(args.except);
+    if (modules) modules = await knownModules(ctx, modules);
+    if (except?.length) except = await knownModules(ctx, except);
+    ctx.actions.push({
+      id: randomUUID(), type: 'module_view', action, modules, order, ...(except?.length ? { except } : {}),
+    });
     return { status: 'applied', note: 'The module view now shows this. Say what changed in a few words.' };
   },
 
@@ -1199,7 +1241,8 @@ const HANDLERS = {
     pick('category', args.category);
     pick('severity', args.severity);
     pick('scope', args.scope);
-    pick('module', args.module);
+    if (args.module != null && args.module !== ANY) [filters.module] = await knownModules(ctx, [args.module]);
+    else pick('module', args.module);
     if (args.search != null) filters.q = String(args.search).trim().slice(0, 200);
     for (const [key, value] of [['blocked', args.blocked], ['overdue', args.overdue],
       ['reopened', args.reopened], ['newReply', args.new_reply]]) {

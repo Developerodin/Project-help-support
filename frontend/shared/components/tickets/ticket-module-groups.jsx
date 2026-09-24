@@ -202,11 +202,20 @@ function ModuleGroup({
   );
 }
 
-/** Module names the assistant asked for (null = all), matched to the groups on screen. */
-function namedGroups(groups, modules) {
-  if (modules == null) return groups.map((group) => group.module);
-  const wanted = modules.map((name) => String(name).trim().toLowerCase());
-  return groups.map((group) => group.module).filter((name) => wanted.includes(name.toLowerCase()));
+const lower = (names) => names.map((name) => String(name).trim().toLowerCase());
+
+/**
+ * Module names the assistant asked for (null = all), matched to the groups on
+ * screen. The `except` ones get the opposite, so "collapse all but X" leaves X open.
+ */
+function namedGroups(groups, modules, except = []) {
+  const all = groups.map((group) => group.module);
+  const wanted = modules == null ? null : lower(modules);
+  const kept = lower(except);
+  const targets = all.filter((name) => (wanted == null || wanted.includes(name.toLowerCase()))
+    && !kept.includes(name.toLowerCase()));
+  const spared = all.filter((name) => kept.includes(name.toLowerCase()));
+  return { targets, spared };
 }
 
 export default function TicketModuleGroups({ tickets, onOpen, busy = false, canCreate = false }) {
@@ -271,14 +280,19 @@ export default function TicketModuleGroups({ tickets, onOpen, busy = false, canC
     for (const step of assistantSteps) {
       if (step.order) chooseSort(step.order === 'attention' ? 'urgency' : 'name');
       if (!step.action) continue;
-      const names = namedGroups(groups, step.modules);
+      const { targets, spared } = namedGroups(groups, step.modules, step.except);
       if (step.action === 'collapse' || step.action === 'expand') {
+        const collapse = step.action === 'collapse';
         // Updater form: the stored state may have been restored in this same commit.
         setCollapsed((prev) => {
           const next = new Set(prev);
-          for (const name of names) {
-            if (step.action === 'collapse') next.add(name);
+          for (const name of targets) {
+            if (collapse) next.add(name);
             else next.delete(name);
+          }
+          for (const name of spared) {
+            if (collapse) next.delete(name);
+            else next.add(name);
           }
           writeStored(COLLAPSED_KEY, [...next]);
           return next;
@@ -286,7 +300,7 @@ export default function TicketModuleGroups({ tickets, onOpen, busy = false, canC
       } else {
         setShowingAll((prev) => {
           const next = new Set(prev);
-          for (const name of names) {
+          for (const name of targets) {
             if (step.action === 'show_all') next.add(name);
             else next.delete(name);
           }
