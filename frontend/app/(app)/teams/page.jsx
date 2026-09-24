@@ -92,7 +92,12 @@ export default function TeamsPage() {
     window.history.replaceState(null, '', url);
   }, [pathname]);
 
+  // Write the URL only when the typed search settles, so a search arriving in the URL
+  // (the assistant, back/forward) is not overwritten by the stale debounced value.
+  const writtenSearch = useRef(debouncedSearch);
   useEffect(() => {
+    if (debouncedSearch === writtenSearch.current) return;
+    writtenSearch.current = debouncedSearch;
     if (debouncedSearch === urlSearch) return;
     writeTeamsSearch({
       search: debouncedSearch,

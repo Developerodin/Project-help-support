@@ -212,7 +212,12 @@ export default function UsersPage() {
     window.history.replaceState(null, '', url);
   }, [pathname]);
 
+  // Write the URL only when the typed search settles. A search that arrives in the URL
+  // (the assistant, back/forward) must not be overwritten by the stale debounced value.
+  const writtenSearch = useRef(debouncedSearch);
   useEffect(() => {
+    if (debouncedSearch === writtenSearch.current) return;
+    writtenSearch.current = debouncedSearch;
     if (debouncedSearch === urlSearch) return;
     writePeopleSearch({
       search: debouncedSearch,

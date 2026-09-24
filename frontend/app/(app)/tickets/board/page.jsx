@@ -101,6 +101,13 @@ function BoardPage() {
     if (next !== window.location.search) writeSearch(next);
   }, [ready, savedBoardMine, setBoardMine, writeSearch]);
 
+  // Once normalised, the URL mirrors Mine/Everyone, so a change arriving there applies too.
+  useEffect(() => {
+    if (!normalizedBoardMineUrl.current) return;
+    const fromUrl = boardMineFromSearch(searchString);
+    if (fromUrl !== savedBoardMine) setBoardMine(fromUrl);
+  }, [searchString]); // Only a URL change syncs; clicking Mine/Everyone writes the URL itself.
+
   const handleBoardMineChange = (nextBoardMine) => {
     writeSearch(withBoardMineParam(window.location.search, nextBoardMine));
     setBoardMine(nextBoardMine);
