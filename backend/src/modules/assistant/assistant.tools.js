@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import {
   ADMIN_ROLES, CATEGORIES, DEFAULT_NOTIFICATION_PREFS, ENVIRONMENTS, ESTIMATE_DATE_EDITOR_ROLES, EXTERNAL_ACCEPTANCE_PERMISSION, PRIORITIES,
-  NOTIFICATION_EVENTS, PEOPLE_ASSIGNABLE_ROLES, ROLE_IDS, SEVERITIES, STAGES, STAGE_KEYS,
+  NOTIFICATION_EVENTS, PEOPLE_ASSIGNABLE_ROLES, SEVERITIES, STAGES, STAGE_KEYS,
   can, canAccessRoute, canEditTicket, hasAnyRole, isExternalUser, isTicketOverdue, notificationEventLabel, resolveProjectModules, stageIndex, stageLabel,
 } from '@pms/shared';
 import { buildTicketFilter, getTicket, listTickets } from '../tickets/ticket.service.js';
 import Ticket from '../tickets/ticket.model.js';
+import User from '../users/user.model.js';
 import { allowedTransitions, checkGuards, previewTransition } from '../tickets/transition.service.js';
 import { assertModuleAndPage, listProjects } from '../projects/project.service.js';
 import { listClients } from '../clients/client.service.js';
@@ -353,7 +354,8 @@ const NAVIGATE = fn(
 const ANY = 'any';
 
 /** Same role and status choices as the People page's own filters. */
-const PEOPLE_ROLES = [...PEOPLE_ASSIGNABLE_ROLES, ROLE_IDS.SUPER_ADMIN];
+// Not super_admin: the user list never filters to them by role (user.service.js).
+const PEOPLE_ROLES = [...PEOPLE_ASSIGNABLE_ROLES];
 const PEOPLE_STATUSES = ['invited', 'active', 'inactive', 'deleted'];
 
 const SET_PEOPLE_FILTERS = fn(
@@ -388,13 +390,19 @@ const FILTER_PAGES = Object.freeze({
   audit_log: { path: '/audit-log', label: 'RBAC audit log', fields: ['audit_category', 'audit_action', 'audit_order', 'rows'] },
 });
 const PAGE_ROWS = [20, 50, 100];
+/** Lists with numbered pages (change_page), by path. */
+const PAGED_LISTS = Object.freeze({
+  '/tickets': 'Tickets', '/users': 'People', '/projects': 'Projects', '/teams': 'Teams',
+});
+/** The throughput windows the Analytics page's select offers. */
+const ANALYTICS_WINDOWS = [14, 30, 60, 90];
 
 const SET_PAGE_FILTERS = fn(
   'set_page_filters',
   'Change the filters on another page, right away (it opens the page if needed). Tickets and People have their own '
     + 'tools. Fields per page: board: mine (true = only my tickets, false = everyone). projects: search, rows. '
     + 'teams: search, team_scope, team_status, rows. notifications: unread. analytics: trend_group_by, '
-    + 'throughput_group_by, window_days (7-90), breakdown. audit_log: audit_category, audit_action (e.g. '
+    + 'throughput_group_by, window_days (14, 30, 60 or 90), breakdown. audit_log: audit_category, audit_action (e.g. '
     + 'role_matrix.update), audit_order, rows. Pass null for every field you are not changing; "any" clears a text or choice.',
   {
     page: { type: 'string', enum: Object.keys(FILTER_PAGES) },
@@ -405,7 +413,7 @@ const SET_PAGE_FILTERS = fn(
     team_status: nullableEnum(['active', 'archived']),
     trend_group_by: nullableEnum(['day', 'week']),
     throughput_group_by: nullableEnum(['day', 'week']),
-    window_days: nullable({ type: 'integer', description: 'Throughput window in days, 7 to 90.' }),
+    window_days: { type: ['integer', 'null'], enum: [...ANALYTICS_WINDOWS, null], description: 'Throughput window in days.' },
     breakdown: nullableEnum(['severity', 'module', 'assignee', 'team', 'priority', 'category', 'environment', 'label']),
     audit_category: nullableEnum(['policy', 'access', 'security', ANY]),
     audit_action: nullable({ type: 'string' }),
@@ -442,7 +450,7 @@ const SET_TICKET_FILTERS = fn(
     scope: nullableEnum(['all', 'assigned', 'reported', 'unassigned']),
     owner: nullable({ type: 'string', description: 'Owner\'s name as shown in the Owner filter, or "any".' }),
     module: nullable({ type: 'string', description: 'Exact module label, or "any".' }),
-    search: nullable({ type: 'string', description: 'Search box text; "" clears it.' }),
+    search: nullable({ type: 'string', description: 'Search box text; "any" clears it.' }),
     blocked: nullable({ type: 'boolean' }),
     overdue: nullable({ type: 'boolean' }),
     reopened: nullable({ type: 'boolean' }),
@@ -609,11 +617,12 @@ const NO_MODULE = 'No module';
 /**
  * Module names the user can see: each accessible project's modules, plus names
  * already on its tickets (a module renamed since still shows on the page).
- * ponytail: across all accessible projects, not just the one in the switcher.
+ * Only the active project's when the switcher is set to one, since only those are on screen.
  */
 async function moduleNamesFor(ctx) {
   if (!ctx.moduleNames) {
-    const projects = await projectsFor(ctx);
+    const active = await activeProject(ctx);
+    const projects = active ? [active] : await projectsFor(ctx);
     const configured = projects.flatMap((project) => resolveProjectModules(project).map((module) => module.label));
     const used = await Ticket.distinct('module', { project: { $in: projects.map(idOf) } });
     ctx.moduleNames = [...new Set([...configured, ...used].map((name) => String(name ?? '').trim()).filter(Boolean))];
@@ -632,7 +641,8 @@ async function knownModules(ctx, names) {
     else unknown.push(name);
   }
   if (unknown.length) {
-    throw new ToolError(`No module named ${unknown.map((name) => `"${name}"`).join(', ')}. `
+    const scope = ctx.activeProjectKey ? ` in ${ctx.activeProjectKey}` : '';
+    throw new ToolError(`No module named ${unknown.map((name) => `"${name}"`).join(', ')}${scope}. `
       + `Modules: ${known.slice(0, 60).join(', ')}. If one of these is what the user meant, use it; otherwise ask.`);
   }
   return matched;
@@ -640,10 +650,76 @@ async function knownModules(ctx, names) {
 
 async function projectByKey(ctx, key) {
   const wanted = String(key || '').trim().toUpperCase();
-  const project = (await projectsFor(ctx)).find((p) => String(p.key).toUpperCase() === wanted);
-  if (!project) throw new ToolError(`No accessible project with key "${key}". Call list_projects.`);
+  const matches = (list) => list.find((p) => String(p.key).toUpperCase() === wanted);
+  let project = matches(await projectsFor(ctx));
+  // The cache holds the first 100; past that, ask for this key directly.
+  if (!project && wanted) {
+    project = matches((await listProjects({ search: wanted, limit: 20 }, ctx.user, ctx.permissionContext)).results);
+  }
+  if (!project) throw new ToolError(`No accessible project with key "${key}". Check the project list you were given.`);
   return project;
 }
+
+/**
+ * The project the user is working in: the switcher's (or one switched to this
+ * turn), when it is one they can see. Null means all projects.
+ */
+async function activeProject(ctx) {
+  if (!ctx.activeProjectKey) return null;
+  try {
+    return await projectByKey(ctx, ctx.activeProjectKey);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The people who own tickets this user can see (in the active project, if one),
+ * which is what the Tickets owner filter offers. A name must match one of them,
+ * so a typo or a stranger is refused instead of quietly leaving the filter alone.
+ */
+async function ownerByName(ctx, name) {
+  const project = await activeProject(ctx);
+  const filter = await buildTicketFilter(ctx.user, project ? { project: idOf(project) } : {}, ctx.permissionContext);
+  const ids = (await Ticket.distinct('assignedTo', filter)).filter(Boolean);
+  const owners = await User.find({ _id: { $in: ids } }).select('name email').lean();
+  const wanted = String(name).trim().toLowerCase();
+  const exact = owners.filter((person) => person.name?.toLowerCase() === wanted || person.email?.toLowerCase() === wanted);
+  const found = exact.length ? exact : owners.filter((person) => person.name?.toLowerCase().includes(wanted));
+  if (found.length === 1) return { id: idOf(found[0]), name: found[0].name };
+  if (found.length > 1) {
+    throw new ToolError(`"${name}" matches ${found.map((person) => `${person.name} (${person.email})`).join(', ')}. Ask which one.`);
+  }
+  const names = owners.map((person) => person.name).filter(Boolean).slice(0, 30);
+  throw new ToolError(`No ticket owner called "${name}"${project ? ` in ${project.key}` : ''}. Owners: ${names.join(', ') || 'none'}.`);
+}
+
+/**
+ * Every page-changing action in one message must be for the same page: the
+ * browser can only land on one, and the rest would be lost or fire later.
+ */
+function claimPage(ctx, path, label) {
+  if (ctx.targetPath && ctx.targetPath !== path) {
+    throw new ToolError(`Not done: this message already works on ${ctx.targetLabel}, and one message can only change one page. `
+      + `Tell the user you did that part and that ${label} is next when they ask; don't claim it was done.`);
+  }
+  ctx.targetPath = path;
+  ctx.targetLabel = label;
+}
+
+/** One action of a type per message: a second call merges into (or replaces) the first. */
+function putAction(ctx, action, merge = (_previous, next) => next) {
+  const index = ctx.actions.findIndex((entry) => entry.type === action.type);
+  if (index === -1) {
+    ctx.actions.push({ id: randomUUID(), ...action });
+    return;
+  }
+  const previous = ctx.actions[index];
+  ctx.actions[index] = { ...merge(previous, action), id: previous.id };
+}
+
+/** The page's own query string, as the widget sent it (e.g. "?view=modules&page=2"). */
+const currentParams = (ctx) => new URLSearchParams(ctx.page?.query || '');
 
 class ToolError extends Error {}
 
@@ -732,7 +808,7 @@ const HANDLERS = {
     if (args.project_key) query.project = String((await projectByKey(ctx, args.project_key)).id);
     if (args.stage) query.status = args.stage;
     if (args.priority) query.priority = args.priority;
-    if (args.module) query.module = args.module;
+    if (args.module) [query.module] = await knownModules(ctx, [args.module]);
     if (args.overdue) query.overdue = true;
     if (args.blocked) query.blocked = true;
     if (args.scope) query.scope = args.scope;
@@ -851,7 +927,7 @@ const HANDLERS = {
   async search_users(args, ctx) {
     if (isExternalUser(ctx.user) || !hasAnyRole(ctx.user, ...ADMIN_ROLES)) throw new ToolError('Only admins can look up users.');
     const page = await listUsers(ctx.user, {
-      limit: 20, ...(args.query ? { q: args.query } : {}), ...(args.status ? { status: args.status } : {}),
+      limit: 20, includeSuperAdmins: true, ...(args.query ? { q: args.query } : {}), ...(args.status ? { status: args.status } : {}),
     });
     return {
       total: page.totalResults,
@@ -1005,7 +1081,7 @@ const HANDLERS = {
       ...(args.priority ? { priority: args.priority } : {}),
       ...(args.severity ? { severity: args.severity } : {}),
       ...(args.category ? { category: args.category } : {}),
-      ...(args.module ? { module: args.module } : {}),
+      ...(args.module ? { module: (await knownModules(ctx, [args.module]))[0] } : {}),
       trendGroupBy: 'week',
       deliveryGroupBy: 'week',
       windowDays: args.window_days ?? 30,
@@ -1113,7 +1189,10 @@ const HANDLERS = {
   },
 
   async download_report(_args, ctx) {
-    ctx.actions.push({ id: randomUUID(), type: 'report_download' });
+    if (!ctx.hasReport && !ctx.actions.some((action) => action.type === 'report')) {
+      throw new ToolError('There is no report in this chat yet. Offer to make one (create_project_report).');
+    }
+    putAction(ctx, { type: 'report_download' });
     return { status: 'downloading', note: 'The latest report in this chat is downloading as a document.' };
   },
 
@@ -1123,9 +1202,10 @@ const HANDLERS = {
     if ([...PEOPLE_ROLES, ANY].includes(args.role)) filters.role = args.role;
     if ([...PEOPLE_STATUSES, ANY].includes(args.status)) filters.status = args.status;
     if ([25, 50, 100].includes(args.rows)) filters.limit = String(args.rows);
-    if (!Object.keys(filters).length) throw new ToolError('Pass a search, role or status to change.');
-    ctx.actions.push({ id: randomUUID(), type: 'people_filters', ...filters });
-    return { status: 'filtered', ...filters };
+    if (!Object.keys(filters).length) throw new ToolError('Pass a search, role, status or rows to change.');
+    claimPage(ctx, '/users', 'People');
+    putAction(ctx, { type: 'people_filters', ...filters }, (previous, next) => ({ ...previous, ...next }));
+    return { status: 'sent', ...filters, note: 'Sent to the People page.' };
   },
 
   async set_page_filters(args, ctx) {
@@ -1145,22 +1225,29 @@ const HANDLERS = {
     };
     const toParam = {
       search: ['search', text],
-      mine: ['mine', (v) => (v ? '1' : null)],
+      // Explicit 0: a missing mine means "the saved choice" to the Board.
+      mine: ['mine', (v) => (v ? '1' : '0')],
       unread: ['unread', (v) => (v ? '1' : null)],
       team_scope: ['scope', (v) => (v === 'all' ? null : v)],
       team_status: ['status', (v) => (v === 'archived' ? v : null)],
       trend_group_by: ['trendGroupBy', (v) => (v === 'week' ? v : null)],
       throughput_group_by: ['deliveryGroupBy', (v) => (v === 'week' ? v : null)],
-      window_days: ['windowDays', (v) => String(Math.max(7, Math.min(90, Math.round(Number(v)) || 30)))],
+      window_days: ['windowDays', (v) => String(v)],
       breakdown: ['dimension', (v) => v],
       audit_category: ['category', text],
       audit_action: ['action', text],
       audit_order: ['sortBy', (v) => (v === 'oldest' ? 'createdAt:asc' : null)],
       rows: ['limit', (v) => (PAGE_ROWS.includes(v) ? String(v) : null)],
     };
+    if (args.window_days != null && !ANALYTICS_WINDOWS.includes(args.window_days)) {
+      throw new ToolError(`The throughput window is one of ${ANALYTICS_WINDOWS.join(', ')} days; pick the closest and say so.`);
+    }
     const params = Object.fromEntries(given.map((field) => [toParam[field][0], toParam[field][1](args[field])]));
-    ctx.actions.push({ id: randomUUID(), type: 'page_filters', path: target.path, params });
-    return { status: 'applied', page: target.label, note: 'The page now shows these filters. Say what changed in a few words.' };
+    claimPage(ctx, target.path, target.label);
+    putAction(ctx, { type: 'page_filters', path: target.path, params }, (previous, next) => ({
+      ...next, params: { ...previous.params, ...next.params },
+    }));
+    return { status: 'sent', page: target.label, note: `Sent to ${target.label}. Say what you changed in a few words.` };
   },
 
   async control_module_view(args, ctx) {
@@ -1178,16 +1265,18 @@ const HANDLERS = {
     let except = names(args.except);
     if (modules) modules = await knownModules(ctx, modules);
     if (except?.length) except = await knownModules(ctx, except);
+    claimPage(ctx, '/tickets', 'Tickets');
+    // Several steps are kept in order (collapse all, then expand one).
     ctx.actions.push({
       id: randomUUID(), type: 'module_view', action, modules, order, ...(except?.length ? { except } : {}),
     });
-    return { status: 'applied', note: 'The module view now shows this. Say what changed in a few words.' };
+    return { status: 'sent', note: 'Sent to the By module view. Say what you changed in a few words.' };
   },
 
   async scroll_page(args, ctx) {
     const direction = ['down', 'up', 'top', 'bottom'].includes(args.direction) ? args.direction : 'down';
-    ctx.actions.push({ id: randomUUID(), type: 'scroll', direction });
-    return { status: 'scrolled', direction };
+    putAction(ctx, { type: 'scroll', direction });
+    return { status: 'sent', direction, note: 'Scrolls once the page is showing.' };
   },
 
   async change_page(args, ctx) {
@@ -1195,10 +1284,22 @@ const HANDLERS = {
     if (direction === 'number' && !(Number.isInteger(args.page_number) && args.page_number >= 1)) {
       throw new ToolError('Give page_number (1 or more) with direction "number".');
     }
-    ctx.actions.push({
-      id: randomUUID(), type: 'change_page', direction, ...(direction === 'number' ? { page: args.page_number } : {}),
-    });
-    return { status: 'changed', direction };
+    // The page it applies to: the one this message moves to, else where the user is.
+    const path = ctx.targetPath ?? ctx.page?.path;
+    if (ctx.page && !PAGED_LISTS[path]) {
+      throw new ToolError(`Paging works on ${Object.values(PAGED_LISTS).join(', ')}; the user is on ${path}. Say so.`);
+    }
+    const moduleView = path === '/tickets' && (
+      ctx.actions.some((action) => action.type === 'module_view'
+        || (action.type === 'ticket_filters' && action.view === 'modules'))
+      || (currentParams(ctx).get('view') === 'modules'
+        && !ctx.actions.some((action) => action.type === 'ticket_filters' && action.view === 'table')));
+    if (moduleView) {
+      throw new ToolError('The By module view shows every ticket on one page; there are no pages. Offer the Table view.');
+    }
+    if (path) claimPage(ctx, path, PAGED_LISTS[path] ?? path);
+    putAction(ctx, { type: 'change_page', direction, ...(direction === 'number' ? { page: args.page_number } : {}) });
+    return { status: 'sent', direction };
   },
 
   async navigate(args, ctx) {
@@ -1222,7 +1323,8 @@ const HANDLERS = {
         label = `${ticket.ticketId} (${tab === 'qa' ? 'QA report' : tab})`;
       }
     }
-    ctx.actions.push({ id: randomUUID(), type: 'navigate', href, label });
+    claimPage(ctx, href.split('?')[0], label);
+    putAction(ctx, { type: 'navigate', href, label });
     return { status: 'opened', page: label };
   },
 
@@ -1243,40 +1345,65 @@ const HANDLERS = {
     pick('scope', args.scope);
     if (args.module != null && args.module !== ANY) [filters.module] = await knownModules(ctx, [args.module]);
     else pick('module', args.module);
-    if (args.search != null) filters.q = String(args.search).trim().slice(0, 200);
+    if (args.search != null) {
+      const search = String(args.search).trim().slice(0, 200);
+      filters.q = search === ANY ? '' : search;
+    }
     for (const [key, value] of [['blocked', args.blocked], ['overdue', args.overdue],
       ['reopened', args.reopened], ['newReply', args.new_reply]]) {
       if (value != null) filters[key] = Boolean(value);
     }
-    // The owner filter takes an id the page knows; it matches the name among its owners.
-    const owner = args.owner == null ? undefined : (args.owner === ANY ? '' : String(args.owner).trim());
-    if (owner === '') filters.assignedTo = '';
-    ctx.actions.push({
-      id: randomUUID(),
+    // The owner filter takes a user id; the name is matched here so a miss is said, not ignored.
+    let ownerName = null;
+    if (args.owner != null) {
+      if (String(args.owner).trim() === ANY) filters.assignedTo = '';
+      else {
+        const owner = await ownerByName(ctx, args.owner);
+        filters.assignedTo = owner.id;
+        ownerName = owner.name;
+      }
+    }
+    if (args.sort_direction != null && !TICKET_SORT_COLUMNS.includes(args.sort_by)) {
+      throw new ToolError(`Give sort_by too: one of ${TICKET_SORT_COLUMNS.join(', ')}. The current sort is sortBy in the page's address.`);
+    }
+    const action = {
       type: 'ticket_filters',
       filters,
-      ...(owner ? { ownerName: owner } : {}),
       ...(args.clear_all ? { reset: true } : {}),
       ...(args.view ? { view: args.view } : {}),
       ...(TICKET_SORT_COLUMNS.includes(args.sort_by)
         ? { sort: { column: args.sort_by, direction: args.sort_direction === 'asc' ? 'asc' : 'desc' } } : {}),
       ...([25, 50, 100].includes(args.rows) ? { limit: args.rows } : {}),
-    });
-    return { status: 'applied', note: 'The Tickets page now shows these filters. Say what changed in a few words.' };
+    };
+    if (!Object.keys(filters).length && Object.keys(action).length === 2) {
+      throw new ToolError('Nothing to change: pass at least one filter, a sort, rows, a view or clear_all.');
+    }
+    claimPage(ctx, '/tickets', 'Tickets');
+    putAction(ctx, action, (previous, next) => ({
+      ...previous, ...next, filters: { ...(next.reset ? {} : previous.filters), ...next.filters },
+    }));
+    return {
+      status: 'sent',
+      ...(ownerName ? { owner: ownerName } : {}),
+      note: 'Sent to the Tickets page. Say what you changed in a few words.',
+    };
   },
 
   async switch_project(args, ctx) {
     if (!args.project_key) {
       // Clients always work inside one of their projects; the switcher has no "All" for them.
       if (isExternalUser(ctx.user)) throw new ToolError('Clients work in one project at a time. Ask which one.');
-      ctx.actions.push({ id: randomUUID(), type: 'switch_project', projectId: null, label: 'All projects' });
+      putAction(ctx, { type: 'switch_project', projectId: null, label: 'All projects' });
+      ctx.activeProjectKey = null;
+      ctx.moduleNames = null;
       return { status: 'switched', project: 'All projects' };
     }
     // Only projects the switcher would list for this user.
     const project = await projectByKey(ctx, args.project_key);
-    ctx.actions.push({
-      id: randomUUID(), type: 'switch_project', projectId: idOf(project), label: `${project.key} ${project.name}`,
-    });
+    putAction(ctx, { type: 'switch_project', projectId: idOf(project), label: `${project.key} ${project.name}` });
+    // "This project" and module/owner names follow the switch for the rest of this message.
+    ctx.activeProjectKey = project.key;
+    ctx.moduleNames = null;
     return { status: 'switched', project: `${project.key} ${project.name}` };
   },
 
@@ -1358,6 +1485,23 @@ const HANDLERS = {
     }
     if (changes.description && changes.description.trim().length < 10) {
       throw new ToolError('Description must be at least 10 characters.');
+    }
+    if ('module' in changes || 'page' in changes) {
+      const project = (await projectsFor(ctx)).find((entry) => idOf(entry) === idOf(ticket.project))
+        ?? await projectByKey(ctx, ticket.project?.key);
+      const module = changes.module ?? ticket.module;
+      // A new module keeps no page from the old one; the API would check the old page against it.
+      if ('module' in changes && args.page == null) {
+        const pages = (resolveProjectModules(project).find((entry) => entry.label === module)?.pages || [])
+          .map((entry) => entry.label);
+        if (pages.length) throw new ToolError(`Which page in ${module}? One of: ${pages.join(', ')}.`);
+        changes.page = '';
+      }
+      try {
+        assertModuleAndPage(project, module || undefined, (changes.page ?? ticket.page) || undefined);
+      } catch (err) {
+        throw new ToolError(`${err.message}. Use exact labels from list_projects.`);
+      }
     }
     return proposal(ctx, {
       type: 'update_ticket',

@@ -35,6 +35,8 @@ const chatSchema = {
       tab: Joi.string().valid(...TICKET_TABS).allow(null),
       // The project picked in the switcher (null = all projects).
       project: Joi.string().pattern(/^[A-Za-z][A-Za-z0-9]{1,9}$/).allow(null),
+      // The address's query string: the page's filters, view and page number.
+      query: Joi.string().max(1000).pattern(/^(\?.*)?$/).allow(''),
     }),
   }),
 };
