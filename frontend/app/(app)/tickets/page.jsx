@@ -404,6 +404,15 @@ function TicketListPage() {
     setAssistantFilters(null);
     applyFilters(nextTicketFilters(viewFilters, assistantFilters, ownerOptions ?? []));
     if (assistantFilters.view) setView(assistantFilters.view === 'modules');
+    // Same as clicking a column header / picking Rows; both land on page 1.
+    if (assistantFilters.sort) {
+      writeSearch(withPageParam(withSortParam(window.location.search, assistantFilters.sort), 1));
+      setSort(assistantFilters.sort);
+    }
+    if (TICKET_PAGE_SIZES.includes(assistantFilters.limit)) {
+      writeSearch(withPageParam(withLimitParam(window.location.search, assistantFilters.limit), 1));
+      patchPreferences({ limit: assistantFilters.limit });
+    }
   }, [assistantFilters, ready]); // Applied once per request, against the view on screen at that moment.
 
   const handleSort = (column) => {

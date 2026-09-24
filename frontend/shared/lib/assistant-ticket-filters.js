@@ -9,20 +9,36 @@ import { DEFAULT_TICKET_PREFERENCES } from '@pms/shared';
  */
 export const ASSISTANT_TICKET_FILTERS_EVENT = 'assistant:ticket-filters';
 
-let queued = null;
+/**
+ * The assistant working the By module view (collapse, expand, order, show more).
+ * Handed over the same way, since the view may not be showing yet.
+ */
+export const ASSISTANT_MODULE_VIEW_EVENT = 'assistant:module-view';
+
+/** The waiting request per event, kept until the page (or view) takes it. */
+const queued = new Map();
+
+function hand(event, request) {
+  queued.set(event, request);
+  window.dispatchEvent(new Event(event));
+}
+
+function take(event) {
+  const request = queued.get(event) ?? null;
+  queued.delete(event);
+  return request;
+}
 
 /** Hands a filter change to the Tickets page (now, or when it next opens). */
-export function requestTicketFilters(action) {
-  queued = action;
-  window.dispatchEvent(new Event(ASSISTANT_TICKET_FILTERS_EVENT));
-}
+export const requestTicketFilters = (action) => hand(ASSISTANT_TICKET_FILTERS_EVENT, action);
 
 /** The waiting request, if any; taking it clears it. */
-export function takeTicketFilters() {
-  const action = queued;
-  queued = null;
-  return action;
-}
+export const takeTicketFilters = () => take(ASSISTANT_TICKET_FILTERS_EVENT);
+
+/** Hands module-view steps (in order) to the By module view. */
+export const requestModuleView = (steps) => hand(ASSISTANT_MODULE_VIEW_EVENT, steps);
+
+export const takeModuleView = () => take(ASSISTANT_MODULE_VIEW_EVENT);
 
 /**
  * The filters to show: the ones on screen (or none, for clear_all) with the

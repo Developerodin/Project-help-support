@@ -3,6 +3,7 @@
 import { useEffect, useId, useState } from 'react';
 import Link from 'next/link';
 import { LANES, laneOf } from '@pms/shared';
+import { ASSISTANT_MODULE_VIEW_EVENT, takeModuleView } from '@/shared/lib/assistant-ticket-filters.js';
 import Icon, { isOverdue } from '../icons.jsx';
 import TicketCard from './ticket-card.jsx';
 
@@ -96,9 +97,10 @@ function writeStored(key, value) {
   } catch { /* storage blocked: the choice still holds for this visit */ }
 }
 
-function ModuleGroup({ group, collapsed, onToggle, onOpen, canCreate }) {
+function ModuleGroup({
+  group, collapsed, onToggle, showAll, onToggleShowAll, onOpen, canCreate,
+}) {
   const bodyId = useId();
-  const [showAll, setShowAll] = useState(false);
   const overdue = group.tickets.filter(isOverdue).length;
   const blocked = group.tickets.filter((ticket) => ticket.blocked).length;
   const count = group.tickets.length;
@@ -188,7 +190,7 @@ function ModuleGroup({ group, collapsed, onToggle, onOpen, canCreate }) {
                 type="button"
                 className="btn btn-sm btn-ghost module-group-more"
                 aria-expanded={showAll}
-                onClick={() => setShowAll((value) => !value)}
+                onClick={() => onToggleShowAll(group.module)}
               >
                 {showAll ? 'Show fewer' : `Show ${hidden} more`}
               </button>
@@ -200,9 +202,18 @@ function ModuleGroup({ group, collapsed, onToggle, onOpen, canCreate }) {
   );
 }
 
+/** Module names the assistant asked for (null = all), matched to the groups on screen. */
+function namedGroups(groups, modules) {
+  if (modules == null) return groups.map((group) => group.module);
+  const wanted = modules.map((name) => String(name).trim().toLowerCase());
+  return groups.map((group) => group.module).filter((name) => wanted.includes(name.toLowerCase()));
+}
+
 export default function TicketModuleGroups({ tickets, onOpen, busy = false, canCreate = false }) {
   const [collapsed, setCollapsed] = useState(() => new Set());
   const [sort, setSort] = useState('name');
+  // Modules showing every ticket rather than the first few ("Show more").
+  const [showingAll, setShowingAll] = useState(() => new Set());
   // Off until the stored state is restored, so remembered-collapsed modules
   // don't visibly animate shut on page load.
   const [animate, setAnimate] = useState(false);
@@ -234,6 +245,56 @@ export default function TicketModuleGroups({ tickets, onOpen, busy = false, canC
     else next.add(module);
     saveCollapsed(next);
   };
+
+  const toggleShowAll = (module) => {
+    const next = new Set(showingAll);
+    if (next.has(module)) next.delete(module);
+    else next.add(module);
+    setShowingAll(next);
+  };
+
+  // Steps from the assistant: taken now (it may have opened this view for them)
+  // and whenever more arrive; applied once the tickets are here to match names against.
+  const [assistantSteps, setAssistantSteps] = useState(null);
+  useEffect(() => {
+    const takeSteps = () => {
+      const steps = takeModuleView();
+      if (steps) setAssistantSteps(steps);
+    };
+    takeSteps();
+    window.addEventListener(ASSISTANT_MODULE_VIEW_EVENT, takeSteps);
+    return () => window.removeEventListener(ASSISTANT_MODULE_VIEW_EVENT, takeSteps);
+  }, []);
+  useEffect(() => {
+    if (!assistantSteps || (busy && !tickets.length)) return;
+    setAssistantSteps(null);
+    for (const step of assistantSteps) {
+      if (step.order) chooseSort(step.order === 'attention' ? 'urgency' : 'name');
+      if (!step.action) continue;
+      const names = namedGroups(groups, step.modules);
+      if (step.action === 'collapse' || step.action === 'expand') {
+        // Updater form: the stored state may have been restored in this same commit.
+        setCollapsed((prev) => {
+          const next = new Set(prev);
+          for (const name of names) {
+            if (step.action === 'collapse') next.add(name);
+            else next.delete(name);
+          }
+          writeStored(COLLAPSED_KEY, [...next]);
+          return next;
+        });
+      } else {
+        setShowingAll((prev) => {
+          const next = new Set(prev);
+          for (const name of names) {
+            if (step.action === 'show_all') next.add(name);
+            else next.delete(name);
+          }
+          return next;
+        });
+      }
+    }
+  }, [assistantSteps, busy, tickets]); // Applied once per request, against the modules on screen.
 
   const toggleAll = () => {
     const next = new Set(collapsed);
@@ -279,6 +340,8 @@ export default function TicketModuleGroups({ tickets, onOpen, busy = false, canC
             group={group}
             collapsed={collapsed.has(group.module)}
             onToggle={toggle}
+            showAll={showingAll.has(group.module)}
+            onToggleShowAll={toggleShowAll}
             onOpen={onOpen}
             canCreate={canCreate}
           />

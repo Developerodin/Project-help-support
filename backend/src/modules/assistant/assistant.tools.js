@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   ADMIN_ROLES, CATEGORIES, DEFAULT_NOTIFICATION_PREFS, ENVIRONMENTS, ESTIMATE_DATE_EDITOR_ROLES, EXTERNAL_ACCEPTANCE_PERMISSION, PRIORITIES,
-  NOTIFICATION_EVENTS, SEVERITIES, STAGES, STAGE_KEYS,
+  NOTIFICATION_EVENTS, PEOPLE_ASSIGNABLE_ROLES, ROLE_IDS, SEVERITIES, STAGES, STAGE_KEYS,
   can, canAccessRoute, canEditTicket, hasAnyRole, isExternalUser, isTicketOverdue, notificationEventLabel, resolveProjectModules, stageIndex, stageLabel,
 } from '@pms/shared';
 import { buildTicketFilter, getTicket, listTickets } from '../tickets/ticket.service.js';
@@ -352,6 +352,81 @@ const NAVIGATE = fn(
 /** "any" clears a filter; null leaves it as it is on screen. */
 const ANY = 'any';
 
+/** Same role and status choices as the People page's own filters. */
+const PEOPLE_ROLES = [...PEOPLE_ASSIGNABLE_ROLES, ROLE_IDS.SUPER_ADMIN];
+const PEOPLE_STATUSES = ['invited', 'active', 'inactive', 'deleted'];
+
+const SET_PEOPLE_FILTERS = fn(
+  'set_people_filters',
+  'Change the search and filters on the People page, right away (it opens the page if needed), so the user sees '
+    + 'the people there. Only what you pass changes; null leaves it as it is, "any" clears it.',
+  {
+    search: nullable({ type: 'string', description: 'Name or email to search for; "any" clears the search.' }),
+    role: nullableEnum([...PEOPLE_ROLES, ANY]),
+    status: nullableEnum([...PEOPLE_STATUSES, ANY]),
+    rows: { type: ['integer', 'null'], enum: [25, 50, 100, null], description: 'Rows per page.' },
+  },
+);
+
+/** The Tickets table's sortable columns (ticket-table.jsx). */
+const TICKET_SORT_COLUMNS = ['ticketId', 'title', 'status', 'owner', 'inStage', 'estimatedDone', 'discussionUnread'];
+
+/**
+ * The other pages whose filters live in their URL: each field maps to one URL
+ * param, and only the fields listed for a page apply to it.
+ */
+const FILTER_PAGES = Object.freeze({
+  board: { path: '/tickets/board', label: 'Board', fields: ['mine'] },
+  projects: { path: '/projects', label: 'Projects', fields: ['search', 'rows'] },
+  teams: { path: '/teams', label: 'Teams', fields: ['search', 'team_scope', 'team_status', 'rows'] },
+  notifications: { path: '/notifications', label: 'Notifications', fields: ['unread'] },
+  analytics: {
+    path: '/tickets/analytics',
+    label: 'Analytics',
+    fields: ['trend_group_by', 'throughput_group_by', 'window_days', 'breakdown'],
+  },
+  audit_log: { path: '/audit-log', label: 'RBAC audit log', fields: ['audit_category', 'audit_action', 'audit_order', 'rows'] },
+});
+const PAGE_ROWS = [20, 50, 100];
+
+const SET_PAGE_FILTERS = fn(
+  'set_page_filters',
+  'Change the filters on another page, right away (it opens the page if needed). Tickets and People have their own '
+    + 'tools. Fields per page: board: mine (true = only my tickets, false = everyone). projects: search, rows. '
+    + 'teams: search, team_scope, team_status, rows. notifications: unread. analytics: trend_group_by, '
+    + 'throughput_group_by, window_days (7-90), breakdown. audit_log: audit_category, audit_action (e.g. '
+    + 'role_matrix.update), audit_order, rows. Pass null for every field you are not changing; "any" clears a text or choice.',
+  {
+    page: { type: 'string', enum: Object.keys(FILTER_PAGES) },
+    search: nullable({ type: 'string' }),
+    mine: nullable({ type: 'boolean' }),
+    unread: nullable({ type: 'boolean', description: 'true = unread only.' }),
+    team_scope: nullableEnum(['all', 'global', 'project', 'empty']),
+    team_status: nullableEnum(['active', 'archived']),
+    trend_group_by: nullableEnum(['day', 'week']),
+    throughput_group_by: nullableEnum(['day', 'week']),
+    window_days: nullable({ type: 'integer', description: 'Throughput window in days, 7 to 90.' }),
+    breakdown: nullableEnum(['severity', 'module', 'assignee', 'team', 'priority', 'category', 'environment', 'label']),
+    audit_category: nullableEnum(['policy', 'access', 'security', ANY]),
+    audit_action: nullable({ type: 'string' }),
+    audit_order: nullableEnum(['newest', 'oldest']),
+    rows: { type: ['integer', 'null'], enum: [20, 50, 100, null], description: 'Rows per page.' },
+  },
+);
+
+const MODULE_VIEW = fn(
+  'control_module_view',
+  "Work the Tickets page's By module view, right away (it switches to that view if needed): collapse or expand "
+    + 'module cards, show all or only the first few tickets in them ("show more"/"show fewer"), and order the cards '
+    + 'A-Z ("name") or by what needs attention. modules null means every module; otherwise module names as on the '
+    + 'cards ("No module" for tickets without one). Call it again for a second step, e.g. collapse all then expand one.',
+  {
+    action: nullableEnum(['collapse', 'expand', 'show_all', 'show_fewer']),
+    modules: { type: ['array', 'null'], items: { type: 'string' } },
+    order: nullableEnum(['name', 'attention']),
+  },
+);
+
 const SET_TICKET_FILTERS = fn(
   'set_ticket_filters',
   'Change the filters on the Tickets page, right away (it opens the page if needed). Only the filters you pass '
@@ -371,6 +446,9 @@ const SET_TICKET_FILTERS = fn(
     reopened: nullable({ type: 'boolean' }),
     new_reply: nullable({ type: 'boolean' }),
     view: nullableEnum(['table', 'modules']),
+    sort_by: nullableEnum(TICKET_SORT_COLUMNS),
+    sort_direction: nullableEnum(['asc', 'desc']),
+    rows: { type: ['integer', 'null'], enum: [25, 50, 100, null], description: 'Rows per page.' },
     clear_all: nullable({ type: 'boolean' }),
   },
 );
@@ -421,7 +499,7 @@ const SCROLL_PAGE = fn(
 
 const CHANGE_PAGE = fn(
   'change_page',
-  'Move the list the user is looking at (Tickets or People) to another page of results, right away: "next", '
+  'Move the list the user is looking at (Tickets, People, Projects or Teams) to another page of results, right away: "next", '
     + '"previous", "first", "last", or "number" with page_number. page_number only applies to "number"; null otherwise.',
   {
     direction: { type: 'string', enum: ['next', 'previous', 'first', 'last', 'number'] },
@@ -441,7 +519,7 @@ export function toolsFor(user, permissionContext) {
   const external = isExternalUser(user);
   const allowed = (permission) => !external && can(user, permission, permissionContext);
   const tools = [
-    SEARCH_TICKETS, GET_TICKET, GET_DISCUSSION, RECENT_COMMENTS_TOOL, OPEN_ATTACHMENT, LIST_PROJECTS, NAVIGATE, SCROLL_PAGE, CHANGE_PAGE, SWITCH_PROJECT,
+    SEARCH_TICKETS, GET_TICKET, GET_DISCUSSION, RECENT_COMMENTS_TOOL, OPEN_ATTACHMENT, LIST_PROJECTS, NAVIGATE, SCROLL_PAGE, CHANGE_PAGE, SET_PAGE_FILTERS, MODULE_VIEW, SWITCH_PROJECT,
     SET_TICKET_FILTERS, GET_NOTIFICATION_SETTINGS, PROPOSE_NOTIFICATION_SETTINGS,
   ];
   if (external || can(user, 'tickets.create', permissionContext)) tools.push(PROPOSE_CREATE);
@@ -458,7 +536,7 @@ export function toolsFor(user, permissionContext) {
   if (mayMoveStages) tools.push(PROPOSE_STAGE);
   // Same gates as the REST routes these mirror; the user directory is admin-only there too.
   const admin = !external && hasAnyRole(user, ...ADMIN_ROLES);
-  if (admin) tools.push(SEARCH_USERS);
+  if (admin) tools.push(SEARCH_USERS, SET_PEOPLE_FILTERS);
   // Same gate as the analytics REST routes (analytics.access.js).
   if (!external && hasAnyRole(user, ...ANALYTICS_ROLES)) tools.push(GET_ANALYTICS, CREATE_REPORT, DOWNLOAD_REPORT);
   if (allowed('teams.view')) tools.push(LIST_TEAMS);
@@ -1003,6 +1081,67 @@ const HANDLERS = {
     return { status: 'downloading', note: 'The latest report in this chat is downloading as a document.' };
   },
 
+  async set_people_filters(args, ctx) {
+    const filters = {};
+    if (typeof args.search === 'string') filters.search = args.search.trim().slice(0, 100);
+    if ([...PEOPLE_ROLES, ANY].includes(args.role)) filters.role = args.role;
+    if ([...PEOPLE_STATUSES, ANY].includes(args.status)) filters.status = args.status;
+    if ([25, 50, 100].includes(args.rows)) filters.limit = String(args.rows);
+    if (!Object.keys(filters).length) throw new ToolError('Pass a search, role or status to change.');
+    ctx.actions.push({ id: randomUUID(), type: 'people_filters', ...filters });
+    return { status: 'filtered', ...filters };
+  },
+
+  async set_page_filters(args, ctx) {
+    const target = FILTER_PAGES[args.page];
+    if (!target) throw new ToolError(`Unknown page ${args.page}.`);
+    if (!canAccessRoute(target.path, ctx.user, ctx.permissionContext)) {
+      throw new ToolError(`The user doesn't have access to ${target.label}. Say so plainly.`);
+    }
+    const stray = Object.keys(args).filter((key) => key !== 'page' && args[key] != null && !target.fields.includes(key));
+    if (stray.length) throw new ToolError(`${target.label} has no ${stray.join(', ')} filter; it has ${target.fields.join(', ')}.`);
+    const given = target.fields.filter((field) => args[field] != null);
+    if (!given.length) throw new ToolError(`Pass one of ${target.fields.join(', ')}.`);
+    // Field -> [URL param, value]; a null value removes the param (the page's default).
+    const text = (value) => {
+      const v = String(value).trim().slice(0, 100);
+      return v && v !== ANY ? v : null;
+    };
+    const toParam = {
+      search: ['search', text],
+      mine: ['mine', (v) => (v ? '1' : null)],
+      unread: ['unread', (v) => (v ? '1' : null)],
+      team_scope: ['scope', (v) => (v === 'all' ? null : v)],
+      team_status: ['status', (v) => (v === 'archived' ? v : null)],
+      trend_group_by: ['trendGroupBy', (v) => (v === 'week' ? v : null)],
+      throughput_group_by: ['deliveryGroupBy', (v) => (v === 'week' ? v : null)],
+      window_days: ['windowDays', (v) => String(Math.max(7, Math.min(90, Math.round(Number(v)) || 30)))],
+      breakdown: ['dimension', (v) => v],
+      audit_category: ['category', text],
+      audit_action: ['action', text],
+      audit_order: ['sortBy', (v) => (v === 'oldest' ? 'createdAt:asc' : null)],
+      rows: ['limit', (v) => (PAGE_ROWS.includes(v) ? String(v) : null)],
+    };
+    const params = Object.fromEntries(given.map((field) => [toParam[field][0], toParam[field][1](args[field])]));
+    ctx.actions.push({ id: randomUUID(), type: 'page_filters', path: target.path, params });
+    return { status: 'applied', page: target.label, note: 'The page now shows these filters. Say what changed in a few words.' };
+  },
+
+  async control_module_view(args, ctx) {
+    if (!canAccessRoute('/tickets', ctx.user, ctx.permissionContext)) {
+      throw new ToolError("The user doesn't have access to the Tickets page.");
+    }
+    const action = ['collapse', 'expand', 'show_all', 'show_fewer'].includes(args.action) ? args.action : null;
+    const order = ['name', 'attention'].includes(args.order) ? args.order : null;
+    if (!action && !order) throw new ToolError('Pass an action (collapse, expand, show_all, show_fewer) or an order.');
+    const modules = Array.isArray(args.modules)
+      ? args.modules.map((name) => String(name).trim().slice(0, 100)).filter(Boolean).slice(0, 50)
+      : null;
+    if (modules && !modules.length) throw new ToolError('Name at least one module, or pass modules null for all.');
+    ctx.actions.push({ id: randomUUID(), type: 'module_view', action, modules, order });
+    return { status: 'applied', note: 'The module view now shows this. Say what changed in a few words.' };
+  },
+
   async scroll_page(args, ctx) {
     const direction = ['down', 'up', 'top', 'bottom'].includes(args.direction) ? args.direction : 'down';
     ctx.actions.push({ id: randomUUID(), type: 'scroll', direction });
@@ -1076,6 +1215,9 @@ const HANDLERS = {
       ...(owner ? { ownerName: owner } : {}),
       ...(args.clear_all ? { reset: true } : {}),
       ...(args.view ? { view: args.view } : {}),
+      ...(TICKET_SORT_COLUMNS.includes(args.sort_by)
+        ? { sort: { column: args.sort_by, direction: args.sort_direction === 'asc' ? 'asc' : 'desc' } } : {}),
+      ...([25, 50, 100].includes(args.rows) ? { limit: args.rows } : {}),
     });
     return { status: 'applied', note: 'The Tickets page now shows these filters. Say what changed in a few words.' };
   },

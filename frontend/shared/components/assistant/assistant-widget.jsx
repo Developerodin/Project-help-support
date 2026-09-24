@@ -27,7 +27,7 @@ import { friendlyTransitionError, normalizeApiError } from '@/shared/lib/api-err
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import { useProject } from '@/shared/contexts/project-context.jsx';
 import { useRealtime } from '@/shared/contexts/realtime-context.jsx';
-import { requestTicketFilters } from '@/shared/lib/assistant-ticket-filters.js';
+import { requestModuleView, requestTicketFilters } from '@/shared/lib/assistant-ticket-filters.js';
 import { clearAssistantChats, readSavedChat, saveChat } from '@/shared/lib/assistant-chat-storage.js';
 import { useVoiceRecorder, voiceErrorMessage, watchForSpeech } from './use-voice-recorder.js';
 import VoiceMode, { useLevelVar } from './voice-mode.jsx';
@@ -42,7 +42,7 @@ import { buildAttachmentFormData } from '@/shared/lib/attachment-config.js';
 /** Turns sent per request; the server caps at 30. */
 const HISTORY_LIMIT = 20;
 /** List pages the assistant can page through with change_page. */
-const PAGED_LISTS = ['/tickets', '/users'];
+const PAGED_LISTS = ['/tickets', '/users', '/projects', '/teams'];
 /** Matches the panel's exit animation in design-system.css. */
 const PANEL_EXIT_MS = 160;
 /** Matches voice mode's exit animation in design-system.css. */
@@ -1007,7 +1007,7 @@ export default function AssistantWidget() {
       });
       const files = actions.filter((action) => action.type === 'attachment');
       const drafts = actions.filter((action) => ![
-        'navigate', 'attachment', 'switch_project', 'watch', 'ticket_filters', 'report', 'report_download', 'scroll', 'change_page',
+        'navigate', 'attachment', 'switch_project', 'watch', 'ticket_filters', 'report', 'report_download', 'scroll', 'change_page', 'people_filters', 'page_filters', 'module_view',
       ].includes(action.type));
       const report = actions.find((action) => action.type === 'report')?.report;
       const answer = reply || (drafts.length ? 'Review the draft below.' : 'Sorry, I don\'t have an answer for that.');
@@ -1054,7 +1054,13 @@ export default function AssistantWidget() {
       const switched = actions.find((action) => action.type === 'switch_project');
       if (switched) setActiveProjectId(switched.projectId);
       // Filters go to the Tickets page itself, which merges them into what it shows.
-      const filters = actions.find((action) => action.type === 'ticket_filters');
+      // Module-view steps need the By module view: ask for it with the filters (one request).
+      const moduleSteps = actions.filter((action) => action.type === 'module_view');
+      const inModuleView = window.location.pathname === '/tickets'
+        && new URLSearchParams(window.location.search).get('view') === 'modules';
+      let filters = actions.find((action) => action.type === 'ticket_filters');
+      if (moduleSteps.length && !inModuleView) filters = { filters: {}, ...filters, view: 'modules' };
+      if (moduleSteps.length) requestModuleView(moduleSteps);
       if (filters) {
         requestTicketFilters(filters);
         if (window.location.pathname !== '/tickets') router.push('/tickets');
@@ -1067,12 +1073,40 @@ export default function AssistantWidget() {
           ?? document.documentElement.scrollHeight;
         window.scrollTo({ top, behavior: 'smooth' });
       }
+      // People reads its search and filters from the URL, so open it with them (from page 1).
+      const people = actions.find((action) => action.type === 'people_filters');
+      if (people) {
+        const onPeople = window.location.pathname === '/users';
+        const params = new URLSearchParams(onPeople ? window.location.search : '');
+        params.delete('q');
+        params.delete('page');
+        for (const key of ['search', 'role', 'status', 'limit']) {
+          if (people[key] === undefined) continue;
+          if (people[key] === 'any' || people[key] === '') params.delete(key);
+          else params.set(key, people[key]);
+        }
+        const query = params.toString();
+        router.push(`/users${query ? `?${query}` : ''}`);
+      }
+      // Other pages read their filters from the URL too: merge into the one on screen, from page 1.
+      const pageFilters = actions.find((action) => action.type === 'page_filters');
+      if (pageFilters) {
+        const onIt = window.location.pathname === pageFilters.path;
+        const params = new URLSearchParams(onIt ? window.location.search : '');
+        params.delete('page');
+        for (const [key, value] of Object.entries(pageFilters.params)) {
+          if (value == null) params.delete(key);
+          else params.set(key, value);
+        }
+        const query = params.toString();
+        router.push(`${pageFilters.path}${query ? `?${query}` : ''}`);
+      }
       // Tickets and People keep their page in ?page= and pull a too-high page back to the last one.
       const paging = actions.find((action) => action.type === 'change_page');
       if (paging) {
         const url = new URL(window.location.href);
         if (!PAGED_LISTS.includes(url.pathname)) {
-          setError('Paging works on the Tickets and People lists.');
+          setError('Paging works on the Tickets, People, Projects and Teams lists.');
         } else {
           const current = Number(url.searchParams.get('page')) || 1;
           // ponytail: "last" asks for a huge page and lets the list clamp it (one extra fetch).
