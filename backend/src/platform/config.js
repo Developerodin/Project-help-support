@@ -54,6 +54,21 @@ function readPositiveNumber(env, key, defaultValue) {
   return value;
 }
 
+/**
+ * OpenAI's short-context list prices (USD per 1M tokens), checked 2026-09-24
+ * against developers.openai.com/api/docs/pricing. A model not listed here is
+ * costed at the priciest one, so the spend cap errs on the safe side.
+ * ponytail: input is all charged at the full rate, though cached input is 90%
+ * cheaper; subtract input_tokens_details.cached_tokens if the meter reads high.
+ */
+const CHAT_PRICES = {
+  'gpt-6-luna': { inputPerM: 0.1, outputPerM: 0.5 },
+  'gpt-6-sol': { inputPerM: 2, outputPerM: 10 },
+  'gpt-5.6-terra': { inputPerM: 2, outputPerM: 12 },
+  'gpt-5.6-sol': { inputPerM: 4, outputPerM: 20 },
+};
+const chatPricesFor = (model) => CHAT_PRICES[model] ?? CHAT_PRICES['gpt-5.6-sol'];
+
 function readCsvSet(env, key) {
   if (!present(env[key])) return new Set();
   return new Set(
@@ -191,6 +206,9 @@ export function loadConfig(env = process.env) {
   const seed = readGroup(env, 'seed');
   const ticketNotificationSink = readTicketNotificationSink(env, isProduction);
 
+  const chatModel = present(env.OPENAI_CHAT_MODEL) ? env.OPENAI_CHAT_MODEL.trim() : 'gpt-5.6-terra';
+  const chatPrices = chatPricesFor(chatModel);
+
   const sameSite = readRefreshCookieSameSite(env);
   const cookie = {
     domain: present(env.COOKIE_DOMAIN) ? env.COOKIE_DOMAIN.trim() : undefined,
@@ -224,7 +242,7 @@ export function loadConfig(env = process.env) {
     // so a model swap is an env change, not a deploy.
     assistant: present(env.OPENAI_API_KEY) ? {
       apiKey: env.OPENAI_API_KEY.trim(),
-      chatModel: present(env.OPENAI_CHAT_MODEL) ? env.OPENAI_CHAT_MODEL.trim() : 'gpt-5.6-terra',
+      chatModel,
       transcribeModel: present(env.OPENAI_TRANSCRIBE_MODEL)
         // The full model: far better than mini at Hindi-English switching mid-sentence.
         ? env.OPENAI_TRANSCRIBE_MODEL.trim() : 'gpt-4o-transcribe',
@@ -239,10 +257,10 @@ export function loadConfig(env = process.env) {
       budgetTimeZone: present(env.ASSISTANT_BUDGET_TIMEZONE) ? env.ASSISTANT_BUDGET_TIMEZONE.trim() : 'Asia/Kolkata',
       monthlyTokenBudget: readPositiveInt(env, 'ASSISTANT_MONTHLY_TOKEN_BUDGET', 10_000_000),
       // USD list prices. Defaults are OpenAI's published prices for the default
-      // models (chat priced as a "luna" tier); update them when models or prices change.
+      // models; update them when models or prices change.
       prices: {
-        chatInputPerM: readPositiveNumber(env, 'ASSISTANT_PRICE_CHAT_INPUT_PER_M', 0.2),
-        chatOutputPerM: readPositiveNumber(env, 'ASSISTANT_PRICE_CHAT_OUTPUT_PER_M', 1.2),
+        chatInputPerM: readPositiveNumber(env, 'ASSISTANT_PRICE_CHAT_INPUT_PER_M', chatPrices.inputPerM),
+        chatOutputPerM: readPositiveNumber(env, 'ASSISTANT_PRICE_CHAT_OUTPUT_PER_M', chatPrices.outputPerM),
         transcribePerMin: readPositiveNumber(env, 'ASSISTANT_PRICE_TRANSCRIBE_PER_MIN', 0.006),
         speechPerMin: readPositiveNumber(env, 'ASSISTANT_PRICE_SPEECH_PER_MIN', 0.015),
       },
