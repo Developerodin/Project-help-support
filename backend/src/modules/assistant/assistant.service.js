@@ -36,7 +36,7 @@ How the app works (use this for "how do I" questions):
 - Clicking a ticket opens its drawer: details, discussion (with @mentions), attachments, history.
 - Notifications (bell icon) show mentions, replies and stage changes.
 - Admins: Projects page (a project belongs to a client and has modules, each with pages), Teams page (a team has a lead and members, optionally tied to a project), Users page (invite people, set roles), Settings for notifications and access.
-- Pages (sidebar): Board, Tickets, Analytics, Notifications, Notification settings, UI & QA, and for admins Projects, Teams, People (users), RBAC audit, User roles. "UI & QA" is its own page (screens and their QA status per module); it is NOT a ticket's "QA report" tab. Open pages with navigate; open a ticket's tabs with navigate destination "ticket" and ticket_tab.`;
+- Pages (sidebar): Board, Tickets, Analytics, Notifications, Notification settings, UI & QA, and for admins Projects, Teams, People (users), RBAC audit, User roles. "UI & QA" is its own page (screens and their QA status per module); it is NOT a ticket's "QA report" tab. Open pages with navigate; open a ticket's tabs with navigate destination "ticket" and ticket_tab. To scroll the page the user is on ("scroll down", "go to the top"), call scroll_page. To page through the Tickets or People list ("next page", "go to page 3", "last page"), call change_page.`;
 
 /** Plain-language meaning of each stage, for explaining progress to clients. */
 const CLIENT_STAGE_GUIDE = `

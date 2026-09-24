@@ -41,6 +41,8 @@ import { buildAttachmentFormData } from '@/shared/lib/attachment-config.js';
 
 /** Turns sent per request; the server caps at 30. */
 const HISTORY_LIMIT = 20;
+/** List pages the assistant can page through with change_page. */
+const PAGED_LISTS = ['/tickets', '/users'];
 /** Matches the panel's exit animation in design-system.css. */
 const PANEL_EXIT_MS = 160;
 /** Matches voice mode's exit animation in design-system.css. */
@@ -1005,7 +1007,7 @@ export default function AssistantWidget() {
       });
       const files = actions.filter((action) => action.type === 'attachment');
       const drafts = actions.filter((action) => ![
-        'navigate', 'attachment', 'switch_project', 'watch', 'ticket_filters', 'report', 'report_download',
+        'navigate', 'attachment', 'switch_project', 'watch', 'ticket_filters', 'report', 'report_download', 'scroll', 'change_page',
       ].includes(action.type));
       const report = actions.find((action) => action.type === 'report')?.report;
       const answer = reply || (drafts.length ? 'Review the draft below.' : 'Sorry, I don\'t have an answer for that.');
@@ -1056,6 +1058,30 @@ export default function AssistantWidget() {
       if (filters) {
         requestTicketFilters(filters);
         if (window.location.pathname !== '/tickets') router.push('/tickets');
+      }
+      // ponytail: scrolls the window only; a page with its own scroll area (the ticket drawer) needs a target.
+      const scroll = actions.find((action) => action.type === 'scroll');
+      if (scroll) {
+        const screen = window.innerHeight * 0.8;
+        const top = { down: window.scrollY + screen, up: window.scrollY - screen, top: 0 }[scroll.direction]
+          ?? document.documentElement.scrollHeight;
+        window.scrollTo({ top, behavior: 'smooth' });
+      }
+      // Tickets and People keep their page in ?page= and pull a too-high page back to the last one.
+      const paging = actions.find((action) => action.type === 'change_page');
+      if (paging) {
+        const url = new URL(window.location.href);
+        if (!PAGED_LISTS.includes(url.pathname)) {
+          setError('Paging works on the Tickets and People lists.');
+        } else {
+          const current = Number(url.searchParams.get('page')) || 1;
+          // ponytail: "last" asks for a huge page and lets the list clamp it (one extra fetch).
+          const next = {
+            next: current + 1, previous: Math.max(1, current - 1), first: 1, last: 100000,
+          }[paging.direction] ?? paging.page;
+          url.searchParams.set('page', String(next));
+          router.push(`${url.pathname}${url.search}`);
+        }
       }
       const destination = actions.find((action) => action.type === 'navigate');
       if (destination) {

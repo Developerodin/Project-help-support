@@ -413,6 +413,22 @@ const DOWNLOAD_REPORT = fn(
   {},
 );
 
+const SCROLL_PAGE = fn(
+  'scroll_page',
+  'Scroll the page the user is on, right away: "down"/"up" by about a screen, or to the "top"/"bottom".',
+  { direction: { type: 'string', enum: ['down', 'up', 'top', 'bottom'] } },
+);
+
+const CHANGE_PAGE = fn(
+  'change_page',
+  'Move the list the user is looking at (Tickets or People) to another page of results, right away: "next", '
+    + '"previous", "first", "last", or "number" with page_number. page_number only applies to "number"; null otherwise.',
+  {
+    direction: { type: 'string', enum: ['next', 'previous', 'first', 'last', 'number'] },
+    page_number: nullable({ type: 'integer', description: 'Page to open, from 1.' }),
+  },
+);
+
 const SWITCH_PROJECT = fn(
   'switch_project',
   'Change which project the app shows (the project switcher at the top), right away. '
@@ -425,7 +441,7 @@ export function toolsFor(user, permissionContext) {
   const external = isExternalUser(user);
   const allowed = (permission) => !external && can(user, permission, permissionContext);
   const tools = [
-    SEARCH_TICKETS, GET_TICKET, GET_DISCUSSION, RECENT_COMMENTS_TOOL, OPEN_ATTACHMENT, LIST_PROJECTS, NAVIGATE, SWITCH_PROJECT,
+    SEARCH_TICKETS, GET_TICKET, GET_DISCUSSION, RECENT_COMMENTS_TOOL, OPEN_ATTACHMENT, LIST_PROJECTS, NAVIGATE, SCROLL_PAGE, CHANGE_PAGE, SWITCH_PROJECT,
     SET_TICKET_FILTERS, GET_NOTIFICATION_SETTINGS, PROPOSE_NOTIFICATION_SETTINGS,
   ];
   if (external || can(user, 'tickets.create', permissionContext)) tools.push(PROPOSE_CREATE);
@@ -985,6 +1001,23 @@ const HANDLERS = {
   async download_report(_args, ctx) {
     ctx.actions.push({ id: randomUUID(), type: 'report_download' });
     return { status: 'downloading', note: 'The latest report in this chat is downloading as a document.' };
+  },
+
+  async scroll_page(args, ctx) {
+    const direction = ['down', 'up', 'top', 'bottom'].includes(args.direction) ? args.direction : 'down';
+    ctx.actions.push({ id: randomUUID(), type: 'scroll', direction });
+    return { status: 'scrolled', direction };
+  },
+
+  async change_page(args, ctx) {
+    const direction = ['next', 'previous', 'first', 'last', 'number'].includes(args.direction) ? args.direction : 'next';
+    if (direction === 'number' && !(Number.isInteger(args.page_number) && args.page_number >= 1)) {
+      throw new ToolError('Give page_number (1 or more) with direction "number".');
+    }
+    ctx.actions.push({
+      id: randomUUID(), type: 'change_page', direction, ...(direction === 'number' ? { page: args.page_number } : {}),
+    });
+    return { status: 'changed', direction };
   },
 
   async navigate(args, ctx) {
