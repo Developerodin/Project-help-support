@@ -77,6 +77,27 @@ function readHttps(env) {
   return { keyFile: env.HTTPS_KEY_FILE.trim(), certFile: env.HTTPS_CERT_FILE.trim() };
 }
 
+const PUSH_KEYS = ['VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'VAPID_SUBJECT'];
+
+// Web push. All three or none; generate the key pair with `npx web-push generate-vapid-keys`.
+function readPush(env) {
+  const set = PUSH_KEYS.filter((k) => present(env[k]));
+  if (set.length === 0) return null;
+  if (set.length < PUSH_KEYS.length) {
+    throw new Error(`Config error: set all of ${PUSH_KEYS.join(', ')}, or none.`);
+  }
+  const subject = env.VAPID_SUBJECT.trim();
+  // Apple's push service rejects any other subject form.
+  if (!/^(mailto:|https:\/\/)/.test(subject)) {
+    throw new Error('Config error: VAPID_SUBJECT must be a mailto: address or an https:// URL.');
+  }
+  return {
+    publicKey: env.VAPID_PUBLIC_KEY.trim(),
+    privateKey: env.VAPID_PRIVATE_KEY.trim(),
+    subject,
+  };
+}
+
 function readCsvSet(env, key) {
   if (!present(env[key])) return new Set();
   return new Set(
@@ -213,6 +234,7 @@ export function loadConfig(env = process.env) {
   const email = readGroup(env, 'email');
   const seed = readGroup(env, 'seed');
   const ticketNotificationSink = readTicketNotificationSink(env, isProduction);
+  const push = readPush(env);
 
   const chatModel = present(env.OPENAI_CHAT_MODEL) ? env.OPENAI_CHAT_MODEL.trim() : 'gpt-5.6-terra';
   const chatPrices = chatPricesFor(chatModel);
@@ -248,7 +270,9 @@ export function loadConfig(env = process.env) {
       email: email !== null,
       seed: seed !== null,
       assistant: present(env.OPENAI_API_KEY),
+      push: push !== null,
     },
+    push,
     // Chatbot. Off unless OPENAI_API_KEY is set; the model names are overridable
     // so a model swap is an env change, not a deploy.
     assistant: present(env.OPENAI_API_KEY) ? {

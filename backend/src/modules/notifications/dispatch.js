@@ -4,6 +4,7 @@ import { getTransport } from '../../platform/mailer.js';
 import Ticket from '../tickets/ticket.model.js';
 import { getNotificationRecipients } from './recipients.js';
 import { createInAppNotifications } from './notification.service.js';
+import { sendPushForNotifications } from './push.service.js';
 import { sendTicketEmail, sendTransactionalEmail } from './email.service.js';
 import { renderInviteEmail, renderPasswordResetEmail } from '../../platform/email/templates/index.js';
 import { ticketBranding, userBranding } from './branding.js';
@@ -94,7 +95,12 @@ async function fanOut(eventKey, ticket, actor, context, config, deps, { hideFrom
   const branding = ticketBranding(emailTicket, config);
   const emailContext = branding ? { ...context, ...branding } : context;
 
-  await createInAppNotifications(eventKey, ticket, visible, config, context);
+  const inAppRows = await createInAppNotifications(eventKey, ticket, visible, config, context);
+  // Not awaited: push services can be slow, and the request already succeeded.
+  // Push mirrors the in-app rows, so it obeys the in-app preferences.
+  (deps.sendPush ?? sendPushForNotifications)(inAppRows, config).catch((err) => {
+    logger.error('Push fan-out failed', { error: err.message, event: eventKey, ticket: ticket?.ticketId });
+  });
 
   // Context is built ONCE per event and would otherwise be shared verbatim
   // across every recipient's email. Split it here, at send time, rather than

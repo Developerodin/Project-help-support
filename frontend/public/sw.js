@@ -105,3 +105,46 @@ async function cacheFirstStatic(request) {
   }
   return response;
 }
+
+/* Web push. The server sends { title, body, url, tag } for each in-app
+ * notification (backend notifications/push.service.js). Every push must show a
+ * notification: browsers revoke permission from workers that stay silent. */
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = { body: event.data ? event.data.text() : '' };
+  }
+
+  event.waitUntil(
+    self.registration.showNotification(data.title || 'ProwPlus', {
+      body: data.body || '',
+      icon: '/icons/icon-192-prowplus.png',
+      badge: '/icons/icon-192-prowplus.png',
+      tag: data.tag,
+      // A replaced banner (same ticket) still alerts; without a tag nothing is replaced.
+      renotify: Boolean(data.tag),
+      data: { url: data.url || '/notifications' },
+    }),
+  );
+});
+
+// Tapping opens the ticket: reuse an open app window when there is one, else open a new one.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  let target = new URL(event.notification.data?.url || '/', self.location.origin);
+  if (target.origin !== self.location.origin) target = new URL('/', self.location.origin);
+
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const open = windows.find((client) => new URL(client.url).origin === self.location.origin);
+    if (open) {
+      await open.focus();
+      if ('navigate' in open) await open.navigate(target.href);
+      return;
+    }
+    await self.clients.openWindow(target.href);
+  })());
+});

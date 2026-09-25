@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { useRouter } from 'next/navigation';
 import { apiFetch, isTransientApiError, setAccessToken, setSessionLostHandler } from '../api/client.js';
 import { clearAssistantChats } from '../lib/assistant-chat-storage.js';
+import { disablePushQuietly, syncPush } from '../lib/push.js';
 import {
   applyDocumentBranding,
   neutralBranding,
@@ -124,7 +125,17 @@ export function AuthProvider({ children }) {
     return session.user;
   }, [applySession]);
 
+  // Point this device's push subscription at whoever is signed in now. Skipped
+  // while impersonating, or the admin's device would get the other person's pushes.
+  useEffect(() => {
+    if (status !== AUTHENTICATED || !user?.id || impersonation) return;
+    syncPush().catch(() => {});
+  }, [status, user?.id, impersonation]);
+
   const logout = useCallback(async () => {
+    // Before the session ends: the unsubscribe call needs it. A signed-out
+    // device must stop showing this person's ticket updates.
+    await disablePushQuietly();
     try {
       await apiFetch('/auth/logout', { method: 'POST' });
     } finally {

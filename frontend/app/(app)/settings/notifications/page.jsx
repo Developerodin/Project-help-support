@@ -7,11 +7,13 @@ import {
   notificationEventLabel,
 } from '@pms/shared';
 import { resetNotificationPrefs, updateNotificationPrefs } from '@/shared/api/users.js';
+import { getPushConfig } from '@/shared/api/notifications.js';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import ConfirmDialog from '@/shared/components/confirm-dialog.jsx';
 import FormError from '@/shared/components/form-error.jsx';
 import { normalizeApiError } from '@/shared/lib/api-error.js';
 import { mutateNotifications } from '@/shared/lib/notification-swr.js';
+import { disablePush, enablePush, pushStatus } from '@/shared/lib/push.js';
 import { showToast } from '@/shared/lib/toast.js';
 
 const HIGH_IMPACT_EVENTS = new Set([
@@ -44,6 +46,71 @@ function toggleNeedsConfirm(prefs, channel, event, enabled) {
   if (enabled) return false;
   if (wouldDisableAllChannels(prefs, channel, event, enabled)) return true;
   return HIGH_IMPACT_EVENTS.has(event);
+}
+
+const PUSH_STATUS_TEXT = {
+  unsupported: "This browser can't receive push notifications.",
+  'needs-install': 'On iPhone and iPad, push works only in the Home Screen app. In Safari tap Share → Add to Home Screen, open the app from there, and turn push on.',
+  'no-worker': 'Push is available in the installed app and the production site.',
+  denied: 'Notifications are blocked for this site. Allow them in your browser or system settings, then reload this page.',
+  off: 'Get a notification on this device when something in your in-app list happens, even with the app closed.',
+  on: 'On for this device. It follows your In app choices below.',
+};
+
+/** Push is per device, so it's a switch for this browser rather than a column in the table. */
+function PushDeviceSetting() {
+  const { impersonation } = useAuth();
+  const [serverEnabled, setServerEnabled] = useState(false);
+  const [status, setStatus] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([getPushConfig().catch(() => null), pushStatus()]).then(([config, current]) => {
+      if (cancelled) return;
+      setServerEnabled(Boolean(config?.enabled));
+      setStatus(current);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!serverEnabled || !status) return null;
+
+  async function toggle() {
+    setBusy(true);
+    try {
+      if (status === 'on') {
+        await disablePush();
+        showToast('Push turned off for this device');
+      } else {
+        await enablePush();
+        showToast('Push turned on for this device');
+      }
+    } catch (err) {
+      showToast(normalizeApiError(err)?.message || err?.message || 'Could not change push');
+    } finally {
+      setStatus(await pushStatus());
+      setBusy(false);
+    }
+  }
+
+  const canToggle = (status === 'on' || status === 'off') && !impersonation;
+
+  return (
+    <div className="page-head">
+      <div>
+        <h2>Push on this device</h2>
+        <p className="sub">
+          {impersonation ? "Push can't be changed while impersonating." : PUSH_STATUS_TEXT[status]}
+        </p>
+      </div>
+      {canToggle ? (
+        <button type="button" className="btn btn-sm" onClick={toggle} disabled={busy}>
+          {status === 'on' ? 'Turn off' : 'Turn on'}
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 export default function NotificationSettingsPage() {
@@ -127,6 +194,7 @@ export default function NotificationSettingsPage() {
         </button>
       </div>
       <FormError error={error} />
+      <PushDeviceSetting />
 
       <div className="tablewrap notif-prefs">
         <table>

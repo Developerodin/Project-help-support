@@ -70,6 +70,7 @@ async function start() {
   if (!config.features.email) logger.warn('Email capability disabled — SMTP group not configured');
   if (!config.features.attachments) logger.warn('Attachment capability disabled — storage group not configured');
   if (!config.features.assistant) logger.warn('Assistant disabled — OPENAI_API_KEY not set');
+  if (!config.features.push) logger.warn('Push notifications disabled — VAPID keys not set');
 
   await connectDb(config.mongoUrl);
   await replayAuditOutboxOnBoot();
