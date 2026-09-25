@@ -89,6 +89,21 @@ export function notificationPrimaryLine(item) {
   return key ? `${key} · ${action}` : action;
 }
 
+/** When the row last changed: the latest merged update, or creation for older rows. */
+export function notificationActivityAt(item) {
+  return item?.activityAt ?? item?.createdAt;
+}
+
+/** Updates merged into one row by the server; rows from before merging count as 1. */
+export function notificationUpdateCount(item) {
+  const count = Math.floor(Number(item?.count));
+  return count > 1 ? count : 1;
+}
+
+export function sumNotificationUpdates(items) {
+  return (items ?? []).reduce((sum, item) => sum + notificationUpdateCount(item), 0);
+}
+
 export function formatRelativeTime(iso) {
   if (!iso) return '';
   const then = new Date(iso).getTime();
@@ -140,7 +155,7 @@ export function notificationDayLabel(iso, now = new Date()) {
 export function groupsByDay(groups, now = new Date()) {
   const days = [];
   for (const group of groups) {
-    const label = notificationDayLabel(group.latest?.createdAt, now);
+    const label = notificationDayLabel(notificationActivityAt(group.latest), now);
     const last = days[days.length - 1];
     if (last?.label === label) last.groups.push(group);
     else days.push({ label, groups: [group] });
@@ -151,6 +166,9 @@ export function groupsByDay(groups, now = new Date()) {
 /**
  * Group inbox page results by ticket key. Only within the current page: a
  * ticket whose updates straddle a page boundary shows as a card on each page.
+ * The server already merges routine updates into one row per ticket; this
+ * still gathers a ticket's "for you" row, its merged row and its older, read
+ * rows into one card. Card totals sum each row's `count`, not rows.
  */
 export function groupNotificationsByTicket(items) {
   const groups = new Map();
@@ -169,32 +187,10 @@ export function groupNotificationsByTicket(items) {
   return order.map((key) => {
     const group = groups.get(key);
     const sorted = [...group.items].sort(
-      (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
+      (a, b) => new Date(notificationActivityAt(b)) - new Date(notificationActivityAt(a)),
     );
     return { ticketKey: group.ticketKey, items: sorted, latest: sorted[0] };
   });
-}
-
-/**
- * Bell dropdown: at most one row per ticket (latest by createdAt).
- * Input should already be sorted newest-first.
- */
-export function bellNotificationRows(items) {
-  const byKey = new Map();
-  const order = [];
-
-  for (const item of items) {
-    const ticketKey = notificationTicketKey(item);
-    const mapKey = ticketKey ?? item.id;
-    if (!byKey.has(mapKey)) {
-      byKey.set(mapKey, { latest: item, hidden: 0, ticketKey });
-      order.push(mapKey);
-    } else {
-      byKey.get(mapKey).hidden += 1;
-    }
-  }
-
-  return order.map((key) => byKey.get(key));
 }
 
 export const NOTIFICATION_GROUP_DEFAULT_VISIBLE = 3;
@@ -257,26 +253,4 @@ export function notificationGroupHref(group) {
 
 export function groupHasUnread(items) {
   return items.some((item) => !item.readAt);
-}
-
-/** Footer hint when bell rows collapse duplicates. */
-export function bellHiddenSummary(rows) {
-  let totalHidden = 0;
-  const perTicket = [];
-
-  for (const row of rows) {
-    if (row.hidden > 0) {
-      totalHidden += row.hidden;
-      if (row.ticketKey) perTicket.push({ ticketKey: row.ticketKey, count: row.hidden });
-    }
-  }
-
-  if (totalHidden === 0) return null;
-
-  if (perTicket.length === 1) {
-    const { ticketKey, count } = perTicket[0];
-    return `+${count} more for ${ticketKey}`;
-  }
-
-  return `+${totalHidden} more notifications`;
 }

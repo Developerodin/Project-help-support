@@ -12,11 +12,13 @@ export const NOTIFICATION_INBOX_LIMIT = 30;
 
 // Notifications are the person's own, across every project they are in, so
 // no key carries a project: the bell, inbox and sidebar badge all agree.
+// "For you" and "All" lists get their own keys; every key keeps the
+// `notifications` scope prefix so mutate and the optimistic patches reach both.
 export const notificationSwrKeys = {
   unreadCount: () => 'notifications-unread-count',
-  recent: () => 'notifications-recent',
-  inbox: (page, limit, unreadOnly = false) =>
-    `notifications-inbox:${page}:${limit}:${unreadOnly ? 'unread' : 'all'}`,
+  recent: (forYou = false) => `notifications-recent:${forYou ? 'for-you' : 'all'}`,
+  inbox: (page, limit, unreadOnly = false, forYou = false) =>
+    `notifications-inbox:${page}:${limit}:${unreadOnly ? 'unread' : 'all'}:${forYou ? 'for-you' : 'all'}`,
 };
 
 /** Pair scope key with params so SWR never runs a fetcher while params are null. */
@@ -52,7 +54,7 @@ export function isNotificationSwrKey(key) {
 const isUnreadCountKey = (key) => scopeOf(key) === notificationSwrKeys.unreadCount();
 const isListKey = (key) => {
   const scope = scopeOf(key);
-  return scope === notificationSwrKeys.recent() || scope.startsWith('notifications-inbox:');
+  return scope.startsWith('notifications-recent:') || scope.startsWith('notifications-inbox:');
 };
 
 export function mutateNotifications() {

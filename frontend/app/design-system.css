@@ -3944,6 +3944,10 @@ a.button3{ display:block; text-align:center; text-decoration:none; cursor:pointe
 }
 .notif-bell__head{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .notif-bell__empty{ padding:10px 8px; }
+div.notif-bell__empty{
+  display:flex; flex-direction:column; align-items:flex-start; gap:8px;
+}
+.notif-bell__tabs{ padding:0 6px; border-bottom:1px solid var(--rule); }
 .notif-bell__push{
   display:flex; align-items:center; gap:6px;
   padding:6px 9px; border-bottom:1px solid var(--rule);
@@ -4016,6 +4020,7 @@ a.button3{ display:block; text-align:center; text-decoration:none; cursor:pointe
   margin:6px 0 0; font-size:0.75rem; color:var(--ink-3);
 }
 .notif-inbox__seg{ flex-shrink:0; }
+.notif-inbox__tabs{ margin:0 0 16px; border-bottom:1px solid var(--rule); }
 
 .notif-ticket-card{
   border:1px solid var(--rule); border-radius:var(--r-lg);
@@ -4190,9 +4195,6 @@ a.button3{ display:block; text-align:center; text-decoration:none; cursor:pointe
 }
 .notif-bell__row.unread{ background:var(--sig-wash); }
 .notif-bell__row.read{ background:transparent; }
-.notif-bell__more{
-  padding:0 9px 6px 12px; font-size:0.6875rem;
-}
 
 .notif-list{
   display:flex; flex-direction:column; gap:12px;

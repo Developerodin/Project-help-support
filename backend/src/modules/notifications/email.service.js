@@ -1,17 +1,35 @@
 import { randomUUID } from 'node:crypto';
 import { isExternalUser } from '@pms/shared';
-import { renderTicketEmail, ticketEmailSubject } from '../../platform/email/templates/index.js';
+import {
+  renderTicketDigestEmail, renderTicketEmail, ticketEmailSubject,
+} from '../../platform/email/templates/index.js';
 import { brandAttachments, BrandLogoRequiredError } from '../../platform/email/logo.js';
 import { brandedFrom, ticketBranding } from './branding.js';
 import logger from '../../platform/logger.js';
 import { getTransport } from '../../platform/mailer.js';
+import Ticket from '../tickets/ticket.model.js';
 import User from '../users/user.model.js';
 import EmailLog from './emailLog.model.js';
+import Notification from './notification.model.js';
 import TransactionalEmailLog from './transactionalEmailLog.model.js';
+import { canUserViewTicket, resolvePreference } from './recipients.js';
 
 export const EMAIL_MAX_ATTEMPTS = 3;
 const DEFAULT_GRACE_MS = 5 * 60 * 1000;
 const DEFAULT_RETRY_LIMIT = 100;
+const DEFAULT_BATCH_WINDOW_MS = 5 * 60 * 1000;
+const DEFAULT_BATCH_MAX_MS = 15 * 60 * 1000;
+
+/** What a ticket email needs populated: names for the facts, client for the brand. */
+export const EMAIL_TICKET_POPULATE = [
+  'assignedTo',
+  'createdBy',
+  {
+    path: 'project',
+    select: 'client brand',
+    populate: { path: 'client', select: 'name status logoKey' },
+  },
+];
 
 function optionalString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : '';
@@ -67,6 +85,10 @@ function retryableFilter(maxAttempts, cutoff) {
     status: { $in: ['pending', 'failed', 'sending'] },
     attemptCount: { $lt: maxAttempts },
     $or: [{ lastAttemptAt: { $lt: cutoff } }, { lastAttemptAt: null, createdAt: { $lt: cutoff } }],
+    // A batch claimed but never rendered has no snapshot to resend, and
+    // re-rendering it from row.event would send one event, not the batch. The
+    // flush owns those (see flushableFilter). Matches nothing on other models.
+    $nor: [{ 'batch.0': { $exists: true }, 'renderSnapshot.text': { $exists: false } }],
   };
 }
 
@@ -127,6 +149,15 @@ export function messageIdFor(eventId, recipientUserId, domain) {
   return `<${eventId}.${recipientUserId}@${domain}>`;
 }
 
+/**
+ * The thread root every email about one ticket replies to. No message ever
+ * carries this id; clients thread on the shared References (and the stable
+ * subject) regardless, so each ticket reads as one conversation.
+ */
+export function threadIdFor(ticketObjectId, domain) {
+  return `<ticket.${ticketObjectId}@${domain}>`;
+}
+
 function renderBody(event, ticket, context, config) {
   const { text, html } = renderTicketEmail(event, ticket, context, config);
   return { text, html };
@@ -151,6 +182,8 @@ async function attempt(row, transport, config, attachments, bcc = null, { counte
       cc: row.cc?.length ? row.cc : undefined,
       subject: row.subject,
       messageId: row.messageId,
+      inReplyTo: row.threadId || undefined,
+      references: row.threadId || undefined,
       text: row.text,
       html: row.html,
       // The brand mark rides along as an inline attachment; the layout renders
@@ -234,9 +267,9 @@ export async function sendTicketEmail(event, ticket, recipients, context, config
   const eventId = deps.eventId ?? randomUUID().replace(/-/g, '');
   const domain = domainOf(config);
   const from = brandedFrom(config, renderedContext.brandName);
-  const subject = ticketEmailSubject(event, ticket, renderedContext);
+  const subject = ticketEmailSubject(ticket);
+  const threadId = threadIdFor(ticket._id, domain);
   const { text, html } = renderBody(event, ticket, renderedContext, config);
-  const sinkTo = deps.allowTestSink === false ? '' : ticketTestSinkAddress(config).toLowerCase();
 
   const rows = await EmailLog.insertMany(wanted.map((r) => ({
     eventId,
@@ -249,6 +282,7 @@ export async function sendTicketEmail(event, ticket, recipients, context, config
     template: event.toLowerCase(),
     status: 'pending',
     messageId: messageIdFor(eventId, String(r.user._id), domain),
+    threadId,
     requestId: context.requestId,
     renderSnapshot: {
       context: renderedContext,
@@ -292,27 +326,314 @@ export async function sendTicketEmail(event, ticket, recipients, context, config
     if (ok) sent += 1; else failed += 1;
   }
 
-  if (sinkTo && deps.allowTestSink !== false && !config.isProduction && sent > 0) {
-    try {
-      await transport.sendMail({
-        from,
-        to: sinkTo,
-        subject: `[notification-test-sink] ${subject}`,
-        text,
-        html,
-        attachments,
-      });
-    } catch (err) {
-      logger.warn('Ticket notification test sink copy failed', {
-        event,
-        ticket: ticket?.ticketId,
-        eventId,
-        error: err.message,
-      });
-    }
+  if (sent > 0) {
+    await sendTestSinkCopy(transport, config, deps, {
+      from, subject, text, html, attachments,
+    }, { event, ticket: ticket?.ticketId, eventId });
   }
 
   return { skipped: false, eventId, sent, failed };
+}
+
+async function sendTestSinkCopy(transport, config, deps, message, logContext) {
+  const sinkTo = deps.allowTestSink === false ? '' : ticketTestSinkAddress(config).toLowerCase();
+  if (!sinkTo || config.isProduction) return;
+  try {
+    await transport.sendMail({
+      ...message,
+      to: sinkTo,
+      subject: `[notification-test-sink] ${message.subject}`,
+    });
+  } catch (err) {
+    logger.warn('Ticket notification test sink copy failed', { ...logContext, error: err.message });
+  }
+}
+
+/**
+ * Adds one routine event to the recipient's open batch for this ticket,
+ * starting one if there is none. Each event pushes the send back to now +
+ * window, but never past the deadline set when the batch was opened.
+ *
+ * The unique partial index allows one `queued` row per (recipient, ticket), so
+ * two events landing at once cannot open two batches: the loser of the insert
+ * race gets E11000 and its retry appends to the winner's row. Failure mode:
+ * a crash between the append and the $min fix-up leaves sendAfter up to one
+ * window past the deadline; the email is late, never lost.
+ */
+export async function enqueueTicketEmail(recipientUserId, ticket, item, config, { now = new Date() } = {}) {
+  if (!config.features.email) return null;
+
+  const windowMs = config.email?.batchWindowMs ?? DEFAULT_BATCH_WINDOW_MS;
+  const maxMs = config.email?.batchMaxMs ?? DEFAULT_BATCH_MAX_MS;
+  const domain = domainOf(config);
+  const append = () => {
+    const eventId = randomUUID().replace(/-/g, '');
+    return EmailLog.findOneAndUpdate(
+      { recipientUserId, ticket: ticket._id, status: 'queued' },
+      {
+        $push: { batch: { ...item, at: now } },
+        $set: { sendAfter: new Date(now.getTime() + windowMs) },
+        $setOnInsert: {
+          eventId,
+          event: item.event,
+          batchDeadline: new Date(now.getTime() + maxMs),
+          messageId: messageIdFor(eventId, String(recipientUserId), domain),
+          threadId: threadIdFor(ticket._id, domain),
+          requestId: item.context?.requestId,
+        },
+      },
+      { upsert: true, new: true },
+    );
+  };
+
+  let row;
+  try {
+    row = await append();
+  } catch (err) {
+    if (err?.code !== 11000) throw err;
+    row = await append();
+  }
+  if (row.sendAfter > row.batchDeadline) {
+    await EmailLog.updateOne({ _id: row._id, status: 'queued' }, { $min: { sendAfter: row.batchDeadline } });
+  }
+  return row;
+}
+
+/**
+ * Mentions and "assigned to you" go out now. If the recipient has an open
+ * batch on this ticket it is claimed (atomically, so a flush cannot also send
+ * it) and goes out with the urgent event as one email; everyone else gets the
+ * urgent event alone through the ordinary send path.
+ */
+export async function sendUrgentTicketEmail(event, ticket, recipients, context, config, deps = {}) {
+  if (!config.features.email) return { skipped: true, sent: 0, failed: 0 };
+  const transport = deps.transport ?? getTransport(config);
+  if (!transport) return { skipped: true, sent: 0, failed: 0 };
+
+  let sent = 0;
+  let failed = 0;
+  const alone = [];
+  for (const r of recipients.filter((x) => x.channels.email)) {
+    const now = new Date();
+    const item = {
+      event, context, notificationId: deps.notificationIds?.get(String(r.user._id)), urgent: true, at: now,
+    };
+    const row = await EmailLog.findOneAndUpdate(
+      { recipientUserId: r.user._id, ticket: ticket._id, status: 'queued' },
+      { $push: { batch: item }, $set: { status: 'sending', lastAttemptAt: now }, $inc: { attemptCount: 1 } },
+      { new: true },
+    );
+    if (!row) {
+      alone.push(r);
+      continue;
+    }
+    const outcome = await deliverBatchRow(row, config, { ...deps, transport });
+    if (outcome === 'sent') sent += 1;
+    if (outcome === 'failed') failed += 1;
+  }
+
+  if (alone.length) {
+    const result = await sendTicketEmail(event, ticket, alone, context, config, { ...deps, transport });
+    sent += result.sent;
+    failed += result.failed;
+  }
+  return { skipped: false, sent, failed };
+}
+
+/** Due batches, plus batches claimed by a process that died before rendering them. */
+function flushableFilter(now, cutoff, maxAttempts) {
+  return {
+    $or: [
+      { status: 'queued', sendAfter: { $lte: now } },
+      {
+        status: 'sending',
+        'batch.0': { $exists: true },
+        'renderSnapshot.text': { $exists: false },
+        attemptCount: { $lt: maxAttempts },
+        lastAttemptAt: { $lt: cutoff },
+      },
+    ],
+  };
+}
+
+/**
+ * Sends every batch whose quiet window has lapsed. Each row is claimed
+ * (queued -> sending, attempt counted) before anything else happens, so two
+ * processes or an overlapping urgent send cannot both send it.
+ *
+ * Crash recovery: the snapshot is written before the SMTP call. A row that
+ * dies after that is `sending` with a snapshot, and the retry sweep resends it
+ * exactly as it resends any other row. A row that dies before it is `sending`
+ * with no snapshot; the retry sweep leaves it alone and this flush claims it
+ * again once the grace period has passed, re-running every check.
+ *
+ * ponytail: one pass sends at most `limit` batches, one after another. At a
+ * 30s cadence that is ~200 emails a minute before batches start going out late.
+ */
+export async function flushDueEmailBatches(config, deps = {}, options = {}) {
+  const idle = { attempted: 0, sent: 0, skipped: 0, failed: 0 };
+  if (!config.features.email) return idle;
+  const transport = deps.transport ?? getTransport(config);
+  if (!transport) return idle;
+
+  const now = options.now ?? new Date();
+  const graceMs = options.graceMs ?? DEFAULT_GRACE_MS;
+  const maxAttempts = options.maxAttempts ?? EMAIL_MAX_ATTEMPTS;
+  const limit = options.limit ?? DEFAULT_RETRY_LIMIT;
+  const due = flushableFilter(now, new Date(now.getTime() - graceMs), maxAttempts);
+
+  const candidates = await EmailLog.find(due).sort({ sendAfter: 1 }).limit(limit).select('_id').lean();
+  const result = idle;
+  for (const { _id } of candidates) {
+    const row = await EmailLog.findOneAndUpdate(
+      { _id, ...due },
+      { $set: { status: 'sending', lastAttemptAt: new Date() }, $inc: { attemptCount: 1 } },
+      { new: true },
+    );
+    if (!row) continue; // an urgent send or another process took it
+    result.attempted += 1;
+    try {
+      result[await deliverBatchRow(row, config, { ...deps, transport })] += 1;
+    } catch (err) {
+      result.failed += 1;
+      logger.error('Email batch flush errored', { emailLogId: String(row._id), error: err.message });
+    }
+  }
+  return result;
+}
+
+/**
+ * A -> B -> C becomes one A -> C move; A -> B -> A says nothing happened and
+ * is dropped. The path in between is kept for the digest's stage line.
+ */
+function collapseStageMoves(items) {
+  const moves = items.filter((item) => item.event === 'TICKET_STAGE_CHANGED');
+  if (moves.length === 0) return items;
+  const first = moves[0].context ?? {};
+  const last = moves[moves.length - 1];
+  if (first.from && first.from === last.context?.to) {
+    return items.filter((item) => item.event !== 'TICKET_STAGE_CHANGED');
+  }
+  if (moves.length === 1) return items;
+  const net = {
+    ...last,
+    context: {
+      ...last.context,
+      from: first.from,
+      stagePath: [first.from, ...moves.map((move) => move.context?.to)].filter(Boolean),
+    },
+  };
+  return items
+    .filter((item) => item.event !== 'TICKET_STAGE_CHANGED' || item === last)
+    .map((item) => (item === last ? net : item));
+}
+
+/**
+ * What is still worth an email at send time: the recipient still wants mail
+ * for that event and can still open the ticket, and has not already read it
+ * in-app (urgent items are sent regardless). A previous assignee keeps their
+ * "unassigned you" even without access, as the in-app row does.
+ *
+ * ponytail: one permission-context load per batch (canUserViewTicket), the
+ * same cost the fan-out pays per recipient.
+ */
+async function itemsStillWorthSending(batch, user, ticket) {
+  const canView = await canUserViewTicket(user, ticket);
+  const notificationIds = batch.filter((item) => item.notificationId).map((item) => item.notificationId);
+  const read = notificationIds.length
+    ? await Notification.find({ _id: { $in: notificationIds }, readAt: { $ne: null } }).select('_id').lean()
+    : [];
+  const readIds = new Set(read.map((n) => String(n._id)));
+
+  const kept = batch.filter((item) => {
+    if (!resolvePreference(user, 'email', item.event)) return false;
+    if (!canView && !item.context?.unassignedYou) return false;
+    return item.urgent || !item.notificationId || !readIds.has(String(item.notificationId));
+  });
+  return collapseStageMoves([...kept].sort((a, b) => new Date(a.at) - new Date(b.at)));
+}
+
+function skipRow(row, reason) {
+  return EmailLog.updateOne(
+    { _id: row._id },
+    { $set: { status: 'skipped', skippedAt: new Date(), error: reason } },
+  );
+}
+
+/**
+ * Renders and sends one claimed batch row. Returns 'sent', 'failed' or
+ * 'skipped'. One item left renders exactly as that event's own email; more
+ * than one renders the digest.
+ */
+async function deliverBatchRow(row, config, deps) {
+  // Unpopulated at first: the visibility checks read refs the way the fan-out
+  // passes them, and a populated project.client is not what they expect.
+  const [user, ticket] = await Promise.all([
+    User.findById(row.recipientUserId),
+    Ticket.findById(row.ticket),
+  ]);
+  if (user?.status !== 'active') {
+    await skipRow(row, INACTIVE_RECIPIENT);
+    return 'skipped';
+  }
+  if (!ticket) {
+    await skipRow(row, 'Ticket no longer exists');
+    return 'skipped';
+  }
+  const items = await itemsStillWorthSending(row.batch.map((item) => item.toObject?.() ?? item), user, ticket);
+  if (items.length === 0) {
+    await skipRow(row, 'Nothing left to send');
+    return 'skipped';
+  }
+  await ticket.populate(EMAIL_TICKET_POPULATE);
+
+  const withBranding = (context = {}) => (context.brandLogoKey
+    ? context
+    : { ...context, ...(ticketBranding(ticket, config) ?? {}) });
+  const context = withBranding(items[items.length - 1].context);
+  const single = items.length === 1;
+  const { subject, text, html } = single
+    ? renderTicketEmail(items[0].event, ticket, withBranding(items[0].context), config)
+    : renderTicketDigestEmail(ticket, items, context, config);
+  const requireBrandLogo = isExternalUser(user);
+  const fields = {
+    event: single ? items[0].event : row.event,
+    template: single ? items[0].event.toLowerCase() : 'ticket_digest',
+    to: [user.email],
+    from: brandedFrom(config, context.brandName),
+    subject,
+    threadId: row.threadId || threadIdFor(ticket._id, domainOf(config)),
+    renderSnapshot: {
+      context, text, html, brandLogoKey: context.brandLogoKey || null, requireBrandLogo,
+    },
+  };
+  // Written before the send: from here on the retry sweep can resend this row.
+  await EmailLog.updateOne({ _id: row._id }, { $set: fields });
+
+  let attachments;
+  try {
+    assertClientBrand(requireBrandLogo, context);
+    attachments = await brandAttachments(config, {
+      logoKey: context.brandLogoKey,
+      requireCompanyMark: requireBrandLogo,
+    });
+  } catch (err) {
+    const error = String(err?.message || err);
+    await failRowsForPolicy([row], error, { counted: true });
+    logger.error('Ticket email batch blocked by branding policy', {
+      emailLogId: String(row._id), ticket: ticket.ticketId, error,
+    });
+    return 'failed';
+  }
+
+  const message = { ...row.toObject(), ...fields, text, html };
+  const ok = await attempt(message, deps.transport, config, attachments, null, { counted: true });
+  if (ok) {
+    await sendTestSinkCopy(deps.transport, config, deps, {
+      from: fields.from, subject, text, html, attachments,
+    }, { event: fields.event, ticket: ticket.ticketId, emailLogId: String(row._id) });
+  }
+  return ok ? 'sent' : 'failed';
 }
 
 /**

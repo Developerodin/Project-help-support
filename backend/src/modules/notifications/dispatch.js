@@ -6,21 +6,13 @@ import { publishNotificationCreated } from '../realtime/realtime.service.js';
 import { getNotificationRecipients } from './recipients.js';
 import { createInAppNotifications } from './notification.service.js';
 import { sendPushForNotifications } from './push.service.js';
-import { sendTicketEmail, sendTransactionalEmail } from './email.service.js';
+import {
+  EMAIL_TICKET_POPULATE, enqueueTicketEmail, sendTransactionalEmail, sendUrgentTicketEmail,
+} from './email.service.js';
 import { renderInviteEmail, renderPasswordResetEmail } from '../../platform/email/templates/index.js';
 import { ticketBranding, userBranding } from './branding.js';
 
 // Template spec and add-a-template checklist: docs/email/DESIGN.md
-
-const EMAIL_TICKET_POPULATE = [
-  'assignedTo',
-  'createdBy',
-  {
-    path: 'project',
-    select: 'client brand',
-    populate: { path: 'client', select: 'name status logoKey' },
-  },
-];
 
 function findCommentOnTicket(ticket, commentId) {
   if (!commentId || !ticket?.comments?.length) return null;
@@ -99,6 +91,18 @@ function isInvisibleToExternal(eventKey, context) {
     && externalFacingTicketStatus(context.from) === externalFacingTicketStatus(context.to);
 }
 
+/**
+ * Mail that cannot wait for the batch: a mention, or the ticket landing on
+ * you. Everything else (including an assignment to someone else, or being
+ * unassigned) waits in the recipient's batch for this ticket.
+ */
+function isUrgentEmail(eventKey, ticket, user, context) {
+  if (eventKey === 'TICKET_MENTIONED') return true;
+  return eventKey === 'TICKET_ASSIGNED'
+    && !context.unassignedYou
+    && String(ticket.assignedTo?._id ?? ticket.assignedTo) === String(user._id);
+}
+
 /** Returns the recipients it notified, so the caller can keep them out of a second fan-out. */
 async function fanOut(eventKey, ticket, actor, context, config, deps, {
   hideFromExternal = false, excludeUserIds = null,
@@ -147,13 +151,34 @@ async function fanOut(eventKey, ticket, actor, context, config, deps, {
     groups.get(key).recipients.push(r);
   }
 
+  // Each batched event remembers the in-app row it landed on, so reading
+  // that row in the app takes the event out of the email.
+  const notificationIds = new Map(inAppRows.map((row) => [String(row.user), row._id]));
+
   // Internal groups first, so the test sink copy shows the internal rendering.
   let testSinkUsed = false;
   const ordered = [...groups.values()].sort((a, b) => Number(a.external) - Number(b.external));
   for (const group of ordered) {
-    await sendTicketEmail(eventKey, emailTicket, group.recipients, group.context, config, {
+    const urgent = [];
+    for (const r of group.recipients) {
+      if (!r.channels.email) continue;
+      if (isUrgentEmail(eventKey, ticket, r.user, group.context)) {
+        urgent.push(r);
+        continue;
+      }
+      // Whoever is left on an assignment is neither the old nor the new assignee.
+      const context = eventKey === 'TICKET_ASSIGNED' && !group.context.unassignedYou
+        ? { ...group.context, assignedElsewhere: true }
+        : group.context;
+      await enqueueTicketEmail(r.user._id, emailTicket, {
+        event: eventKey, context, notificationId: notificationIds.get(String(r.user._id)),
+      }, config);
+    }
+    if (urgent.length === 0) continue;
+    await sendUrgentTicketEmail(eventKey, emailTicket, urgent, group.context, config, {
       ...deps,
       allowTestSink: !testSinkUsed,
+      notificationIds,
     });
     testSinkUsed = true;
   }

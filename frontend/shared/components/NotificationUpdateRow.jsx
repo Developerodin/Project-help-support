@@ -5,10 +5,12 @@ import Icon from '@/shared/components/icons.jsx';
 import {
   formatAbsoluteTime,
   formatRelativeTime,
+  notificationActivityAt,
   notificationChipLabel,
   notificationEventIconName,
   notificationHref,
   notificationPrimaryLine,
+  notificationUpdateCount,
   notificationUpdateDescription,
 } from '@/shared/lib/notification-utils.js';
 
@@ -17,11 +19,14 @@ export default function NotificationUpdateRow({
   onNavigate,
   onMarkRead,
   showMarkRead = false,
+  markForYou = false,
 }) {
   const unread = !item.readAt;
   const href = notificationHref(item.link);
   const title = notificationPrimaryLine(item);
   const description = notificationUpdateDescription(item) ?? notificationChipLabel(item);
+  const activityAt = notificationActivityAt(item);
+  const updates = notificationUpdateCount(item);
 
   const rowClass = [
     'notif-update-row',
@@ -42,13 +47,23 @@ export default function NotificationUpdateRow({
           {unread ? <span className="sr-only">Unread: </span> : null}
           {title}
         </Link>
-        <time
-          className="notif-update-row__time meta"
-          dateTime={item.createdAt}
-          title={formatAbsoluteTime(item.createdAt)}
-        >
-          {formatRelativeTime(item.createdAt)}
-        </time>
+        <span className="notif-update-row__time meta">
+          {markForYou && item.forYou ? (
+            <>
+              <span className="chip chip-sm notif-chip--sig">For you</span>
+              <span aria-hidden="true"> · </span>
+            </>
+          ) : null}
+          <time dateTime={activityAt} title={formatAbsoluteTime(activityAt)}>
+            {formatRelativeTime(activityAt)}
+          </time>
+          {updates > 1 ? (
+            <>
+              <span aria-hidden="true"> · </span>
+              <span>{updates} updates</span>
+            </>
+          ) : null}
+        </span>
         {description ? (
           <p className="notif-update-row__desc meta">{description}</p>
         ) : null}

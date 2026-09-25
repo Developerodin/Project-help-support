@@ -381,7 +381,7 @@ const FILTER_PAGES = Object.freeze({
   board: { path: '/tickets/board', label: 'Board', fields: ['mine'] },
   projects: { path: '/projects', label: 'Projects', fields: ['search', 'rows'] },
   teams: { path: '/teams', label: 'Teams', fields: ['search', 'team_scope', 'team_status', 'rows'] },
-  notifications: { path: '/notifications', label: 'Notifications', fields: ['unread'] },
+  notifications: { path: '/notifications', label: 'Notifications', fields: ['unread', 'notification_tab'] },
   analytics: {
     path: '/tickets/analytics',
     label: 'Analytics',
@@ -401,7 +401,8 @@ const SET_PAGE_FILTERS = fn(
   'set_page_filters',
   'Change the filters on another page, right away (it opens the page if needed). Tickets and People have their own '
     + 'tools. Fields per page: board: mine (true = only my tickets, false = everyone). projects: search, rows. '
-    + 'teams: search, team_scope, team_status, rows. notifications: unread. analytics: trend_group_by, '
+    + 'teams: search, team_scope, team_status, rows. notifications: unread, notification_tab (for_you = mentions, '
+    + 'assignments and replies to you; all = everything). analytics: trend_group_by, '
     + 'throughput_group_by, window_days (14, 30, 60 or 90), breakdown. audit_log: audit_category, audit_action (e.g. '
     + 'role_matrix.update), audit_order, rows. Pass null for every field you are not changing; "any" clears a text or choice.',
   {
@@ -409,6 +410,7 @@ const SET_PAGE_FILTERS = fn(
     search: nullable({ type: 'string' }),
     mine: nullable({ type: 'boolean' }),
     unread: nullable({ type: 'boolean', description: 'true = unread only.' }),
+    notification_tab: nullableEnum(['for_you', 'all']),
     team_scope: nullableEnum(['all', 'global', 'project', 'empty']),
     team_status: nullableEnum(['active', 'archived']),
     trend_group_by: nullableEnum(['day', 'week']),
@@ -1228,6 +1230,8 @@ const HANDLERS = {
       // Explicit 0: a missing mine means "the saved choice" to the Board.
       mine: ['mine', (v) => (v ? '1' : '0')],
       unread: ['unread', (v) => (v ? '1' : null)],
+      // The inbox opens on For you; only All needs the param.
+      notification_tab: ['tab', (v) => (v === 'all' ? 'all' : null)],
       team_scope: ['scope', (v) => (v === 'all' ? null : v)],
       team_status: ['status', (v) => (v === 'archived' ? v : null)],
       trend_group_by: ['trendGroupBy', (v) => (v === 'week' ? v : null)],

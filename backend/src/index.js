@@ -7,11 +7,15 @@ import { createApp } from './app.js';
 import { seedAdmin, seedProjects, runLegacyMigrations } from './seed.js';
 import User from './modules/users/user.model.js';
 import { buildInviteDeliverer, buildResetDeliverer } from './modules/notifications/dispatch.js';
-import { backfillNotificationProjects } from './modules/notifications/notification.service.js';
+import {
+  backfillNotificationActivity,
+  backfillNotificationProjects,
+} from './modules/notifications/notification.service.js';
 import logger from './platform/logger.js';
 import { retryPendingAuditOutbox } from './modules/rbac/rbac-audit.js';
 import {
   replayNotificationOutboxOnBoot,
+  scheduleEmailBatchFlush,
   scheduleNotificationOutboxReplay,
 } from './modules/notifications/retry.runtime.js';
 
@@ -39,6 +43,16 @@ async function backfillNotificationProjectsOnBoot() {
     if (updated > 0) logger.info('notifications.project_backfill', { updated });
   } catch (err) {
     logger.error('notifications.project_backfill_failed', { error: err.message, stack: err.stack });
+  }
+}
+
+/** Rows from before notifications carried `activityAt`; a no-op once they all do. */
+async function backfillNotificationActivityOnBoot() {
+  try {
+    const updated = await backfillNotificationActivity();
+    if (updated > 0) logger.info('notifications.activity_backfill', { updated });
+  } catch (err) {
+    logger.error('notifications.activity_backfill_failed', { error: err.message, stack: err.stack });
   }
 }
 
@@ -85,11 +99,13 @@ async function start() {
 
   await connectDb(config.mongoUrl);
   await backfillNotificationProjectsOnBoot();
+  await backfillNotificationActivityOnBoot();
   await replayAuditOutboxOnBoot();
   await replayNotificationOutboxOnBoot(config);
   const stopAuditReplay = scheduleAuditOutboxReplay();
   const stopNotificationReplay = scheduleNotificationOutboxReplay(config);
-  registerShutdown([stopAuditReplay, stopNotificationReplay]);
+  const stopEmailBatchFlush = scheduleEmailBatchFlush(config);
+  registerShutdown([stopAuditReplay, stopNotificationReplay, stopEmailBatchFlush]);
   await seedAdmin(config);
   // The oldest admin owns the seeded projects; createdBy is required on Project.
   const seedActor = await User.findOne({ role: 'admin' }).sort({ createdAt: 1 });

@@ -6,6 +6,7 @@ import NotificationUpdateRow from '@/shared/components/NotificationUpdateRow.jsx
 import {
   groupHasUnread,
   notificationGroupHref,
+  sumNotificationUpdates,
   ticketSubjectFromGroup,
   visibleUpdates,
 } from '@/shared/lib/notification-utils.js';
@@ -15,16 +16,19 @@ export default function NotificationTicketCard({
   onTitleClick,
   onViewTicket,
   onMarkRead,
+  markForYou = false,
 }) {
   const [expanded, setExpanded] = useState(false);
   const { ticketKey, items } = group;
-  const count = items.length;
+  // Updates, not rows: a row can hold several updates the server merged.
+  const count = sumNotificationUpdates(items);
   const unreadInGroup = groupHasUnread(items);
-  const unreadCount = items.filter((item) => !item.readAt).length;
+  const unreadCount = sumNotificationUpdates(items.filter((item) => !item.readAt));
   const project = group.latest?.project;
   const subject = ticketSubjectFromGroup(group);
   const ticketHref = notificationGroupHref(group);
-  const { visible, hiddenCount } = visibleUpdates(items, expanded);
+  const { visible } = visibleUpdates(items, expanded);
+  const hiddenCount = sumNotificationUpdates(items.slice(visible.length));
 
   const cardClass = [
     'notif-ticket-card',
@@ -67,6 +71,7 @@ export default function NotificationTicketCard({
             showMarkRead
             onNavigate={onTitleClick}
             onMarkRead={onMarkRead}
+            markForYou={markForYou}
           />
         ))}
       </div>

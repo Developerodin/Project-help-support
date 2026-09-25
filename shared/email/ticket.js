@@ -1,5 +1,6 @@
 import { STAGES, stageIndex, stageLabel } from '../stages.js';
 import { EMAIL_BRAND } from './brand.js';
+import { escapeHtml } from './escape.js';
 import {
   renderEmailLayout, eyebrow, paragraph, detailTable, quoteBlock,
 } from './layout.js';
@@ -20,7 +21,9 @@ const EVENT_COPY = Object.freeze({
   },
   TICKET_STAGE_CHANGED: {
     kicker: 'Stage moved',
-    lead: (actor) => `${actor} moved this ticket to a new stage.`,
+    // The subject no longer names the stage (one subject per ticket, so mail
+    // threads), so the first line of the body has to.
+    lead: (actor, context) => `${actor} moved this ticket to ${context?.to ? stageLabel(context.to) : 'a new stage'}.`,
     cta: 'Open ticket',
   },
   TICKET_REOPENED: {
@@ -54,6 +57,13 @@ const EVENT_COPY = Object.freeze({
 const UNASSIGNED_COPY = Object.freeze({
   kicker: 'Unassigned',
   lead: (actor) => `${actor} unassigned you from this ticket.`,
+  cta: 'Open ticket',
+});
+
+/** TICKET_ASSIGNED as everyone but the old and new assignee reads it (context.assignedElsewhere). */
+const ASSIGNED_ELSEWHERE_COPY = Object.freeze({
+  kicker: 'Assignee changed',
+  lead: (actor) => `${actor} changed who this ticket is assigned to.`,
   cta: 'Open ticket',
 });
 
@@ -132,19 +142,19 @@ function transitionStrip(from, to) {
     + '</tr></table>';
 }
 
-export function ticketEmailSubject(event, ticket, context = {}) {
-  const subjects = {
-    TICKET_CREATED: (t) => `[${t.ticketId}] Filed: ${t.title}`,
-    TICKET_ASSIGNED: (t, c) => `[${t.ticketId}] ${c.unassignedYou ? 'Unassigned' : 'Assigned'}: ${t.title}`,
-    TICKET_STAGE_CHANGED: (t, c) => `[${t.ticketId}] ${stageLabel(c.to)}: ${t.title}`,
-    TICKET_REOPENED: (t) => `[${t.ticketId}] Reopened: ${t.title}`,
-    TICKET_CLOSED: (t) => `[${t.ticketId}] Closed: ${t.title}`,
-    TICKET_COMMENTED: (t) => `[${t.ticketId}] New comment: ${t.title}`,
-    TICKET_MENTIONED: (t) => `[${t.ticketId}] You were mentioned: ${t.title}`,
-    TICKET_ESTIMATE_SET: (t) => `[${t.ticketId}] Estimates updated: ${t.title}`,
-  };
-  const fn = subjects[event] ?? ((t) => `[${t.ticketId}] ${t.title}`);
-  return fn(ticket, context);
+/**
+ * One subject per ticket, whatever happened, so every client threads a
+ * ticket's mail together (the In-Reply-To/References headers do the rest).
+ * What happened is the first line of the body instead.
+ */
+export function ticketEmailSubject(ticket) {
+  return `[${ticket.ticketId}] ${ticket.title}`;
+}
+
+function copyFor(event, context = {}) {
+  if (event === 'TICKET_ASSIGNED' && context.unassignedYou) return UNASSIGNED_COPY;
+  if (event === 'TICKET_ASSIGNED' && context.assignedElsewhere) return ASSIGNED_ELSEWHERE_COPY;
+  return EVENT_COPY[event] ?? FALLBACK_COPY;
 }
 
 /**
@@ -191,11 +201,9 @@ function ticketBrandName(context = {}) {
 
 export function renderTicketEmail(event, ticket, context = {}, config = {}) {
   const link = `${config.frontendBaseUrl}/tickets?ticket=${encodeURIComponent(ticket.ticketId)}`;
-  const copy = event === 'TICKET_ASSIGNED' && context.unassignedYou
-    ? UNASSIGNED_COPY
-    : (EVENT_COPY[event] ?? FALLBACK_COPY);
+  const copy = copyFor(event, context);
   const actor = context.actorName || 'Someone';
-  const lead = copy.lead(actor);
+  const lead = copy.lead(actor, context);
 
   const facts = ticketFacts(ticket, context);
   const comment = context.comment ? truncate(context.comment, 400) : '';
@@ -249,8 +257,116 @@ export function renderTicketEmail(event, ticket, context = {}, config = {}) {
   });
 
   return {
-    subject: ticketEmailSubject(event, ticket, context),
+    subject: ticketEmailSubject(ticket),
     text,
     html,
   };
+}
+
+/** "In QA -> Staging -> Done": every stage the ticket passed through in the digest. */
+function stagePath(labels) {
+  if (labels.length < 2) return '';
+  const arrow = '<td style="padding:0 10px;color:' + C.inkMuted + ';font-size:14px;">&rarr;</td>';
+  const cells = labels.map((label, i) => '<td style="font-family:' + F + ';font-size:14px;line-height:1.3;'
+    + 'font-weight:' + (i === labels.length - 1 ? '700' : '500') + ';'
+    + 'color:' + (i === labels.length - 1 ? C.ink : C.inkMuted) + ';">' + escapeHtml(label) + '</td>');
+  return '<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 6px;">'
+    + '<tr>' + cells.join(arrow) + '</tr></table>';
+}
+
+/** One update in the digest: who did what, and the words they wrote if any. */
+function digestRow(line, snippet, highlight) {
+  const accent = highlight ? C.sig : C.rule;
+  return '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:12px 0 0;">'
+    + '<tr><td style="border-left:3px solid ' + accent + ';padding:2px 0 2px 12px;">'
+    + '<p style="margin:0;font-family:' + F + ';font-size:14px;line-height:1.5;color:' + C.ink + ';'
+    + 'font-weight:' + (highlight ? '700' : '500') + ';">' + escapeHtml(line) + '</p>'
+    + (snippet
+      ? '<p style="margin:4px 0 0;font-family:' + F + ';font-size:14px;line-height:1.5;color:' + C.inkSecondary + ';">'
+        + escapeHtml(snippet) + '</p>'
+      : '')
+    + '</td></tr></table>';
+}
+
+const STAGE_ITEM_EVENTS = new Set(['TICKET_STAGE_CHANGED', 'TICKET_REOPENED', 'TICKET_CLOSED']);
+
+/**
+ * The labels the ticket passed through, in order, collapsing repeats. A net
+ * move folded from several carries the stages in between as `stagePath`.
+ */
+function stagePathLabels(items) {
+  const keys = [];
+  for (const { event, context = {} } of items) {
+    if (!STAGE_ITEM_EVENTS.has(event) || !context.to) continue;
+    const hops = Array.isArray(context.stagePath) ? context.stagePath : [context.from, context.to];
+    for (const key of hops) {
+      if (key && keys[keys.length - 1] !== key) keys.push(key);
+    }
+  }
+  return keys.map((key) => stageLabel(key));
+}
+
+/**
+ * Several updates on one ticket for one person, as one email. `items` are
+ * `{ event, context }` pairs in the order they happened, each context already
+ * cut for this reader's audience (an external one carries no notes and only
+ * client-facing statuses). Mentions are pulled to the top.
+ */
+export function renderTicketDigestEmail(ticket, items, context = {}, config = {}) {
+  const link = `${config.frontendBaseUrl}/tickets?ticket=${encodeURIComponent(ticket.ticketId)}`;
+  const ordered = [
+    ...items.filter((item) => item.event === 'TICKET_MENTIONED'),
+    ...items.filter((item) => item.event !== 'TICKET_MENTIONED'),
+  ];
+  const heading = `${items.length} updates on ${ticket.ticketId}`;
+  // The reader's own view of where the ticket sits: an external context
+  // carries the collapsed status, which the stored ticket.status would leak.
+  const lastTo = [...items].reverse().find((item) => item.context?.to)?.context.to;
+  const facts = ticketFacts(ticket, { to: lastTo });
+  const path = stagePathLabels(items);
+
+  const rows = ordered.map(({ event, context: itemContext = {} }) => {
+    const actor = itemContext.commentAuthor || itemContext.actorName || 'Someone';
+    const snippet = truncate(itemContext.comment || itemContext.reason || itemContext.note || '', 200);
+    return {
+      line: copyFor(event, itemContext).lead(actor, itemContext),
+      snippet,
+      highlight: event === 'TICKET_MENTIONED',
+    };
+  });
+
+  const bodyHtml = [
+    paragraph(heading),
+    stagePath(path),
+    ...rows.map((row) => digestRow(row.line, row.snippet, row.highlight)),
+    pipelineRail(lastTo ?? ticket.status),
+    detailTable(facts),
+  ].filter(Boolean).join('');
+
+  const text = [
+    heading,
+    '',
+    `${ticket.ticketId}: ${ticket.title}`,
+    ...(path.length > 1 ? ['', `Stage: ${path.join(' -> ')}`] : []),
+    '',
+    ...rows.map((row) => `- ${row.line}${row.snippet ? ` "${row.snippet}"` : ''}`),
+    '',
+    ...plainFacts(facts),
+    '',
+    link,
+    '',
+    'Attachments are available from the ticket page.',
+  ].join('\n');
+
+  const html = renderEmailLayout({
+    preheader: `${heading}: ${ticket.title}`,
+    eyebrow: eyebrow('Updates', ticket.ticketId),
+    title: ticket.title,
+    bodyHtml,
+    cta: { label: 'Open ticket', href: link },
+    brandName: ticketBrandName(context),
+    footerNote: 'Attachments are available from the ticket page.',
+  });
+
+  return { subject: ticketEmailSubject(ticket), text, html };
 }

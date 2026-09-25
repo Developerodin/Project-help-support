@@ -7,11 +7,15 @@ import useSWR from 'swr';
 import Icon from '@/shared/components/icons.jsx';
 import AppLoader from '@/shared/components/app-loader.jsx';
 import NotificationRow from '@/shared/components/notification-row.jsx';
+import NotificationTabs, {
+  NOTIFICATION_TAB_ALL,
+  NOTIFICATION_TAB_FOR_YOU,
+  notificationTabId,
+} from '@/shared/components/notification-tabs.jsx';
 import { getPushConfig } from '@/shared/api/notifications.js';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import { normalizeApiError } from '@/shared/lib/api-error.js';
 import {
-  bellNotificationRows,
   notificationHref,
   notificationTicketObjectId,
 } from '@/shared/lib/notification-utils.js';
@@ -32,6 +36,8 @@ import { showToast } from '@/shared/lib/toast.js';
 
 const PANEL_ID = 'notif-panel';
 const HEADING_ID = 'notif-panel-title';
+const TABS_ID = 'notif-bell';
+const TABPANEL_ID = 'notif-panel-list';
 const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
 const PUSH_OFFER_DISMISSED_KEY = 'notif-push-offer-dismissed';
 
@@ -55,8 +61,11 @@ function rememberPushOfferDismissed() {
 
 function getFocusableElements(root) {
   if (!root) return [];
+  // Inactive tabs (tabindex -1) are reached with the arrow keys inside the tablist.
   return Array.from(root.querySelectorAll(FOCUSABLE)).filter(
-    (el) => !el.hasAttribute('disabled') && el.getAttribute('aria-hidden') !== 'true',
+    (el) => !el.hasAttribute('disabled')
+      && el.getAttribute('aria-hidden') !== 'true'
+      && el.getAttribute('tabindex') !== '-1',
   );
 }
 
@@ -79,6 +88,8 @@ export default function NotificationBell() {
   const router = useRouter();
   const liveId = useId();
   const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState(NOTIFICATION_TAB_FOR_YOU);
+  const forYou = tab === NOTIFICATION_TAB_FOR_YOU;
   const { impersonation } = useAuth();
   const [pushOffer, setPushOffer] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
@@ -98,7 +109,10 @@ export default function NotificationBell() {
     mutate: mutateRecent,
   } = useSWR(
     open
-      ? notificationListSwrKey(notificationSwrKeys.recent(), { limit: NOTIFICATION_DROPDOWN_LIMIT })
+      ? notificationListSwrKey(
+        notificationSwrKeys.recent(forYou),
+        { limit: NOTIFICATION_DROPDOWN_LIMIT, forYou },
+      )
       : null,
     fetchNotificationList,
     { refreshInterval: open ? refreshInterval : 0 },
@@ -162,7 +176,8 @@ export default function NotificationBell() {
         return;
       }
 
-      if (!panel?.contains(event.target)) return;
+      // The tablist handles its own arrow keys.
+      if (!panel?.contains(event.target) || event.defaultPrevented) return;
 
       const items = getFocusableElements(panel);
       if (items.length === 0) return;
@@ -249,10 +264,17 @@ export default function NotificationBell() {
     setPushOffer(false);
   }
 
-  /** A grouped row ("+N more for WEB-1") reads all of that ticket's updates. */
-  async function handleItemNavigate(event, item, grouped) {
+  /**
+   * Opening a row reads that ticket's other unread rows in this list too (a
+   * "for you" row and a merged routine row can sit side by side), since the
+   * ticket page shows them all.
+   */
+  async function handleItemNavigate(event, item) {
     const href = notificationHref(item.link);
-    const ticketObjectId = grouped ? notificationTicketObjectId(item) : null;
+    const itemTicket = notificationTicketObjectId(item);
+    const ticketObjectId = itemTicket && rawItems.some(
+      (other) => other.id !== item.id && !other.readAt && notificationTicketObjectId(other) === itemTicket,
+    ) ? itemTicket : null;
     if (!item.readAt) {
       event.preventDefault();
       setOpen(false);
@@ -274,26 +296,21 @@ export default function NotificationBell() {
     [rawItems],
   );
 
-  const unreadRows = useMemo(() => bellNotificationRows(unreadItems), [unreadItems]);
-  const earlierRows = useMemo(() => bellNotificationRows(earlierItems), [earlierItems]);
+  // One row per server row: routine updates on a ticket already arrive merged
+  // (with `count`), so grouping here again would count them twice.
   const showEmpty = !recentLoading && !listError && rawItems.length === 0;
   const showRecentLoader = open && recentLoading && !listError;
 
-  function renderBellRow(row) {
-    const { latest, hidden, ticketKey } = row;
+  function renderBellRow(item) {
     return (
-      <div key={latest.id} className="notif-bell__row-wrap">
+      <div key={item.id} className="notif-bell__row-wrap">
         <NotificationRow
-          item={latest}
+          item={item}
           as="link"
           className="notif-bell__row"
-          onNavigate={(event, item) => handleItemNavigate(event, item, hidden > 0)}
+          markForYou={!forYou}
+          onNavigate={handleItemNavigate}
         />
-        {hidden > 0 && ticketKey ? (
-          <p className="notif-bell__more meta">
-            +{hidden} more for {ticketKey}
-          </p>
-        ) : null}
       </div>
     );
   }
@@ -333,11 +350,24 @@ export default function NotificationBell() {
         <div className="menucap notif-bell__head">
           <strong id={HEADING_ID} ref={headingRef} tabIndex={-1}>Notifications</strong>
           {unreadCount > 0 && (
-            <button type="button" className="btn btn-ghost btn-sm" onClick={handleMarkAllRead}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={handleMarkAllRead}
+              title="Marks every notification read, in both tabs"
+            >
               Mark all read
             </button>
           )}
         </div>
+
+        <NotificationTabs
+          value={tab}
+          onChange={setTab}
+          idPrefix={TABS_ID}
+          panelId={TABPANEL_ID}
+          className="notif-bell__tabs"
+        />
 
         {pushOffer ? (
           <div className="notif-bell__push">
@@ -356,7 +386,12 @@ export default function NotificationBell() {
           </div>
         ) : null}
 
-        <div className="menuscroll notif-bell__scroll">
+        <div
+          className="menuscroll notif-bell__scroll"
+          role="tabpanel"
+          id={TABPANEL_ID}
+          aria-labelledby={notificationTabId(TABS_ID, tab)}
+        >
           {showRecentLoader && (
             <div className="notif-bell__loading">
               <AppLoader inline label="Loading…" ariaLabel="Loading notifications" />
@@ -372,26 +407,33 @@ export default function NotificationBell() {
             </div>
           )}
 
-          {showEmpty && (
+          {showEmpty && (forYou ? (
+            <div className="notif-bell__empty">
+              <p className="meta">Nothing for you right now.</p>
+              <button type="button" className="btn btn-sm" onClick={() => setTab(NOTIFICATION_TAB_ALL)}>
+                Show all
+              </button>
+            </div>
+          ) : (
             <p className="notif-bell__empty meta">No notifications yet.</p>
-          )}
+          ))}
 
-          {!recentLoading && !listError && unreadRows.length > 0 && (
+          {!recentLoading && !listError && unreadItems.length > 0 && (
             <section className="notif-bell__section" aria-label="Unread">
               <p className="notif-bell__section-label meta">Unread</p>
               <div className="notif-bell__list">
-                {unreadRows.map(renderBellRow)}
+                {unreadItems.map(renderBellRow)}
               </div>
             </section>
           )}
 
-          {!recentLoading && !listError && earlierRows.length > 0 && (
+          {!recentLoading && !listError && earlierItems.length > 0 && (
             <section className="notif-bell__section" aria-label="Earlier">
-              {unreadRows.length > 0 ? (
+              {unreadItems.length > 0 ? (
                 <p className="notif-bell__section-label meta">Earlier</p>
               ) : null}
               <div className="notif-bell__list">
-                {earlierRows.map(renderBellRow)}
+                {earlierItems.map(renderBellRow)}
               </div>
             </section>
           )}

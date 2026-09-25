@@ -25,6 +25,8 @@ const DEFAULT_EMAIL_RETRY_INTERVAL_MS = 5 * 60 * 1000;
 const DEFAULT_EMAIL_RETRY_GRACE_MS = 5 * 60 * 1000;
 const DEFAULT_EMAIL_RETRY_MAX_ATTEMPTS = 3;
 const DEFAULT_EMAIL_RETRY_BATCH_LIMIT = 100;
+const DEFAULT_EMAIL_BATCH_WINDOW_MS = 5 * 60 * 1000;
+const DEFAULT_EMAIL_BATCH_MAX_MS = 15 * 60 * 1000;
 
 const present = (v) => typeof v === 'string' && v.trim().length > 0;
 
@@ -334,6 +336,10 @@ export function loadConfig(env = process.env) {
         'EMAIL_RETRY_BATCH_LIMIT',
         DEFAULT_EMAIL_RETRY_BATCH_LIMIT,
       ),
+      // Routine ticket mail waits this long for more updates on the same
+      // ticket (each one restarts the wait), but never past the max.
+      batchWindowMs: readPositiveInt(env, 'EMAIL_BATCH_WINDOW_MS', DEFAULT_EMAIL_BATCH_WINDOW_MS),
+      batchMaxMs: readPositiveInt(env, 'EMAIL_BATCH_MAX_MS', DEFAULT_EMAIL_BATCH_MAX_MS),
       tlsRejectUnauthorized: !['false', '0'].includes(
         String(env.SMTP_TLS_REJECT_UNAUTHORIZED ?? 'true').trim().toLowerCase(),
       ),

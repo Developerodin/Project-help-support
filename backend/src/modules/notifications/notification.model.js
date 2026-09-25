@@ -15,12 +15,22 @@ const notificationSchema = new mongoose.Schema(
     body: { type: String },
     link: { type: String },
     readAt: { type: Date, default: null },
+    // Routine updates on one ticket fold into the reader's one unread row for
+    // it: `count` is how many it holds, `activityAt` when the latest landed.
+    count: { type: Number, default: 1 },
+    activityAt: { type: Date, required: true, default: Date.now },
+    // Addressed to this person (a mention, an assignment to them, a comment on
+    // a ticket they raised). Always its own row, never folded.
+    forYou: { type: Boolean, default: false },
   },
   { timestamps: true },
 );
 
-notificationSchema.index({ user: 1, readAt: 1, createdAt: -1 });
-notificationSchema.index({ user: 1, project: 1, readAt: 1, createdAt: -1 });
+// The list sorts by activityAt: a folded row moves up when it gains an update.
+notificationSchema.index({ user: 1, activityAt: -1 });
+notificationSchema.index({ user: 1, readAt: 1, activityAt: -1 });
+notificationSchema.index({ user: 1, forYou: 1, readAt: 1, activityAt: -1 });
+notificationSchema.index({ user: 1, project: 1, readAt: 1, activityAt: -1 });
 // Read rows expire 90 days after they were read. Mongo's TTL monitor skips a
 // null or missing date, so an unread row is never expired, however old.
 notificationSchema.index({ readAt: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 });

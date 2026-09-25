@@ -110,6 +110,11 @@ async function filterVisibleUsersForTicket(users, ticket, { exemptInternalId = n
   return visible;
 }
 
+/** The same audience check, for one person, when their batched email goes out. */
+export async function canUserViewTicket(user, ticket) {
+  return (await filterVisibleUsersForTicket([user], ticket)).length > 0;
+}
+
 function mentionIdsFromContext(context = {}) {
   if (!Array.isArray(context.mentions)) return [];
 

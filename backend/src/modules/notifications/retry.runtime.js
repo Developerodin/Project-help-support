@@ -1,7 +1,10 @@
 import logger from '../../platform/logger.js';
-import { retryPendingEmails, retryPendingTransactionalEmails } from './email.service.js';
+import { flushDueEmailBatches, retryPendingEmails, retryPendingTransactionalEmails } from './email.service.js';
 
 const DEFAULT_INTERVAL_MS = 5 * 60 * 1000;
+// How late a batch can go out past its sendAfter. The batch window is minutes,
+// so 30s of slack is invisible; lowering it only buys more empty queries.
+const FLUSH_INTERVAL_MS = 30 * 1000;
 
 function replayOptions(config) {
   return {
@@ -71,6 +74,40 @@ export function scheduleNotificationOutboxReplay(config, deps = {}) {
       });
     }
   }, intervalMs);
+
+  handle.unref?.();
+  return () => clear(handle);
+}
+
+let flushing = false;
+
+/**
+ * Sends ticket-email batches whose quiet window has lapsed. Same shape as the
+ * replay above: a tick that finds the previous one still running is skipped,
+ * and the row claims keep a second process from sending a batch twice.
+ */
+export function scheduleEmailBatchFlush(config, deps = {}) {
+  if (!config?.features?.email) return () => {};
+
+  const schedule = deps.setIntervalFn ?? setInterval;
+  const clear = deps.clearIntervalFn ?? clearInterval;
+
+  const handle = schedule(async () => {
+    if (flushing) return;
+    flushing = true;
+    try {
+      const result = await flushDueEmailBatches(config, deps, {
+        graceMs: config?.email?.retryGraceMs,
+        maxAttempts: config?.email?.retryMaxAttempts,
+        limit: config?.email?.retryBatchLimit,
+      });
+      if (result.attempted > 0) logger.info('notifications.email_batch_flush', result);
+    } catch (err) {
+      logger.error('notifications.email_batch_flush_failed', { error: err.message, stack: err.stack });
+    } finally {
+      flushing = false;
+    }
+  }, FLUSH_INTERVAL_MS);
 
   handle.unref?.();
   return () => clear(handle);

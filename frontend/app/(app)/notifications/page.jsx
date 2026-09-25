@@ -8,6 +8,11 @@ import Icon from '@/shared/components/icons.jsx';
 import AppLoader from '@/shared/components/app-loader.jsx';
 import FormError from '@/shared/components/form-error.jsx';
 import NotificationTicketCard from '@/shared/components/NotificationTicketCard.jsx';
+import NotificationTabs, {
+  NOTIFICATION_TAB_ALL,
+  NOTIFICATION_TAB_FOR_YOU,
+  notificationTabId,
+} from '@/shared/components/notification-tabs.jsx';
 import {
   groupHasUnread,
   groupNotificationsByTicket,
@@ -29,15 +34,21 @@ import {
 } from '@/shared/lib/notification-swr.js';
 import { windowedPageNumbers } from '@/shared/lib/ticket-list-query.js';
 
+const TABS_ID = 'notif-inbox';
+const TABPANEL_ID = 'notif-inbox-list';
+
 export default function NotificationsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const unreadOnly = searchParams.get('unread') === '1';
+  // "For you" unless the address says `tab=all`.
+  const tab = searchParams.get('tab') === NOTIFICATION_TAB_ALL ? NOTIFICATION_TAB_ALL : NOTIFICATION_TAB_FOR_YOU;
+  const forYou = tab === NOTIFICATION_TAB_FOR_YOU;
   const [page, setPage] = useState(1);
-  // Unread on/off from anywhere (the toggle, the assistant, back/forward) starts at page 1.
+  // Unread or tab changed from anywhere (the controls, the assistant, back/forward) starts at page 1.
   useEffect(() => {
     setPage(1);
-  }, [unreadOnly]);
+  }, [unreadOnly, forYou]);
   const limit = NOTIFICATION_INBOX_LIMIT;
   const refreshInterval = useNotificationPollInterval();
 
@@ -45,8 +56,8 @@ export default function NotificationsPage() {
 
   const { data, error, isLoading, mutate } = useSWR(
     notificationListSwrKey(
-      notificationSwrKeys.inbox(page, limit, unreadOnly),
-      { page, limit, unread: unreadOnly },
+      notificationSwrKeys.inbox(page, limit, unreadOnly, forYou),
+      { page, limit, unread: unreadOnly, forYou },
     ),
     fetchNotificationList,
     { refreshInterval },
@@ -69,13 +80,21 @@ export default function NotificationsPage() {
   const rangeStart = totalResults === 0 ? 0 : (page - 1) * limit + 1;
   const rangeEnd = Math.min(page * limit, totalResults);
 
-  function setUnreadFilter(nextUnreadOnly) {
+  function replaceParam(name, value) {
     const params = new URLSearchParams(searchParams.toString());
-    if (nextUnreadOnly) params.set('unread', '1');
-    else params.delete('unread');
+    if (value) params.set(name, value);
+    else params.delete(name);
     const q = params.toString();
     router.replace(q ? `/notifications?${q}` : '/notifications', { scroll: false });
     setPage(1);
+  }
+
+  function setUnreadFilter(nextUnreadOnly) {
+    replaceParam('unread', nextUnreadOnly ? '1' : null);
+  }
+
+  function setTab(nextTab) {
+    replaceParam('tab', nextTab === NOTIFICATION_TAB_ALL ? NOTIFICATION_TAB_ALL : null);
   }
 
   async function handleMarkRead(id) {
@@ -147,7 +166,7 @@ export default function NotificationsPage() {
               aria-pressed={!unreadOnly}
               onClick={() => setUnreadFilter(false)}
             >
-              All
+              Read &amp; unread
             </button>
             <button
               type="button"
@@ -162,7 +181,7 @@ export default function NotificationsPage() {
               type="button"
               className="btn btn-sm"
               onClick={handleMarkAllRead}
-              title="Marks every notification read, in all projects"
+              title="Marks every notification read, in both tabs and all projects"
             >
               Mark all read
             </button>
@@ -178,110 +197,131 @@ export default function NotificationsPage() {
         </div>
       </header>
 
-      {showInboxLoader && <AppLoader inline label="Loading notifications…" ariaLabel="Loading notifications" />}
+      <NotificationTabs
+        value={tab}
+        onChange={setTab}
+        idPrefix={TABS_ID}
+        panelId={TABPANEL_ID}
+        className="notif-inbox__tabs"
+      />
 
-      {error && (
-        <div className="notif-inbox__error">
-          <FormError error={error} title="Could not load notifications" />
-          <button type="button" className="btn btn-sm" onClick={() => mutate()}>
-            Retry
-          </button>
-        </div>
-      )}
+      <div role="tabpanel" id={TABPANEL_ID} aria-labelledby={notificationTabId(TABS_ID, tab)}>
+        {showInboxLoader && <AppLoader inline label="Loading notifications…" ariaLabel="Loading notifications" />}
 
-      {!isLoading && !error && items.length === 0 && (
-        <div className="empty-state">
-          <h3>{unreadOnly ? 'No unread notifications' : 'No notifications'}</h3>
-          <p>
-            {unreadOnly
-              ? 'You are caught up. Show all to see earlier updates.'
-              : 'When someone assigns you a ticket or mentions you in a comment, it will show up here.'}
-          </p>
-          {unreadOnly ? (
-            <button type="button" className="btn" onClick={() => setUnreadFilter(false)}>
-              Show all
+        {error && (
+          <div className="notif-inbox__error">
+            <FormError error={error} title="Could not load notifications" />
+            <button type="button" className="btn btn-sm" onClick={() => mutate()}>
+              Retry
             </button>
-          ) : (
-            <Link href="/tickets" className="btn btn-primary">Browse tickets</Link>
-          )}
-        </div>
-      )}
+          </div>
+        )}
 
-      {items.length > 0 && !error && (
-        <>
-          {days.map((day) => (
-            <section key={day.label} className="notif-inbox__day">
-              <h2 className="notif-inbox__day-label meta">{day.label}</h2>
-              <div className="notif-list" role="list">
-                {day.groups.map((group) => (
-                  <NotificationTicketCard
-                    key={group.ticketKey ?? group.latest.id}
-                    group={group}
-                    onTitleClick={handleTitleClick}
-                    onViewTicket={handleViewTicket}
-                    onMarkRead={handleMarkRead}
-                  />
-                ))}
-              </div>
-            </section>
-          ))}
+        {!isLoading && !error && items.length === 0 && forYou && (
+          <div className="empty-state">
+            <h3>Nothing for you right now</h3>
+            <p>Mentions, tickets assigned to you and comments on tickets you raised show up here.</p>
+            <button type="button" className="btn" onClick={() => setTab(NOTIFICATION_TAB_ALL)}>
+              Show all notifications
+            </button>
+          </div>
+        )}
 
-          {totalResults > 0 && (
-            <nav className="pager" aria-label="Notifications pagination">
-              <div className="pager__meta" aria-live="polite" aria-atomic="true">
-                Showing {rangeStart}–{rangeEnd} of {totalResults}
-                {totalPages > 1 ? (
-                  <span className="of">Page {page} of {totalPages}</span>
-                ) : null}
-              </div>
+        {!isLoading && !error && items.length === 0 && !forYou && (
+          <div className="empty-state">
+            <h3>{unreadOnly ? 'No unread notifications' : 'No notifications'}</h3>
+            <p>
+              {unreadOnly
+                ? 'You are caught up. Show all to see earlier updates.'
+                : 'When someone assigns you a ticket or mentions you in a comment, it will show up here.'}
+            </p>
+            {unreadOnly ? (
+              <button type="button" className="btn" onClick={() => setUnreadFilter(false)}>
+                Show all
+              </button>
+            ) : (
+              <Link href="/tickets" className="btn btn-primary">Browse tickets</Link>
+            )}
+          </div>
+        )}
 
-              <div className="pager__controls">
-                <button
-                  type="button"
-                  className="pagebtn"
-                  aria-label="Previous page"
-                  disabled={page <= 1 || isLoading}
-                  onClick={() => setPage(page - 1)}
-                >
-                  Prev
-                </button>
-
-                <div className="pager__pages" role="group" aria-label="Page numbers">
-                  {pageNumbers.map((item, index) => (
-                    typeof item === 'number' ? (
-                      <button
-                        key={item}
-                        type="button"
-                        className="pagebtn"
-                        aria-label={`Page ${item}`}
-                        aria-current={item === page ? 'page' : undefined}
-                        disabled={isLoading}
-                        onClick={() => setPage(item)}
-                      >
-                        {item}
-                      </button>
-                    ) : (
-                      <span key={`gap-${index}-${item}`} className="of pager__gap" aria-hidden="true">
-                        {item}
-                      </span>
-                    )
+        {items.length > 0 && !error && (
+          <>
+            {days.map((day) => (
+              <section key={day.label} className="notif-inbox__day">
+                <h2 className="notif-inbox__day-label meta">{day.label}</h2>
+                <div className="notif-list" role="list">
+                  {day.groups.map((group) => (
+                    <NotificationTicketCard
+                      key={group.ticketKey ?? group.latest.id}
+                      group={group}
+                      onTitleClick={handleTitleClick}
+                      onViewTicket={handleViewTicket}
+                      onMarkRead={handleMarkRead}
+                      markForYou={!forYou}
+                    />
                   ))}
                 </div>
+              </section>
+            ))}
 
-                <button
-                  type="button"
-                  className="pagebtn"
-                  aria-label="Next page"
-                  disabled={page >= totalPages || isLoading}
-                  onClick={() => setPage(page + 1)}
-                >
-                  Next
-                </button>
-              </div>
-            </nav>
-          )}
-        </>
-      )}
+            {totalResults > 0 && (
+              <nav className="pager" aria-label="Notifications pagination">
+                <div className="pager__meta" aria-live="polite" aria-atomic="true">
+                  Showing {rangeStart}–{rangeEnd} of {totalResults}
+                  {totalPages > 1 ? (
+                    <span className="of">Page {page} of {totalPages}</span>
+                  ) : null}
+                </div>
+
+                <div className="pager__controls">
+                  <button
+                    type="button"
+                    className="pagebtn"
+                    aria-label="Previous page"
+                    disabled={page <= 1 || isLoading}
+                    onClick={() => setPage(page - 1)}
+                  >
+                    Prev
+                  </button>
+
+                  <div className="pager__pages" role="group" aria-label="Page numbers">
+                    {pageNumbers.map((item, index) => (
+                      typeof item === 'number' ? (
+                        <button
+                          key={item}
+                          type="button"
+                          className="pagebtn"
+                          aria-label={`Page ${item}`}
+                          aria-current={item === page ? 'page' : undefined}
+                          disabled={isLoading}
+                          onClick={() => setPage(item)}
+                        >
+                          {item}
+                        </button>
+                      ) : (
+                        <span key={`gap-${index}-${item}`} className="of pager__gap" aria-hidden="true">
+                          {item}
+                        </span>
+                      )
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    className="pagebtn"
+                    aria-label="Next page"
+                    disabled={page >= totalPages || isLoading}
+                    onClick={() => setPage(page + 1)}
+                  >
+                    Next
+                  </button>
+                </div>
+              </nav>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

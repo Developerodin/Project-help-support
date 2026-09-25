@@ -127,32 +127,68 @@ function notificationBody(event, ticket, context, recipient) {
   return truncate(detail ? `${title} — ${detail}` : title, 140);
 }
 
+/** Addressed to this reader rather than to everyone on the ticket. */
+function isForYou(event, ticket, recipient) {
+  const recipientId = idStr(recipient);
+  if (event === 'TICKET_MENTIONED') return true;
+  if (event === 'TICKET_ASSIGNED') return idStr(ticket.assignedTo) === recipientId;
+  if (event === 'TICKET_COMMENTED') return idStr(ticket.createdBy) === recipientId;
+  return false;
+}
+
 /**
- * One row per recipient, via insertMany. A Notification row is a single
- * idempotent database write, so the in-app channel genuinely IS exactly-once —
- * only email carries the duplicate risk. Title and body are built per
+ * One row per recipient, written or folded. Title and body are built per
  * recipient: they say "you", and an external recipient's never carry notes.
+ *
+ * A routine update folds into the recipient's unread, not-for-you row on the
+ * same ticket (latest title/body/link, count + 1, activityAt now), so a busy
+ * ticket is one line in the list rather than twenty. A for-you event always
+ * gets its own row. Returns every row touched, inserted or folded; a folded row
+ * keeps its id, so push and the email batch still point at a real row.
+ *
+ * Two events for the same person and ticket landing at the same instant can
+ * both miss and both insert, leaving two unread rows; the next update folds
+ * into the newer one. Harmless, so there is no unique index to prevent it.
  */
 export async function createInAppNotifications(event, ticket, recipients, config, context = {}) {
   const link = buildNotificationLink(ticket, config, {
     commentId: COMMENT_EVENTS.has(event) ? context.commentId : null,
   });
   const project = ticketProjectId(ticket);
+  const activityAt = new Date();
 
-  const rows = recipients
+  const outcomes = await Promise.all(recipients
     .filter((r) => r.channels.inApp)
-    .map((r) => ({
-      user: r.user._id,
-      event,
-      ticket: ticket._id,
-      project,
-      title: notificationTitle(event, ticket, context, r.user),
-      body: notificationBody(event, ticket, context, r.user),
-      link,
+    .map(async (r) => {
+      const row = {
+        user: r.user._id,
+        event,
+        ticket: ticket._id,
+        project,
+        title: notificationTitle(event, ticket, context, r.user),
+        body: notificationBody(event, ticket, context, r.user),
+        link,
+        activityAt,
+      };
+      if (isForYou(event, ticket, r.user)) return { insert: { ...row, forYou: true } };
+
+      const folded = await Notification.findOneAndUpdate(
+        // $ne, not false: rows written before the field existed have none.
+        { user: row.user, ticket: row.ticket, readAt: null, forYou: { $ne: true } },
+        {
+          $set: {
+            event, title: row.title, body: row.body, link, project, activityAt,
+          },
+          $inc: { count: 1 },
+        },
+        { new: true, sort: { activityAt: -1 } },
+      );
+      return folded ? { folded } : { insert: row };
     }));
 
-  if (rows.length === 0) return [];
-  return Notification.insertMany(rows);
+  const inserts = outcomes.filter((o) => o.insert).map((o) => o.insert);
+  const inserted = inserts.length ? await Notification.insertMany(inserts) : [];
+  return [...outcomes.filter((o) => o.folded).map((o) => o.folded), ...inserted];
 }
 
 /**
@@ -181,6 +217,23 @@ export async function backfillNotificationProjects() {
   return result.modifiedCount;
 }
 
+/**
+ * Rows written before `activityAt` existed sort by when they were created. One
+ * updateMany, idempotent: after the first boot it matches nothing.
+ */
+export async function backfillNotificationActivity() {
+  const result = await Notification.updateMany(
+    { activityAt: { $exists: false } },
+    [{
+      $set: {
+        activityAt: { $ifNull: ['$createdAt', '$$NOW'] },
+        count: { $ifNull: ['$count', 1] },
+      },
+    }],
+  );
+  return result.modifiedCount;
+}
+
 /** The populated `ticket` on a notification is a full internal document — an
  * external recipient must see it through the same sanitizer every other
  * external-facing ticket read goes through. */
@@ -198,9 +251,12 @@ function externalizeNotification(notificationJson, actor) {
  * access is granted and revoked per project, so their rows are also held to the
  * tickets they can still see.
  */
-async function notificationFilter(actor, { project = null, ticket = null, unread = false } = {}) {
+async function notificationFilter(actor, {
+  project = null, ticket = null, unread = false, forYou = false,
+} = {}) {
   const filter = { user: actor._id };
   if (unread) filter.readAt = null;
+  if (forYou) filter.forYou = true;
   if (project) filter.project = project;
   if (ticket) filter.ticket = ticket;
 
@@ -218,10 +274,14 @@ export async function listNotifications(actor, query = {}) {
   const filter = await notificationFilter(actor, {
     project: query.project ? String(query.project) : null,
     unread: String(query.unread) === 'true',
+    forYou: String(query.forYou) === 'true',
   });
 
   const page = await paginate(Notification, filter, {
-    page: query.page, limit: query.limit, sortBy: 'createdAt:desc', populate: ['ticket', PROJECT_CHIP],
+    page: query.page,
+    limit: query.limit,
+    sortBy: 'activityAt:desc,_id:desc',
+    populate: ['ticket', PROJECT_CHIP],
   });
   return {
     ...page,

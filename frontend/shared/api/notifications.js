@@ -3,6 +3,7 @@ import { apiFetch } from './client.js';
 export const listNotifications = (params = {}) => {
   const qs = new URLSearchParams();
   if (params.unread) qs.set('unread', 'true');
+  if (params.forYou) qs.set('forYou', 'true');
   if (params.page) qs.set('page', String(params.page));
   if (params.limit) qs.set('limit', String(params.limit));
   if (params.project) qs.set('project', params.project);
