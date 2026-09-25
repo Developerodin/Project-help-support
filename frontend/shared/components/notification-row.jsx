@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import Icon from '@/shared/components/icons.jsx';
+import { muteTicketWithUndo } from '@/shared/lib/ticket-notification-settings.js';
 import {
   formatAbsoluteTime,
   formatRelativeTime,
@@ -11,6 +12,8 @@ import {
   notificationEventIconName,
   notificationHref,
   notificationPrimaryLine,
+  notificationTicketKey,
+  notificationTicketObjectId,
   notificationUpdateCount,
 } from '@/shared/lib/notification-utils.js';
 
@@ -18,6 +21,7 @@ import {
  * Shared notification row for bell dropdown and inbox.
  * @param {'link'|'static'} as - link wraps primary in Next Link (bell); static uses plain heading (inbox group child)
  * @param {boolean} markForYou - tag rows meant for this person (used where other rows are mixed in)
+ * @param {boolean} showMute - offer "Mute ticket" on rows about a ticket
  */
 export default function NotificationRow({
   item,
@@ -28,6 +32,7 @@ export default function NotificationRow({
   onMarkRead,
   showMarkRead = false,
   markForYou = false,
+  showMute = false,
 }) {
   const unread = !item.readAt;
   const href = notificationHref(item.link);
@@ -36,6 +41,8 @@ export default function NotificationRow({
   const body = item.body?.trim() ?? '';
   const activityAt = notificationActivityAt(item);
   const updates = notificationUpdateCount(item);
+  const ticketObjectId = showMute ? notificationTicketObjectId(item) : null;
+  const ticketKey = notificationTicketKey(item);
 
   const rowClass = [
     'notif-row',
@@ -114,6 +121,17 @@ export default function NotificationRow({
           onClick={() => onMarkRead(item.id)}
         >
           Mark read
+        </button>
+      ) : null}
+      {ticketObjectId ? (
+        <button
+          type="button"
+          className="btn btn-sm btn-ghost btn-ico notif-row__mark-read"
+          aria-label={`Mute ${ticketKey || 'this ticket'}`}
+          title="Mute ticket"
+          onClick={() => muteTicketWithUndo(ticketObjectId, ticketKey)}
+        >
+          <Icon name="volume-off" size={13} aria-hidden="true" />
         </button>
       ) : null}
     </div>

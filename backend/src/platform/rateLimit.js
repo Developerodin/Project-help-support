@@ -86,3 +86,5 @@ export const passwordResetLimiter = makeLimiter({ windowMs: 60 * MINUTE, limit: 
 export const inviteAcceptLimiter = makeLimiter({ windowMs: 60 * MINUTE, limit: 10 });
 export const refreshLimiter = makeLimiter({ windowMs: 15 * MINUTE, limit: 60 });
 export const resendInviteLimiter = makeLimiter({ windowMs: 60 * MINUTE, limit: 10 });
+// Unsubscribe links carry no session, so this is the only brake on token guessing.
+export const unsubscribeLimiter = makeLimiter({ windowMs: 15 * MINUTE, limit: 30 });

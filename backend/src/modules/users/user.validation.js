@@ -1,8 +1,9 @@
 import Joi from 'joi';
 import {
   ROLES, NOTIFICATION_EVENTS, ROLE_IDS, PEOPLE_ASSIGNABLE_ROLES, INTERNAL_ROLES, EXTERNAL_ROLES,
-  TICKET_SORT_COLUMNS, TICKET_SCOPES, PRIORITIES, CATEGORIES, SEVERITIES, STAGE_KEYS,
+  TICKET_SORT_COLUMNS, TICKET_SCOPES, PRIORITIES, CATEGORIES, SEVERITIES, STAGE_KEYS, EMAIL_FREQUENCIES,
 } from '@pms/shared';
+import { isValidTimeZone } from '../notifications/delivery-schedule.js';
 
 const objectId = Joi.string().hex().length(24);
 // An unknown key is a 400 here, so a typo'd event never becomes a stored
@@ -68,8 +69,26 @@ export const updateMeSchema = {
   }),
 };
 
+const clockTime = Joi.string().pattern(/^([01]\d|2[0-3]):[0-5]\d$/, 'HH:mm');
+
+const timeZone = Joi.string().trim().max(64).custom((value, helpers) => (
+  isValidTimeZone(value) ? value : helpers.message('"timeZone" must be an IANA time zone, e.g. Asia/Kolkata')
+), 'IANA time zone');
+
 export const notificationPrefsSchema = {
-  body: Joi.object({ email: eventFlags, inApp: eventFlags }).min(1),
+  body: Joi.object({
+    email: eventFlags,
+    inApp: eventFlags,
+    emailFrequency: Joi.string().valid(...EMAIL_FREQUENCIES),
+    timeZone,
+    quietHours: Joi.object({
+      enabled: Joi.boolean(),
+      start: clockTime,
+      end: clockTime,
+      allowUrgent: Joi.boolean(),
+    }).min(1),
+    emailPaused: Joi.boolean(),
+  }).min(1),
 };
 
 const ticketFilterPrefs = Joi.object({

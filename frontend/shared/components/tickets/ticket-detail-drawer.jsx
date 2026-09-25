@@ -31,6 +31,7 @@ import TicketHistory from './ticket-history.jsx';
 import TicketComments from './ticket-comments.jsx';
 import TicketQaReport, { qaRejections } from './ticket-qa-report.jsx';
 import TicketDrawerFooter from './ticket-drawer-footer.jsx';
+import TicketNotificationControl from './ticket-notification-control.jsx';
 import ConfirmDialog from '../confirm-dialog.jsx';
 import { useTicketAssignment } from './use-ticket-assignment.js';
 import { useBoardPolicy } from '@/shared/hooks/use-board-policy.js';
@@ -270,6 +271,7 @@ function TicketDrawerContent({
           canDelete={canDeleteTicket}
           onRequestDelete={() => setDeleteOpen(true)}
           onClose={onClose}
+          notifications={<TicketNotificationControl ticket={ticket} user={user} />}
           onToggleWatch={run(() => (watching
             ? unwatchTicket(ticket.ticketId)
             : watchTicket(ticket.ticketId)))}

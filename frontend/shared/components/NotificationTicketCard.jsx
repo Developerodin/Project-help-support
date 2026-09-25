@@ -6,10 +6,12 @@ import NotificationUpdateRow from '@/shared/components/NotificationUpdateRow.jsx
 import {
   groupHasUnread,
   notificationGroupHref,
+  notificationTicketObjectId,
   sumNotificationUpdates,
   ticketSubjectFromGroup,
   visibleUpdates,
 } from '@/shared/lib/notification-utils.js';
+import { muteTicketWithUndo } from '@/shared/lib/ticket-notification-settings.js';
 
 export default function NotificationTicketCard({
   group,
@@ -29,6 +31,7 @@ export default function NotificationTicketCard({
   const ticketHref = notificationGroupHref(group);
   const { visible } = visibleUpdates(items, expanded);
   const hiddenCount = sumNotificationUpdates(items.slice(visible.length));
+  const ticketObjectId = notificationTicketObjectId(group.latest);
 
   const cardClass = [
     'notif-ticket-card',
@@ -88,6 +91,16 @@ export default function NotificationTicketCard({
         ) : null}
 
         <footer className="notif-ticket-card__foot">
+          {ticketObjectId ? (
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              aria-label={`Mute ${ticketKey || 'this ticket'}`}
+              onClick={() => muteTicketWithUndo(ticketObjectId, ticketKey)}
+            >
+              Mute ticket
+            </button>
+          ) : null}
           <Link href={ticketHref} className="notif-ticket-card__view" onClick={
             onViewTicket ? (event) => onViewTicket(event, group) : undefined
           }>

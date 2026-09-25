@@ -310,6 +310,7 @@ export default function NotificationBell() {
           className="notif-bell__row"
           markForYou={!forYou}
           onNavigate={handleItemNavigate}
+          showMute
         />
       </div>
     );

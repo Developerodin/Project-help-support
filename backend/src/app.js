@@ -18,12 +18,14 @@ import projectRoutes from './modules/projects/project.route.js';
 import ticketRoutes from './modules/tickets/ticket.route.js';
 import userRoutes from './modules/users/user.route.js';
 import notificationRoutes from './modules/notifications/notification.route.js';
+import { setDefaultTimeZone } from './modules/notifications/delivery-schedule.js';
 import assistantRoutes from './modules/assistant/assistant.route.js';
 import analyticsRoutes from './modules/tickets/analytics.route.js';
 import rbacRoutes from './modules/rbac/rbac.route.js';
 import realtimeRoutes from './modules/realtime/realtime.route.js';
 
 export function createApp(config, { deliverReset, deliverInvite } = {}) {
+  setDefaultTimeZone(config.defaultTimeZone);
   const app = express();
   const originAllowed = buildOriginMatcher(config);
 

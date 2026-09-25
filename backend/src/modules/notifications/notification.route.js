@@ -2,6 +2,7 @@ import express from 'express';
 import Joi from 'joi';
 import { auth } from '../../platform/auth.js';
 import { validate } from '../../platform/validate.js';
+import { unsubscribeLimiter } from '../../platform/rateLimit.js';
 import { ApiError } from '../../platform/errors.js';
 import * as controller from './notification.controller.js';
 import { removeSubscription, saveSubscription } from './push.service.js';
@@ -43,8 +44,31 @@ const unsubscribeSchema = { body: Joi.object({ endpoint }) };
 
 const idSchema = { params: Joi.object({ id: Joi.string().hex().length(24).required() }) };
 
+const ticketSettingsSchema = { params: Joi.object({ ticketId: objectId.required() }) };
+const saveTicketSettingsSchema = {
+  params: Joi.object({ ticketId: objectId.required() }),
+  body: Joi.object({ muted: Joi.boolean(), following: Joi.boolean() }).min(1),
+};
+
+// Mail providers POST `List-Unsubscribe=One-Click` as a form body; nothing reads it.
+const emailTokenSchema = {
+  query: Joi.object({ token: Joi.string().max(200).required() }),
+  body: Joi.object().unknown(true),
+};
+
 export default function notificationRoutes(config) {
   const router = express.Router();
+
+  // Unsubscribe links in ticket email, with no session: the signed token is
+  // the credential. GET only reads (scanners prefetch links); POST is the
+  // RFC 8058 one-click call a mail provider makes, and the frontend's button.
+  router.get('/email/unsubscribe', unsubscribeLimiter, validate({ query: emailTokenSchema.query }),
+    controller.emailStatus(config));
+  router.post('/email/unsubscribe', unsubscribeLimiter, validate(emailTokenSchema),
+    controller.emailPause(config, true));
+  router.post('/email/resubscribe', unsubscribeLimiter, validate(emailTokenSchema),
+    controller.emailPause(config, false));
+
   router.use(auth(config));
 
   // Web push. The public key is what a browser subscribes with; `enabled: false`
@@ -71,6 +95,10 @@ export default function notificationRoutes(config) {
       next(err);
     }
   });
+
+  // Mute / follow one ticket. :ticketId is the ticket's Mongo id.
+  router.get('/ticket-settings/:ticketId', validate(ticketSettingsSchema), controller.ticketSettings);
+  router.put('/ticket-settings/:ticketId', validate(saveTicketSettingsSchema), controller.saveTicketSettings);
 
   router.get('/', validate(listSchema), controller.list);
   router.post('/read-all', validate(readAllSchema), controller.readAll);

@@ -13,6 +13,7 @@ export default function TicketHeader({
   canEdit = false,
   canDelete = false,
   onRequestDelete,
+  notifications = null,
 }) {
   return (
     <>
@@ -36,6 +37,7 @@ export default function TicketHeader({
               Delete
             </button>
           ) : null}
+          {notifications}
           <button
             type="button"
             className={`btn btn-sm${watching ? ' chip-on' : ''}`}

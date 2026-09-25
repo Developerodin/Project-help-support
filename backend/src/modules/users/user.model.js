@@ -1,9 +1,10 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import {
-  ROLES, ROLE_IDS, DEFAULT_NOTIFICATION_PREFS, DEFAULT_TICKET_PREFERENCES, pickPrimaryRole,
+  ROLES, ROLE_IDS, DEFAULT_NOTIFICATION_PREFS, DEFAULT_TICKET_PREFERENCES, EMAIL_FREQUENCIES, pickPrimaryRole,
 } from '@pms/shared';
 import toJSON from '../../platform/toJSON.plugin.js';
+import { defaultTimeZone } from '../notifications/delivery-schedule.js';
 
 export const MAX_REFRESH_TOKENS = 10;
 const MAX_CONSUMED_TOKENS = 50;
@@ -93,6 +94,18 @@ const userSchema = new mongoose.Schema(
         of: Boolean,
         default: () => new Map(Object.entries(DEFAULT_NOTIFICATION_PREFS.inApp)),
       },
+      // Delivery settings. Read through deliveryPrefs() (notifications/
+      // delivery-schedule.js), which fills any gap from the defaults.
+      emailFrequency: { type: String, enum: EMAIL_FREQUENCIES, default: DEFAULT_NOTIFICATION_PREFS.emailFrequency },
+      // Validated as an IANA zone on the way in (user.validation.js).
+      timeZone: { type: String, trim: true, default: defaultTimeZone },
+      quietHours: {
+        enabled: { type: Boolean, default: DEFAULT_NOTIFICATION_PREFS.quietHours.enabled },
+        start: { type: String, default: DEFAULT_NOTIFICATION_PREFS.quietHours.start },
+        end: { type: String, default: DEFAULT_NOTIFICATION_PREFS.quietHours.end },
+        allowUrgent: { type: Boolean, default: DEFAULT_NOTIFICATION_PREFS.quietHours.allowUrgent },
+      },
+      emailPaused: { type: Boolean, default: DEFAULT_NOTIFICATION_PREFS.emailPaused },
     },
     /** Per-user ticket list/board filters and table sort — survives refresh and navigation. */
     ticketPreferences: {

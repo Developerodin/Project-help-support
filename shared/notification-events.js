@@ -54,4 +54,20 @@ export const DEFAULT_NOTIFICATION_PREFS = Object.freeze({
     TICKET_MENTIONED: true,
     TICKET_ESTIMATE_SET: true,
   }),
+  // 'immediate' batches routine mail per ticket for a few minutes; 'hourly'
+  // and 'daily' hold it for one summary email. Mentions and "assigned to you"
+  // are always sent at once, whatever this says.
+  emailFrequency: 'immediate',
+  // IANA zone the hourly/daily slots and quiet hours are read in. The backend
+  // falls back to its DEFAULT_TIME_ZONE when a stored value is missing.
+  timeZone: 'Asia/Kolkata',
+  // May cross midnight (22:00 -> 08:00). In-app rows are always written;
+  // email waits for `end`, routine push is skipped.
+  quietHours: Object.freeze({
+    enabled: false, start: '22:00', end: '08:00', allowUrgent: true,
+  }),
+  // Master switch for ticket email. Invite and password-reset mail still go out.
+  emailPaused: false,
 });
+
+export const EMAIL_FREQUENCIES = Object.freeze(['immediate', 'hourly', 'daily']);

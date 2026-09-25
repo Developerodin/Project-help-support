@@ -16,6 +16,7 @@ import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
 import { revokeAllRefreshTokens, hashToken } from '../auth/token.service.js';
 import PushSubscription from '../notifications/pushSubscription.model.js';
+import { defaultTimeZone } from '../notifications/delivery-schedule.js';
 import { recordRbacAudit } from '../rbac/rbac-audit.js';
 
 /** Keep in sync with auth.service.js INVITE_TTL_HOURS. */
@@ -207,7 +208,11 @@ export async function updateMe(actor, body) {
   return user.toJSON();
 }
 
-export async function updateNotificationPrefs(actor, { email = {}, inApp = {} }) {
+const DELIVERY_PREF_KEYS = ['emailFrequency', 'timeZone', 'emailPaused'];
+
+export async function updateNotificationPrefs(actor, {
+  email = {}, inApp = {}, quietHours, ...delivery
+}) {
   const user = await User.findById(actor._id);
 
   for (const [channel, flags] of [['email', email], ['inApp', inApp]]) {
@@ -217,6 +222,13 @@ export async function updateNotificationPrefs(actor, { email = {}, inApp = {} })
       }
       user.notificationPrefs[channel].set(event, enabled);
     }
+  }
+  for (const key of DELIVERY_PREF_KEYS) {
+    if (delivery[key] !== undefined) user.notificationPrefs[key] = delivery[key];
+  }
+  // Partial, like the event maps: { enabled: true } keeps the stored window.
+  for (const [key, value] of Object.entries(quietHours ?? {})) {
+    user.notificationPrefs.quietHours[key] = value;
   }
 
   await user.save();
@@ -229,6 +241,9 @@ export async function resetNotificationPrefs(actor) {
 
   user.notificationPrefs.email = new Map(Object.entries(DEFAULT_NOTIFICATION_PREFS.email));
   user.notificationPrefs.inApp = new Map(Object.entries(DEFAULT_NOTIFICATION_PREFS.inApp));
+  for (const key of DELIVERY_PREF_KEYS) user.notificationPrefs[key] = DEFAULT_NOTIFICATION_PREFS[key];
+  user.notificationPrefs.timeZone = defaultTimeZone();
+  user.notificationPrefs.quietHours = { ...DEFAULT_NOTIFICATION_PREFS.quietHours };
   user.markModified('notificationPrefs');
   await user.save();
   return user.toJSON();

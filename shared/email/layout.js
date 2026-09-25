@@ -61,6 +61,8 @@ export function renderEmailLayout({
   bodyHtml,
   cta = null,
   footerNote = '',
+  // [{ label, href }]: "Manage notifications" / "Unsubscribe" on ticket mail.
+  footerLinks = [],
   brandName = EMAIL_BRAND.shortName,
 }) {
   const safeTitle = escapeHtml(title);
@@ -112,6 +114,11 @@ export function renderEmailLayout({
 
     + '<tr><td style="padding:18px 4px 0;font-family:' + F + ';font-size:12px;line-height:1.6;color:' + C.inkMuted + ';">'
     + (footerNote ? '<p style="margin:0 0 8px;">' + escapeHtml(footerNote) + '</p>' : '')
+    + (footerLinks.length
+      ? '<p style="margin:0 0 8px;">' + footerLinks.map((link) => '<a href="' + escapeHtml(link.href) + '" '
+        + 'style="color:' + C.inkMuted + ';text-decoration:underline;">' + escapeHtml(link.label) + '</a>').join(' &middot; ')
+        + '</p>'
+      : '')
     + '<p style="margin:0;">Automated message from ' + safeBrandName
     + '. Replies to this address are not monitored.</p>'
     + '</td></tr>'

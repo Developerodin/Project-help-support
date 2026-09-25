@@ -199,6 +199,21 @@ function ticketBrandName(context = {}) {
   return name || EMAIL_BRAND.shortName;
 }
 
+/**
+ * The reader's own opt-out links, when the sender put them on the context
+ * (the backend does, per recipient: the unsubscribe link is signed for them).
+ */
+function footerLinks(context = {}) {
+  return [
+    context.manageUrl ? { label: 'Manage notifications', href: context.manageUrl } : null,
+    context.unsubscribeUrl ? { label: 'Unsubscribe', href: context.unsubscribeUrl } : null,
+  ].filter(Boolean);
+}
+
+function footerLinksText(links) {
+  return links.length ? ['', ...links.map((link) => `${link.label}: ${link.href}`)] : [];
+}
+
 export function renderTicketEmail(event, ticket, context = {}, config = {}) {
   const link = `${config.frontendBaseUrl}/tickets?ticket=${encodeURIComponent(ticket.ticketId)}`;
   const copy = copyFor(event, context);
@@ -244,6 +259,7 @@ export function renderTicketEmail(event, ticket, context = {}, config = {}) {
     link,
     '',
     'Attachments are available from the ticket page.',
+    ...footerLinksText(footerLinks(context)),
   ].join('\n');
 
   const html = renderEmailLayout({
@@ -254,6 +270,7 @@ export function renderTicketEmail(event, ticket, context = {}, config = {}) {
     cta: { label: copy.cta, href: link },
     brandName: ticketBrandName(context),
     footerNote: 'Attachments are available from the ticket page.',
+    footerLinks: footerLinks(context),
   });
 
   return {
@@ -306,26 +323,13 @@ function stagePathLabels(items) {
   return keys.map((key) => stageLabel(key));
 }
 
-/**
- * Several updates on one ticket for one person, as one email. `items` are
- * `{ event, context }` pairs in the order they happened, each context already
- * cut for this reader's audience (an external one carries no notes and only
- * client-facing statuses). Mentions are pulled to the top.
- */
-export function renderTicketDigestEmail(ticket, items, context = {}, config = {}) {
-  const link = `${config.frontendBaseUrl}/tickets?ticket=${encodeURIComponent(ticket.ticketId)}`;
+/** One line per update, mentions first: who did what, and the words they wrote if any. */
+function digestLines(items) {
   const ordered = [
     ...items.filter((item) => item.event === 'TICKET_MENTIONED'),
     ...items.filter((item) => item.event !== 'TICKET_MENTIONED'),
   ];
-  const heading = `${items.length} updates on ${ticket.ticketId}`;
-  // The reader's own view of where the ticket sits: an external context
-  // carries the collapsed status, which the stored ticket.status would leak.
-  const lastTo = [...items].reverse().find((item) => item.context?.to)?.context.to;
-  const facts = ticketFacts(ticket, { to: lastTo });
-  const path = stagePathLabels(items);
-
-  const rows = ordered.map(({ event, context: itemContext = {} }) => {
+  return ordered.map(({ event, context: itemContext = {} }) => {
     const actor = itemContext.commentAuthor || itemContext.actorName || 'Someone';
     const snippet = truncate(itemContext.comment || itemContext.reason || itemContext.note || '', 200);
     return {
@@ -334,6 +338,24 @@ export function renderTicketDigestEmail(ticket, items, context = {}, config = {}
       highlight: event === 'TICKET_MENTIONED',
     };
   });
+}
+
+/**
+ * Several updates on one ticket for one person, as one email. `items` are
+ * `{ event, context }` pairs in the order they happened, each context already
+ * cut for this reader's audience (an external one carries no notes and only
+ * client-facing statuses). Mentions are pulled to the top.
+ */
+export function renderTicketDigestEmail(ticket, items, context = {}, config = {}) {
+  const link = `${config.frontendBaseUrl}/tickets?ticket=${encodeURIComponent(ticket.ticketId)}`;
+  const heading = `${items.length} updates on ${ticket.ticketId}`;
+  // The reader's own view of where the ticket sits: an external context
+  // carries the collapsed status, which the stored ticket.status would leak.
+  const lastTo = [...items].reverse().find((item) => item.context?.to)?.context.to;
+  const facts = ticketFacts(ticket, { to: lastTo });
+  const path = stagePathLabels(items);
+
+  const rows = digestLines(items);
 
   const bodyHtml = [
     paragraph(heading),
@@ -356,6 +378,7 @@ export function renderTicketDigestEmail(ticket, items, context = {}, config = {}
     link,
     '',
     'Attachments are available from the ticket page.',
+    ...footerLinksText(footerLinks(context)),
   ].join('\n');
 
   const html = renderEmailLayout({
@@ -366,7 +389,73 @@ export function renderTicketDigestEmail(ticket, items, context = {}, config = {}
     cta: { label: 'Open ticket', href: link },
     brandName: ticketBrandName(context),
     footerNote: 'Attachments are available from the ticket page.',
+    footerLinks: footerLinks(context),
   });
 
   return { subject: ticketEmailSubject(ticket), text, html };
+}
+
+/** "Your daily summary: 4 tickets updated" / "Hourly summary: 1 ticket updated". */
+export function ticketSummarySubject(frequency, ticketCount) {
+  const count = `${ticketCount} ticket${ticketCount === 1 ? '' : 's'} updated`;
+  return frequency === 'daily' ? `Your daily summary: ${count}` : `Hourly summary: ${count}`;
+}
+
+/** A ticket's heading inside the summary, linked to the ticket. */
+function summaryTicketHeading(ticket, link) {
+  return '<p style="margin:24px 0 0;font-family:' + F + ';font-size:15px;line-height:1.4;font-weight:700;">'
+    + '<a href="' + escapeHtml(link) + '" style="color:' + C.ink + ';text-decoration:none;">'
+    + '<span style="font-family:monospace;color:' + C.sig + ';">' + escapeHtml(ticket.ticketId) + '</span> '
+    + escapeHtml(ticket.title) + '</a></p>';
+}
+
+/**
+ * Every ticket one person's hourly or daily summary covers, as one email.
+ * `sections` are `{ ticket, items }`, items cut for this reader exactly as in
+ * the per-ticket digest (same lines, same stage path). No facts table and no
+ * pipeline rail: the stage shown is only what the items say, so an external
+ * reader never sees an internal stage. Not threaded to any ticket.
+ */
+export function renderTicketSummaryEmail(sections, context = {}, config = {}, { frequency = 'daily' } = {}) {
+  const ticketLink = (ticket) => `${config.frontendBaseUrl}/tickets?ticket=${encodeURIComponent(ticket.ticketId)}`;
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  const updates = sections.reduce((sum, section) => sum + section.items.length, 0);
+  const lead = `${plural(updates, 'update')} on ${plural(sections.length, 'ticket')} since your last email.`;
+
+  const blocks = sections.map(({ ticket, items }) => ({
+    ticket, link: ticketLink(ticket), path: stagePathLabels(items), rows: digestLines(items),
+  }));
+
+  const bodyHtml = [
+    paragraph(lead),
+    ...blocks.map((block) => [
+      summaryTicketHeading(block.ticket, block.link),
+      block.path.length > 1 ? '<div style="margin:8px 0 0;">' + stagePath(block.path) + '</div>' : '',
+      ...block.rows.map((row) => digestRow(row.line, row.snippet, row.highlight)),
+    ].join('')),
+  ].join('');
+
+  const text = [
+    lead,
+    ...blocks.flatMap((block) => [
+      '',
+      `${block.ticket.ticketId}: ${block.ticket.title}`,
+      ...(block.path.length > 1 ? [`Stage: ${block.path.join(' -> ')}`] : []),
+      ...block.rows.map((row) => `- ${row.line}${row.snippet ? ` "${row.snippet}"` : ''}`),
+      block.link,
+    ]),
+    ...footerLinksText(footerLinks(context)),
+  ].join('\n');
+
+  const html = renderEmailLayout({
+    preheader: lead,
+    eyebrow: eyebrow(frequency === 'daily' ? 'Daily summary' : 'Hourly summary'),
+    title: frequency === 'daily' ? 'Your daily summary' : 'Your hourly summary',
+    bodyHtml,
+    cta: { label: 'Open notifications', href: `${config.frontendBaseUrl}/notifications` },
+    brandName: ticketBrandName(context),
+    footerLinks: footerLinks(context),
+  });
+
+  return { subject: ticketSummarySubject(frequency, sections.length), text, html };
 }

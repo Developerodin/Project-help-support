@@ -22,8 +22,9 @@ const logger = winston.createLogger({
  * from an authenticated POST and keep the access token out of URLs entirely.
  */
 export function redactSensitiveQuery(url) {
-  if (!url || !url.includes('access_token=')) return url;
-  return url.replace(/([?&]access_token=)[^&]*/g, '$1REDACTED');
+  if (!url || !url.includes('token=')) return url;
+  // `token` is the email unsubscribe link's.
+  return url.replace(/([?&](?:access_)?token=)[^&]*/g, '$1REDACTED');
 }
 
 export default logger;

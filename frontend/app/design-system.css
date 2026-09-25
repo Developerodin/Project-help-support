@@ -3915,6 +3915,20 @@ a.button3{ display:block; text-align:center; text-decoration:none; cursor:pointe
 .notif-prefs input[type="checkbox"]{
   width:18px; height:18px; cursor:pointer;
 }
+/* Email, quiet hours and presets above the per-event table */
+.notif-settings{ margin-bottom:20px; display:flex; flex-direction:column; gap:10px; max-width:720px; }
+.notif-settings h2{ font-size:0.9375rem; }
+.notif-settings .banner{ margin-bottom:0; }
+.notif-settings__row{ display:flex; flex-wrap:wrap; align-items:flex-end; gap:12px; margin-bottom:16px; }
+.notif-settings .notif-settings__row{ margin-bottom:0; }
+.notif-settings__row .form-row{ flex:1 1 220px; }
+.notif-settings__check{ display:flex; align-items:flex-start; gap:8px; font-size:0.8125rem; cursor:pointer; }
+.notif-settings__check input{ width:16px; height:16px; margin-top:2px; flex:none; }
+.notif-settings__check .help{ display:block; font-size:0.75rem; color:var(--ink-3); line-height:1.5; }
+.form-row input[type="time"]{
+  height:34px; padding:0 10px; border:1px solid var(--rule); border-radius:var(--r);
+  background:var(--panel); color:var(--ink); font-size:0.875rem; width:100%;
+}
 @media (max-width:720px){
   .notif-prefs td{ padding:10px 8px; }
   .notif-prefs input[type="checkbox"]{
@@ -4126,6 +4140,7 @@ div.notif-bell__empty{
 .notif-ticket-card__foot{
   padding:0; margin-left:auto;
 }
+.notif-ticket-card__foot{ display:flex; align-items:center; gap:10px; }
 .notif-ticket-card__view{
   font-size:0.8125rem; font-weight:600; color:var(--sig); text-decoration:none;
 }

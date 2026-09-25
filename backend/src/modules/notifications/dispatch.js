@@ -11,6 +11,8 @@ import {
 } from './email.service.js';
 import { renderInviteEmail, renderPasswordResetEmail } from '../../platform/email/templates/index.js';
 import { ticketBranding, userBranding } from './branding.js';
+import { mutedUserIds } from './ticketMute.model.js';
+import { deliveryPrefs, quietUntil } from './delivery-schedule.js';
 
 // Template spec and add-a-template checklist: docs/email/DESIGN.md
 
@@ -103,6 +105,21 @@ function isUrgentEmail(eventKey, ticket, user, context) {
     && String(ticket.assignedTo?._id ?? ticket.assignedTo) === String(user._id);
 }
 
+/** Mentions and "the ticket is now yours": what reaches a person who muted the ticket or is in quiet hours. */
+function isAddressedTo(eventKey, ticket, user) {
+  return isUrgentEmail(eventKey, ticket, user, {});
+}
+
+/**
+ * Push is the channel that wakes a phone, so quiet hours hold it back: a
+ * routine update is not pushed at all (its in-app row is still there in the
+ * morning), one addressed to the person only if they allow urgent ones.
+ */
+function pushAllowed(eventKey, ticket, user, config, now) {
+  if (!quietUntil(user, config, now)) return true;
+  return isAddressedTo(eventKey, ticket, user) && deliveryPrefs(user, config).quietHours.allowUrgent;
+}
+
 /** Returns the recipients it notified, so the caller can keep them out of a second fan-out. */
 async function fanOut(eventKey, ticket, actor, context, config, deps, {
   hideFromExternal = false, excludeUserIds = null,
@@ -114,10 +131,14 @@ async function fanOut(eventKey, ticket, actor, context, config, deps, {
   // commented" — so they are dropped before either channel runs, rather than
   // merely having context stripped.
   const dropExternal = hideFromExternal || isInvisibleToExternal(eventKey, context);
-  const visible = recipients.filter((r) => {
+  const audience = recipients.filter((r) => {
     if (excludeUserIds?.has(String(r.user._id))) return false;
     return !(dropExternal && isExternalUser(r.user));
   });
+  // Someone who muted the ticket hears nothing routine about it on any
+  // channel; a mention or the ticket landing on them still gets through.
+  const muted = await mutedUserIds(ticket._id, audience.map((r) => r.user._id));
+  const visible = audience.filter((r) => !muted.has(String(r.user._id)) || isAddressedTo(eventKey, ticket, r.user));
   if (visible.length === 0) return [];
 
   const emailTicket = await resolveTicketForEmail(ticket, config);
@@ -128,7 +149,13 @@ async function fanOut(eventKey, ticket, actor, context, config, deps, {
   if (inAppRows.length) publishNotificationCreated(inAppRows.map((row) => row.user));
   // Not awaited: push services can be slow, and the request already succeeded.
   // Push mirrors the in-app rows, so it obeys the in-app preferences.
-  (deps.sendPush ?? sendPushForNotifications)(inAppRows, config).catch((err) => {
+  const now = new Date();
+  const usersById = new Map(visible.map((r) => [String(r.user._id), r.user]));
+  const pushRows = inAppRows.filter((row) => {
+    const user = usersById.get(String(row.user));
+    return !user || pushAllowed(eventKey, ticket, user, config, now);
+  });
+  (deps.sendPush ?? sendPushForNotifications)(pushRows, config).catch((err) => {
     logger.error('Push fan-out failed', { error: err.message, event: eventKey, ticket: ticket?.ticketId });
   });
 
@@ -162,17 +189,31 @@ async function fanOut(eventKey, ticket, actor, context, config, deps, {
     const urgent = [];
     for (const r of group.recipients) {
       if (!r.channels.email) continue;
+      const prefs = deliveryPrefs(r.user, config);
+      if (prefs.emailPaused) continue;
+      const notificationId = notificationIds.get(String(r.user._id));
       if (isUrgentEmail(eventKey, ticket, r.user, group.context)) {
-        urgent.push(r);
+        // Quiet hours without urgent exceptions: it waits for the morning in
+        // this ticket's batch, still marked urgent so reading it in-app
+        // overnight does not drop it from the email.
+        const quietEnd = prefs.quietHours.allowUrgent ? null : quietUntil(r.user, config, now);
+        if (quietEnd) {
+          await enqueueTicketEmail(r.user._id, emailTicket, {
+            event: eventKey, context: group.context, notificationId, urgent: true,
+          }, config, { holdUntil: quietEnd });
+        } else {
+          urgent.push(r);
+        }
         continue;
       }
       // Whoever is left on an assignment is neither the old nor the new assignee.
       const context = eventKey === 'TICKET_ASSIGNED' && !group.context.unassignedYou
         ? { ...group.context, assignedElsewhere: true }
         : group.context;
+      // `recipient` lets their hourly/daily slot and quiet hours hold the batch.
       await enqueueTicketEmail(r.user._id, emailTicket, {
-        event: eventKey, context, notificationId: notificationIds.get(String(r.user._id)),
-      }, config);
+        event: eventKey, context, notificationId,
+      }, config, { recipient: r.user, now });
     }
     if (urgent.length === 0) continue;
     await sendUrgentTicketEmail(eventKey, emailTicket, urgent, group.context, config, {

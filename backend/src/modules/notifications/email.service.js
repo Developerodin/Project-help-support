@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { isExternalUser } from '@pms/shared';
 import {
-  renderTicketDigestEmail, renderTicketEmail, ticketEmailSubject,
+  renderTicketDigestEmail, renderTicketEmail, renderTicketSummaryEmail, ticketEmailSubject,
 } from '../../platform/email/templates/index.js';
 import { brandAttachments, BrandLogoRequiredError } from '../../platform/email/logo.js';
 import { brandedFrom, ticketBranding } from './branding.js';
@@ -13,6 +13,9 @@ import EmailLog from './emailLog.model.js';
 import Notification from './notification.model.js';
 import TransactionalEmailLog from './transactionalEmailLog.model.js';
 import { canUserViewTicket, resolvePreference } from './recipients.js';
+import TicketMute from './ticketMute.model.js';
+import { deliveryPrefs, routineHoldUntil } from './delivery-schedule.js';
+import { unsubscribeLinks } from './unsubscribe.js';
 
 export const EMAIL_MAX_ATTEMPTS = 3;
 const DEFAULT_GRACE_MS = 5 * 60 * 1000;
@@ -127,6 +130,13 @@ function abandonRow(Model, id, maxAttempts, error) {
 }
 
 const INACTIVE_RECIPIENT = 'Recipient is no longer active';
+const EMAIL_PAUSED = 'Recipient paused ticket email';
+
+/** The reader's opt-out links, merged into the render context (see shared/email/ticket.js). */
+function withOptOutLinks(context, userId, config) {
+  const { manageUrl, unsubscribeUrl, listUnsubscribe } = unsubscribeLinks(userId, config);
+  return { context: { ...context, manageUrl, unsubscribeUrl }, listUnsubscribe };
+}
 
 
 function domainOf(config) {
@@ -184,6 +194,10 @@ async function attempt(row, transport, config, attachments, bcc = null, { counte
       messageId: row.messageId,
       inReplyTo: row.threadId || undefined,
       references: row.threadId || undefined,
+      // Stored on the row, so a retry carries the same one-click unsubscribe.
+      headers: row.listUnsubscribe
+        ? { 'List-Unsubscribe': row.listUnsubscribe, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' }
+        : undefined,
       text: row.text,
       html: row.html,
       // The brand mark rides along as an inline attachment; the layout renders
@@ -269,9 +283,14 @@ export async function sendTicketEmail(event, ticket, recipients, context, config
   const from = brandedFrom(config, renderedContext.brandName);
   const subject = ticketEmailSubject(ticket);
   const threadId = threadIdFor(ticket._id, domain);
-  const { text, html } = renderBody(event, ticket, renderedContext, config);
+  // Rendered per recipient: each footer carries that reader's own signed
+  // unsubscribe link. Cheap next to the SMTP call each one already costs.
+  const rendered = wanted.map((r) => {
+    const { context: readerContext, listUnsubscribe } = withOptOutLinks(renderedContext, r.user._id, config);
+    return { readerContext, listUnsubscribe, ...renderBody(event, ticket, readerContext, config) };
+  });
 
-  const rows = await EmailLog.insertMany(wanted.map((r) => ({
+  const rows = await EmailLog.insertMany(wanted.map((r, i) => ({
     eventId,
     event,
     ticket: ticket._id,
@@ -283,11 +302,12 @@ export async function sendTicketEmail(event, ticket, recipients, context, config
     status: 'pending',
     messageId: messageIdFor(eventId, String(r.user._id), domain),
     threadId,
+    listUnsubscribe: rendered[i].listUnsubscribe,
     requestId: context.requestId,
     renderSnapshot: {
-      context: renderedContext,
-      text,
-      html,
+      context: rendered[i].readerContext,
+      text: rendered[i].text,
+      html: rendered[i].html,
       brandLogoKey: renderedContext.brandLogoKey || null,
       requireBrandLogo,
     },
@@ -315,9 +335,9 @@ export async function sendTicketEmail(event, ticket, recipients, context, config
 
   let sent = 0;
   let failed = 0;
-  for (const row of rows) {
+  for (const [i, row] of rows.entries()) {
     const ok = await attempt(
-      { ...row.toObject(), text, html },
+      { ...row.toObject(), text: rendered[i].text, html: rendered[i].html },
       transport,
       config,
       attachments,
@@ -328,7 +348,7 @@ export async function sendTicketEmail(event, ticket, recipients, context, config
 
   if (sent > 0) {
     await sendTestSinkCopy(transport, config, deps, {
-      from, subject, text, html, attachments,
+      from, subject, text: rendered[0].text, html: rendered[0].html, attachments,
     }, { event, ticket: ticket?.ticketId, eventId });
   }
 
@@ -354,17 +374,34 @@ async function sendTestSinkCopy(transport, config, deps, message, logContext) {
  * starting one if there is none. Each event pushes the send back to now +
  * window, but never past the deadline set when the batch was opened.
  *
+ * A held batch is different: `recipient` (the user) lets their hourly/daily
+ * slot or quiet hours hold it (routineHoldUntil), and `holdUntil` holds it
+ * outright (an urgent event deferred to the end of quiet hours). A hold sets
+ * sendAfter AND the deadline to that time, and only ever moves them later
+ * ($max): a batch already due sooner is pushed back, never pulled forward.
+ * So a person who switches to daily keeps their already-queued batches until
+ * the next event on that ticket joins one and moves it to the new slot. An
+ * event arriving in the ~30s between a slot passing and the flush picking
+ * the row up moves the whole row to the next slot — late, never lost.
+ *
  * The unique partial index allows one `queued` row per (recipient, ticket), so
  * two events landing at once cannot open two batches: the loser of the insert
  * race gets E11000 and its retry appends to the winner's row. Failure mode:
  * a crash between the append and the $min fix-up leaves sendAfter up to one
  * window past the deadline; the email is late, never lost.
  */
-export async function enqueueTicketEmail(recipientUserId, ticket, item, config, { now = new Date() } = {}) {
+export async function enqueueTicketEmail(recipientUserId, ticket, item, config, {
+  now = new Date(), recipient = null, holdUntil = null,
+} = {}) {
   if (!config.features.email) return null;
 
   const windowMs = config.email?.batchWindowMs ?? DEFAULT_BATCH_WINDOW_MS;
   const maxMs = config.email?.batchMaxMs ?? DEFAULT_BATCH_MAX_MS;
+  const hold = holdUntil
+    ?? (recipient ? routineHoldUntil(recipient, config, now, new Date(now.getTime() + windowMs)) : null);
+  const schedule = hold
+    ? { $max: { sendAfter: hold, batchDeadline: hold } }
+    : { $set: { sendAfter: new Date(now.getTime() + windowMs) } };
   const domain = domainOf(config);
   const append = () => {
     const eventId = randomUUID().replace(/-/g, '');
@@ -372,11 +409,11 @@ export async function enqueueTicketEmail(recipientUserId, ticket, item, config, 
       { recipientUserId, ticket: ticket._id, status: 'queued' },
       {
         $push: { batch: { ...item, at: now } },
-        $set: { sendAfter: new Date(now.getTime() + windowMs) },
+        ...schedule,
         $setOnInsert: {
           eventId,
           event: item.event,
-          batchDeadline: new Date(now.getTime() + maxMs),
+          ...(hold ? {} : { batchDeadline: new Date(now.getTime() + maxMs) }),
           messageId: messageIdFor(eventId, String(recipientUserId), domain),
           threadId: threadIdFor(ticket._id, domain),
           requestId: item.context?.requestId,
@@ -482,14 +519,24 @@ export async function flushDueEmailBatches(config, deps = {}, options = {}) {
   const limit = options.limit ?? DEFAULT_RETRY_LIMIT;
   const due = flushableFilter(now, new Date(now.getTime() - graceMs), maxAttempts);
 
-  const candidates = await EmailLog.find(due).sort({ sendAfter: 1 }).limit(limit).select('_id').lean();
+  const candidates = await EmailLog.find(due).sort({ sendAfter: 1 }).limit(limit)
+    .select('_id recipientUserId').lean();
+  const summaryUsers = new Set((await User.find({
+    _id: { $in: [...new Set(candidates.map((c) => String(c.recipientUserId)))] },
+    'notificationPrefs.emailFrequency': { $in: SUMMARY_FREQUENCIES },
+  }).distinct('_id')).map(String));
+
   const result = idle;
-  for (const { _id } of candidates) {
-    const row = await EmailLog.findOneAndUpdate(
-      { _id, ...due },
-      { $set: { status: 'sending', lastAttemptAt: new Date() }, $inc: { attemptCount: 1 } },
-      { new: true },
-    );
+  const summarized = new Set();
+  for (const { _id, recipientUserId } of candidates) {
+    const recipientKey = String(recipientUserId);
+    if (summaryUsers.has(recipientKey)) {
+      if (summarized.has(recipientKey)) continue;
+      summarized.add(recipientKey);
+      await flushSummary(recipientUserId, due, config, { ...deps, transport }, result);
+      continue;
+    }
+    const row = await claimDueRow(_id, due);
     if (!row) continue; // an urgent send or another process took it
     result.attempted += 1;
     try {
@@ -500,6 +547,47 @@ export async function flushDueEmailBatches(config, deps = {}, options = {}) {
     }
   }
   return result;
+}
+
+const SUMMARY_FREQUENCIES = ['hourly', 'daily'];
+
+/** queued -> sending, attempt counted. Null when an urgent send or another process got there first. */
+function claimDueRow(_id, due) {
+  return EmailLog.findOneAndUpdate(
+    { _id, ...due },
+    { $set: { status: 'sending', lastAttemptAt: new Date() }, $inc: { attemptCount: 1 } },
+    { new: true },
+  );
+}
+
+/**
+ * Every due batch of one hourly/daily recipient, as one summary email. Each
+ * row is claimed on its own, exactly as a single batch is; a row another
+ * flusher (or an urgent send) claimed first is simply not in this summary —
+ * it goes out with that other send, so nothing is sent twice. Two flushers
+ * racing can therefore split one person's slot into two summaries; neither
+ * repeats a ticket.
+ *
+ * ponytail: every due row of the recipient in one go, no cap. A daily reader
+ * following hundreds of busy tickets gets one long email and one slow flush
+ * tick; cap the query and let the next tick send the rest if that happens.
+ */
+async function flushSummary(recipientUserId, due, config, deps, result) {
+  const ids = await EmailLog.find({ ...due, recipientUserId }).sort({ sendAfter: 1 }).select('_id').lean();
+  const rows = [];
+  for (const { _id } of ids) {
+    const row = await claimDueRow(_id, due);
+    if (row) rows.push(row);
+  }
+  if (rows.length === 0) return;
+  result.attempted += rows.length;
+  try {
+    const outcome = await deliverSummary(rows, config, deps);
+    for (const key of ['sent', 'skipped', 'failed']) result[key] += outcome[key];
+  } catch (err) {
+    result.failed += rows.length;
+    logger.error('Email summary flush errored', { recipientUserId: String(recipientUserId), error: err.message });
+  }
 }
 
 /**
@@ -530,14 +618,15 @@ function collapseStageMoves(items) {
 
 /**
  * What is still worth an email at send time: the recipient still wants mail
- * for that event and can still open the ticket, and has not already read it
- * in-app (urgent items are sent regardless). A previous assignee keeps their
+ * for that event, has not muted the ticket (urgent items excepted) and can
+ * still open it, and has not already read it in-app (urgent items are sent
+ * regardless). A previous assignee keeps their
  * "unassigned you" even without access, as the in-app row does.
  *
  * ponytail: one permission-context load per batch (canUserViewTicket), the
  * same cost the fan-out pays per recipient.
  */
-async function itemsStillWorthSending(batch, user, ticket) {
+async function itemsStillWorthSending(batch, user, ticket, { muted = false } = {}) {
   const canView = await canUserViewTicket(user, ticket);
   const notificationIds = batch.filter((item) => item.notificationId).map((item) => item.notificationId);
   const read = notificationIds.length
@@ -547,6 +636,8 @@ async function itemsStillWorthSending(batch, user, ticket) {
 
   const kept = batch.filter((item) => {
     if (!resolvePreference(user, 'email', item.event)) return false;
+    // Muted since it was queued: only what is addressed to them survives.
+    if (muted && !item.urgent) return false;
     if (!canView && !item.context?.unassignedYou) return false;
     return item.urgent || !item.notificationId || !readIds.has(String(item.notificationId));
   });
@@ -561,35 +652,46 @@ function skipRow(row, reason) {
 }
 
 /**
+ * Every per-item check a batch row gets at send time, before anything is
+ * rendered. Returns `{ skip: reason }` or `{ ticket, items }` with the ticket
+ * populated for rendering.
+ */
+async function prepareBatchRow(row, user) {
+  if (user?.status !== 'active') return { skip: INACTIVE_RECIPIENT };
+  if (deliveryPrefs(user).emailPaused) return { skip: EMAIL_PAUSED };
+  // Unpopulated at first: the visibility checks read refs the way the fan-out
+  // passes them, and a populated project.client is not what they expect.
+  const ticket = await Ticket.findById(row.ticket);
+  if (!ticket) return { skip: 'Ticket no longer exists' };
+  const muted = Boolean(await TicketMute.exists({ ticket: ticket._id, user: user._id }));
+  const items = await itemsStillWorthSending(
+    row.batch.map((item) => item.toObject?.() ?? item), user, ticket, { muted },
+  );
+  if (items.length === 0) return { skip: 'Nothing left to send' };
+  await ticket.populate(EMAIL_TICKET_POPULATE);
+  return { ticket, items };
+}
+
+function withTicketBranding(context, ticket, config) {
+  return context?.brandLogoKey ? context : { ...context, ...(ticketBranding(ticket, config) ?? {}) };
+}
+
+/**
  * Renders and sends one claimed batch row. Returns 'sent', 'failed' or
  * 'skipped'. One item left renders exactly as that event's own email; more
  * than one renders the digest.
  */
 async function deliverBatchRow(row, config, deps) {
-  // Unpopulated at first: the visibility checks read refs the way the fan-out
-  // passes them, and a populated project.client is not what they expect.
-  const [user, ticket] = await Promise.all([
-    User.findById(row.recipientUserId),
-    Ticket.findById(row.ticket),
-  ]);
-  if (user?.status !== 'active') {
-    await skipRow(row, INACTIVE_RECIPIENT);
+  const user = await User.findById(row.recipientUserId);
+  const prepared = await prepareBatchRow(row, user);
+  if (prepared.skip) {
+    await skipRow(row, prepared.skip);
     return 'skipped';
   }
-  if (!ticket) {
-    await skipRow(row, 'Ticket no longer exists');
-    return 'skipped';
-  }
-  const items = await itemsStillWorthSending(row.batch.map((item) => item.toObject?.() ?? item), user, ticket);
-  if (items.length === 0) {
-    await skipRow(row, 'Nothing left to send');
-    return 'skipped';
-  }
-  await ticket.populate(EMAIL_TICKET_POPULATE);
+  const { ticket, items } = prepared;
 
-  const withBranding = (context = {}) => (context.brandLogoKey
-    ? context
-    : { ...context, ...(ticketBranding(ticket, config) ?? {}) });
+  const optOut = withOptOutLinks({}, user._id, config);
+  const withBranding = (context = {}) => ({ ...withTicketBranding(context, ticket, config), ...optOut.context });
   const context = withBranding(items[items.length - 1].context);
   const single = items.length === 1;
   const { subject, text, html } = single
@@ -603,6 +705,7 @@ async function deliverBatchRow(row, config, deps) {
     from: brandedFrom(config, context.brandName),
     subject,
     threadId: row.threadId || threadIdFor(ticket._id, domainOf(config)),
+    listUnsubscribe: optOut.listUnsubscribe,
     renderSnapshot: {
       context, text, html, brandLogoKey: context.brandLogoKey || null, requireBrandLogo,
     },
@@ -637,6 +740,102 @@ async function deliverBatchRow(row, config, deps) {
 }
 
 /**
+ * One summary email for the claimed rows of one recipient. The first row
+ * that still has something to say carries the email: it gets the rendered
+ * summary as its snapshot, so a failed send is retried by the ordinary sweep
+ * exactly like any other row. The other rows point at it (`mergedInto`) and
+ * are closed BEFORE the send — `skipped`, then `sent` once it goes — so a
+ * crash or a failure can never send their items a second time, alone.
+ * Returns row counts: { sent, skipped, failed }.
+ */
+async function deliverSummary(rows, config, deps) {
+  const counts = { sent: 0, skipped: 0, failed: 0 };
+  const user = await User.findById(rows[0].recipientUserId);
+  const sections = [];
+  for (const row of rows) {
+    const prepared = await prepareBatchRow(row, user);
+    if (prepared.skip) {
+      await skipRow(row, prepared.skip);
+      counts.skipped += 1;
+    } else {
+      sections.push({ row, ...prepared });
+    }
+  }
+  if (sections.length === 0) return counts;
+
+  const [carrier, ...merged] = sections.map((section) => section.row);
+  const optOut = withOptOutLinks({}, user._id, config);
+  const first = sections[0];
+  // One email, one brand: an external reader's tickets all belong to their
+  // own client, so the first ticket's brand is theirs. An internal reader's
+  // summary can span clients and shows the first one's (or the neutral) mark.
+  const context = {
+    ...withTicketBranding(first.items[first.items.length - 1].context, first.ticket, config),
+    ...optOut.context,
+  };
+  const { subject, text, html } = renderTicketSummaryEmail(
+    sections.map(({ ticket, items }) => ({ ticket, items })),
+    context,
+    config,
+    { frequency: deliveryPrefs(user).emailFrequency },
+  );
+  const requireBrandLogo = isExternalUser(user);
+  const fields = {
+    template: 'ticket_summary',
+    to: [user.email],
+    from: brandedFrom(config, context.brandName),
+    subject,
+    // A summary spans tickets, so it starts its own thread rather than
+    // replying into one ticket's.
+    threadId: null,
+    listUnsubscribe: optOut.listUnsubscribe,
+    renderSnapshot: {
+      context, text, html, brandLogoKey: context.brandLogoKey || null, requireBrandLogo,
+    },
+  };
+  await EmailLog.updateOne({ _id: carrier._id }, { $set: fields });
+  const mergedIds = merged.map((row) => row._id);
+  if (mergedIds.length) {
+    await EmailLog.updateMany({ _id: { $in: mergedIds } }, {
+      $set: {
+        status: 'skipped', skippedAt: new Date(), mergedInto: carrier._id, error: 'Sent in a summary email',
+      },
+    });
+  }
+
+  let attachments;
+  try {
+    assertClientBrand(requireBrandLogo, context);
+    attachments = await brandAttachments(config, {
+      logoKey: context.brandLogoKey,
+      requireCompanyMark: requireBrandLogo,
+    });
+  } catch (err) {
+    const error = String(err?.message || err);
+    await failRowsForPolicy([carrier], error, { counted: true });
+    logger.error('Ticket summary email blocked by branding policy', { emailLogId: String(carrier._id), error });
+    counts.failed += sections.length;
+    return counts;
+  }
+
+  const ok = await attempt({ ...carrier.toObject(), ...fields, text, html }, deps.transport, config, attachments, null, {
+    counted: true,
+  });
+  if (!ok) {
+    counts.failed += sections.length;
+    return counts;
+  }
+  if (mergedIds.length) {
+    await EmailLog.updateMany({ _id: { $in: mergedIds } }, { $set: { status: 'sent', sentAt: new Date() } });
+  }
+  await sendTestSinkCopy(deps.transport, config, deps, {
+    from: fields.from, subject, text, html, attachments,
+  }, { event: 'summary', emailLogId: String(carrier._id) });
+  counts.sent += sections.length;
+  return counts;
+}
+
+/**
  * The sweep. Only rows older than the grace period are picked up, long enough
  * that a row mid-flight in a healthy process is never touched. After the cap
  * the row stays `failed` and stops — no unbounded loop hammering a mailbox.
@@ -667,7 +866,7 @@ export async function retryPendingEmails(config, deps = {}, options = {}) {
   let failed = 0;
   for (const { _id } of candidates) {
     const row = await claimRow(EmailLog, _id, maxAttempts, cutoff)
-      .populate({ path: 'recipientUserId', select: 'role roles status' })
+      .populate({ path: 'recipientUserId', select: 'role roles status notificationPrefs.emailPaused' })
       .populate({
         path: 'ticket',
         populate: {
@@ -693,6 +892,10 @@ async function retryTicketRow(row, transport, config, maxAttempts) {
   // Deactivated or deleted since the event: they no longer get ticket mail.
   if (row.recipientUserId?.status !== 'active') {
     await abandonRow(EmailLog, row._id, maxAttempts, INACTIVE_RECIPIENT);
+    return false;
+  }
+  if (row.recipientUserId.notificationPrefs?.emailPaused === true) {
+    await abandonRow(EmailLog, row._id, maxAttempts, EMAIL_PAUSED);
     return false;
   }
 

@@ -127,6 +127,20 @@ function mentionIdsFromContext(context = {}) {
 }
 
 /**
+ * Who hears about a ticket's routine events because of their place on it —
+ * raiser, assignee, tester, the ticket team — as opposed to by watching it.
+ * Stage broadcasts are left out: they reach a role only for some stages.
+ */
+export async function roleAudienceIds(ticket) {
+  const ids = new Set([idStr(ticket.createdBy)]);
+  if (ticket.assignedTo) ids.add(idStr(ticket.assignedTo));
+  if (ticket.testedBy) ids.add(idStr(ticket.testedBy));
+  if (idStr(ticket.team)) await addTeamMembers(ids, ticket.team);
+  ids.delete(null);
+  return ids;
+}
+
+/**
  * An unset preference resolves through the DEFAULTS table — never to `true`.
  * Resolving to true unconditionally is exactly Dharwin's current behaviour, and
  * the reason opt-outs there are silently ignored.
@@ -149,16 +163,10 @@ export async function getNotificationRecipients(event, ticket, actor, context = 
   if (event === 'TICKET_MENTIONED') {
     for (const mentionId of mentionIdsFromContext(context)) ids.add(mentionId);
   } else {
-    ids.add(idStr(ticket.createdBy));
+    for (const id of await roleAudienceIds(ticket)) ids.add(id);
     for (const w of ticket.watchers || []) ids.add(idStr(w));
-    if (ticket.assignedTo) ids.add(idStr(ticket.assignedTo));
-    if (ticket.testedBy) ids.add(idStr(ticket.testedBy));
     // Whoever lost the ticket hears about it too ("unassigned you").
     if (event === 'TICKET_ASSIGNED' && context.previousAssignee) ids.add(idStr(context.previousAssignee));
-
-    if (idStr(ticket.team)) {
-      await addTeamMembers(ids, ticket.team);
-    }
 
     const { to } = context;
     if (to && STAGE_ENTRY_EVENTS.has(event) && QA_BROADCAST_STAGES.has(to)) {

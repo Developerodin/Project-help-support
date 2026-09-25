@@ -33,6 +33,10 @@ const emailLogSchema = new mongoose.Schema(
     messageId: { type: String },
     /** <ticket.<ticketObjectId>@<domain>>: In-Reply-To and References, so a ticket's mail threads. */
     threadId: { type: String },
+    /** The List-Unsubscribe header value (RFC 8058), kept so a retry sends the same one. */
+    listUnsubscribe: { type: String },
+    /** A batch sent inside another row's summary email: that row carries the email. */
+    mergedInto: { type: mongoose.Schema.Types.ObjectId, ref: 'EmailLog' },
     error: { type: String },
     sentAt: { type: Date },
     requestId: { type: String },

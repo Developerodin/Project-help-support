@@ -47,6 +47,19 @@ function readPositiveInt(env, key, defaultValue) {
   return value;
 }
 
+// Checked at boot so a typo fails loudly instead of every slot silently
+// falling back. Same Intl probe the prefs validation uses.
+function readTimeZone(env, key, defaultValue) {
+  if (!present(env[key])) return defaultValue;
+  const tz = env[key].trim();
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+  } catch {
+    throw new Error(`Config error: ${key} must be an IANA time zone, e.g. Asia/Kolkata.`);
+  }
+  return tz;
+}
+
 function readPositiveNumber(env, key, defaultValue) {
   if (!present(env[key])) return defaultValue;
   const value = Number(env[key]);
@@ -258,6 +271,12 @@ export function loadConfig(env = process.env) {
     https: readHttps(env),
     mongoUrl: env.MONGODB_URL.trim(),
     frontendBaseUrl: env.FRONTEND_BASE_URL.trim().replace(/\/$/, ''),
+    // Where mail providers reach this API (the one-click List-Unsubscribe
+    // POST). Unset: ticket mail carries no List-Unsubscribe header, only the
+    // footer links, which go through the frontend.
+    apiPublicUrl: present(env.API_PUBLIC_URL) ? env.API_PUBLIC_URL.trim().replace(/\/$/, '') : null,
+    // Hourly/daily slots and quiet hours for anyone without a zone of their own.
+    defaultTimeZone: readTimeZone(env, 'DEFAULT_TIME_ZONE', 'Asia/Kolkata'),
     corsOrigins: env.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean),
     jwt: {
       secret: env.JWT_SECRET.trim(),

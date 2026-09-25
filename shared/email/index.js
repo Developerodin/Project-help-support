@@ -5,7 +5,9 @@ export {
 } from './layout.js';
 export { renderInviteEmail } from './invite.js';
 export { renderPasswordResetEmail } from './password-reset.js';
-export { renderTicketEmail, renderTicketDigestEmail, ticketEmailSubject } from './ticket.js';
+export {
+  renderTicketEmail, renderTicketDigestEmail, renderTicketSummaryEmail, ticketEmailSubject, ticketSummarySubject,
+} from './ticket.js';
 
 import { renderInviteEmail } from './invite.js';
 import { renderPasswordResetEmail } from './password-reset.js';
