@@ -111,6 +111,7 @@ const userSchema = new mongoose.Schema(
         blocked: { type: Boolean, default: DEFAULT_TICKET_PREFERENCES.filters.blocked },
         overdue: { type: Boolean, default: DEFAULT_TICKET_PREFERENCES.filters.overdue },
         reopened: { type: Boolean, default: DEFAULT_TICKET_PREFERENCES.filters.reopened },
+        newReply: { type: Boolean, default: DEFAULT_TICKET_PREFERENCES.filters.newReply },
       },
       sort: {
         column: {

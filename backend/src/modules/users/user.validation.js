@@ -83,6 +83,7 @@ const ticketFilterPrefs = Joi.object({
   blocked: Joi.boolean(),
   overdue: Joi.boolean(),
   reopened: Joi.boolean(),
+  newReply: Joi.boolean(),
 });
 
 const ticketSortPrefs = Joi.object({
