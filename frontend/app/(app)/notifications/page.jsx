@@ -8,18 +8,24 @@ import Icon from '@/shared/components/icons.jsx';
 import AppLoader from '@/shared/components/app-loader.jsx';
 import FormError from '@/shared/components/form-error.jsx';
 import NotificationTicketCard from '@/shared/components/NotificationTicketCard.jsx';
-import { groupNotificationsByTicket, notificationHref } from '@/shared/lib/notification-utils.js';
+import {
+  groupHasUnread,
+  groupNotificationsByTicket,
+  groupsByDay,
+  notificationHref,
+  notificationTicketObjectId,
+} from '@/shared/lib/notification-utils.js';
 import {
   NOTIFICATION_INBOX_LIMIT,
   fetchNotificationList,
-  listNotificationsParams,
   markAllNotificationsRead,
   markNotificationRead,
+  markTicketNotificationsRead,
   notificationListSwrKey,
   notificationSwrKeys,
   unreadCountFrom,
+  unreadCountSwrKey,
   useNotificationPollInterval,
-  useNotificationProjectScope,
 } from '@/shared/lib/notification-swr.js';
 import { windowedPageNumbers } from '@/shared/lib/ticket-list-query.js';
 
@@ -34,35 +40,26 @@ export default function NotificationsPage() {
   }, [unreadOnly]);
   const limit = NOTIFICATION_INBOX_LIMIT;
   const refreshInterval = useNotificationPollInterval();
-  const { projectId, projectLoading } = useNotificationProjectScope();
-  const unreadParams = listNotificationsParams({ unread: true, limit: 1 }, projectId);
-  const inboxParams = listNotificationsParams({ page, limit, unread: unreadOnly }, projectId);
 
-  const { data: unreadData } = useSWR(
-    notificationListSwrKey(notificationSwrKeys.unreadCount(projectId), unreadParams),
-    fetchNotificationList,
-    { refreshInterval },
-  );
+  const { data: unreadData } = useSWR(unreadCountSwrKey(), fetchNotificationList, { refreshInterval });
 
   const { data, error, isLoading, mutate } = useSWR(
     notificationListSwrKey(
-      notificationSwrKeys.inbox(page, limit, unreadOnly, projectId),
-      inboxParams,
+      notificationSwrKeys.inbox(page, limit, unreadOnly),
+      { page, limit, unread: unreadOnly },
     ),
     fetchNotificationList,
     { refreshInterval },
   );
 
-  const showInboxLoader = !error && (
-    projectLoading || (Boolean(projectId) && isLoading)
-  );
+  const showInboxLoader = !error && isLoading;
 
   const items = data?.results ?? [];
   const totalResults = data?.totalResults ?? 0;
   const totalPages = Math.max(1, data?.totalPages ?? 1);
   const unreadCount = unreadCountFrom(unreadData);
 
-  const groups = useMemo(() => groupNotificationsByTicket(items), [items]);
+  const days = useMemo(() => groupsByDay(groupNotificationsByTicket(items)), [items]);
 
   const pageNumbers = useMemo(
     () => windowedPageNumbers(page, totalPages),
@@ -82,13 +79,34 @@ export default function NotificationsPage() {
   }
 
   async function handleMarkRead(id) {
-    await markNotificationRead(id);
+    try {
+      await markNotificationRead(id);
+    } catch {
+      /* toast in helper */
+    }
   }
 
   async function handleMarkAllRead() {
-    if (!projectId) return;
-    await markAllNotificationsRead(projectId);
-    await mutate();
+    try {
+      await markAllNotificationsRead();
+    } catch {
+      /* toast in helper */
+    }
+  }
+
+  /** "View ticket" reads every update in the card, not only the newest. */
+  async function handleViewTicket(event, group) {
+    if (!groupHasUnread(group.items)) return;
+    event.preventDefault();
+    const latest = group.latest ?? group.items[0];
+    const ticketObjectId = notificationTicketObjectId(latest);
+    try {
+      if (ticketObjectId) await markTicketNotificationsRead(ticketObjectId);
+      else await Promise.all(group.items.filter((item) => !item.readAt).map((item) => markNotificationRead(item.id)));
+      router.push(notificationHref(latest.link));
+    } catch {
+      /* toast in helper */
+    }
   }
 
   async function handleTitleClick(event, item) {
@@ -139,12 +157,12 @@ export default function NotificationsPage() {
               Unread
             </button>
           </div>
-          {unreadCount > 0 && projectId && (
+          {unreadCount > 0 && (
             <button
               type="button"
               className="btn btn-sm"
               onClick={handleMarkAllRead}
-              title="Marks all notifications read for the selected project"
+              title="Marks every notification read, in all projects"
             >
               Mark all read
             </button>
@@ -162,14 +180,7 @@ export default function NotificationsPage() {
 
       {showInboxLoader && <AppLoader inline label="Loading notifications…" ariaLabel="Loading notifications" />}
 
-      {!projectLoading && !projectId && (
-        <div className="empty-state">
-          <h3>Select a project</h3>
-          <p>Use the project switcher in the top bar to see notifications for that project.</p>
-        </div>
-      )}
-
-      {error && projectId && (
+      {error && (
         <div className="notif-inbox__error">
           <FormError error={error} title="Could not load notifications" />
           <button type="button" className="btn btn-sm" onClick={() => mutate()}>
@@ -178,7 +189,7 @@ export default function NotificationsPage() {
         </div>
       )}
 
-      {!projectLoading && projectId && !isLoading && !error && items.length === 0 && (
+      {!isLoading && !error && items.length === 0 && (
         <div className="empty-state">
           <h3>{unreadOnly ? 'No unread notifications' : 'No notifications'}</h3>
           <p>
@@ -196,18 +207,24 @@ export default function NotificationsPage() {
         </div>
       )}
 
-      {projectId && items.length > 0 && !error && (
+      {items.length > 0 && !error && (
         <>
-          <div className="notif-list" role="list">
-            {groups.map((group) => (
-              <NotificationTicketCard
-                key={group.ticketKey ?? group.latest.id}
-                group={group}
-                onTitleClick={handleTitleClick}
-                onMarkRead={handleMarkRead}
-              />
-            ))}
-          </div>
+          {days.map((day) => (
+            <section key={day.label} className="notif-inbox__day">
+              <h2 className="notif-inbox__day-label meta">{day.label}</h2>
+              <div className="notif-list" role="list">
+                {day.groups.map((group) => (
+                  <NotificationTicketCard
+                    key={group.ticketKey ?? group.latest.id}
+                    group={group}
+                    onTitleClick={handleTitleClick}
+                    onViewTicket={handleViewTicket}
+                    onMarkRead={handleMarkRead}
+                  />
+                ))}
+              </div>
+            </section>
+          ))}
 
           {totalResults > 0 && (
             <nav className="pager" aria-label="Notifications pagination">

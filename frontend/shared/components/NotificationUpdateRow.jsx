@@ -1,11 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { notificationEventLabel } from '@pms/shared';
 import Icon from '@/shared/components/icons.jsx';
 import {
+  formatAbsoluteTime,
   formatRelativeTime,
-  notificationEffectiveEvent,
+  notificationChipLabel,
   notificationEventIconName,
   notificationHref,
   notificationPrimaryLine,
@@ -20,10 +20,8 @@ export default function NotificationUpdateRow({
 }) {
   const unread = !item.readAt;
   const href = notificationHref(item.link);
-  const event = notificationEffectiveEvent(item);
-  const title = notificationPrimaryLine(item, { omitTicketKey: true });
-  const description = notificationUpdateDescription(item)
-    ?? notificationEventLabel(event);
+  const title = notificationPrimaryLine(item);
+  const description = notificationUpdateDescription(item) ?? notificationChipLabel(item);
 
   const rowClass = [
     'notif-update-row',
@@ -33,7 +31,7 @@ export default function NotificationUpdateRow({
   return (
     <div className={rowClass}>
       <span className="notif-update-row__icon" aria-hidden="true">
-        <Icon name={notificationEventIconName(event)} size={14} />
+        <Icon name={notificationEventIconName(item.event)} size={14} />
       </span>
       <div className="notif-update-row__main">
         <Link
@@ -41,9 +39,14 @@ export default function NotificationUpdateRow({
           className="notif-update-row__title"
           onClick={onNavigate ? (event) => onNavigate(event, item) : undefined}
         >
+          {unread ? <span className="sr-only">Unread: </span> : null}
           {title}
         </Link>
-        <time className="notif-update-row__time meta" dateTime={item.createdAt}>
+        <time
+          className="notif-update-row__time meta"
+          dateTime={item.createdAt}
+          title={formatAbsoluteTime(item.createdAt)}
+        >
           {formatRelativeTime(item.createdAt)}
         </time>
         {description ? (
@@ -54,6 +57,7 @@ export default function NotificationUpdateRow({
         <button
           type="button"
           className="btn btn-sm btn-ghost notif-update-row__mark-read"
+          aria-label={`Mark read: ${title}`}
           onClick={() => onMarkRead(item.id)}
         >
           Mark read

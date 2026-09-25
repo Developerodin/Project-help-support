@@ -7,6 +7,7 @@ import { createApp } from './app.js';
 import { seedAdmin, seedProjects, runLegacyMigrations } from './seed.js';
 import User from './modules/users/user.model.js';
 import { buildInviteDeliverer, buildResetDeliverer } from './modules/notifications/dispatch.js';
+import { backfillNotificationProjects } from './modules/notifications/notification.service.js';
 import logger from './platform/logger.js';
 import { retryPendingAuditOutbox } from './modules/rbac/rbac-audit.js';
 import {
@@ -28,6 +29,16 @@ async function replayAuditOutboxOnBoot() {
       error: err.message,
       stack: err.stack,
     });
+  }
+}
+
+/** Rows from before notifications carried `project`; a no-op once they all do. */
+async function backfillNotificationProjectsOnBoot() {
+  try {
+    const updated = await backfillNotificationProjects();
+    if (updated > 0) logger.info('notifications.project_backfill', { updated });
+  } catch (err) {
+    logger.error('notifications.project_backfill_failed', { error: err.message, stack: err.stack });
   }
 }
 
@@ -73,6 +84,7 @@ async function start() {
   if (!config.features.push) logger.warn('Push notifications disabled — VAPID keys not set');
 
   await connectDb(config.mongoUrl);
+  await backfillNotificationProjectsOnBoot();
   await replayAuditOutboxOnBoot();
   await replayNotificationOutboxOnBoot(config);
   const stopAuditReplay = scheduleAuditOutboxReplay();

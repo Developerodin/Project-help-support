@@ -58,6 +58,15 @@ export function publishTicketCommentRealtime(ticket, actor) {
   hub.publishToUsers(discussionAudienceUserIds(ticket, actorId), payload);
 }
 
+/**
+ * "Your bell has something new" — refetch the list and the unread count. No
+ * ticket, text or count in the payload: the client reads those through the
+ * notifications API, which applies the per-user visibility rules.
+ */
+export function publishNotificationCreated(userIds) {
+  hub.publishToUsers(userIds, { type: 'notification.created' });
+}
+
 export function publishTicketUpdatedRealtime(ticket, actor) {
   const actorId = idStr(actor?._id ?? actor?.id);
   const projectId = projectIdOf(ticket);

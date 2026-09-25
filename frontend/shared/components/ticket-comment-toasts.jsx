@@ -17,6 +17,11 @@ export default function TicketCommentToasts() {
   const router = useRouter();
 
   useRealtimeEvent((event) => {
+    // A new bell row for you, from any source: refresh the badge and lists now.
+    if (event?.type === 'notification.created') {
+      mutateNotifications();
+      return;
+    }
     if (event?.type !== 'ticket.comment' || !event.ticketId) return;
     // Your own comment (posted through the assistant): nothing to announce.
     if (event.self) return;

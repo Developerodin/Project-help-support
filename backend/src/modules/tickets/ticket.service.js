@@ -28,6 +28,7 @@ import {
   ensureProjectMigrated,
   findProjectMemberByRole,
 } from '../projects/project-team-member.service.js';
+import Notification from '../notifications/notification.model.js';
 import Team from '../teams/team.model.js';
 import { assertTeamUsable, assertActiveUsers } from '../teams/team.service.js';
 import {
@@ -999,6 +1000,9 @@ export async function deleteTicket(idOrKey, actor = null, permissionContext = nu
     );
   }
   await Ticket.deleteOne({ _id: ticket._id });
+  // Bulk delete comes through here too. Rows would otherwise dangle, linking to
+  // a ticket that no longer opens.
+  await Notification.deleteMany({ ticket: ticket._id });
   return { id: String(ticket._id), ticketId: ticket.ticketId };
 }
 

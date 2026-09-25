@@ -13,12 +13,15 @@ import {
 export default function NotificationTicketCard({
   group,
   onTitleClick,
+  onViewTicket,
   onMarkRead,
 }) {
   const [expanded, setExpanded] = useState(false);
   const { ticketKey, items } = group;
   const count = items.length;
   const unreadInGroup = groupHasUnread(items);
+  const unreadCount = items.filter((item) => !item.readAt).length;
+  const project = group.latest?.project;
   const subject = ticketSubjectFromGroup(group);
   const ticketHref = notificationGroupHref(group);
   const { visible, hiddenCount } = visibleUpdates(items, expanded);
@@ -40,9 +43,14 @@ export default function NotificationTicketCard({
           ) : (
             <span className="notif-ticket-card__key notif-ticket-card__key--muted">Update</span>
           )}
-          {count > 1 ? (
+          {project?.key ? (
+            <span className="chip chip-sm notif-chip--neutral" title={project.name}>{project.key}</span>
+          ) : null}
+          {count > 1 || unreadCount > 0 ? (
             <span className="notif-ticket-card__badge">
-              {count} update{count === 1 ? '' : 's'}
+              {count > 1 ? `${count} updates` : null}
+              {count > 1 && unreadCount > 0 ? ' · ' : null}
+              {unreadCount > 0 ? `${unreadCount} unread` : null}
             </span>
           ) : null}
         </div>
@@ -76,9 +84,7 @@ export default function NotificationTicketCard({
 
         <footer className="notif-ticket-card__foot">
           <Link href={ticketHref} className="notif-ticket-card__view" onClick={
-            onTitleClick
-              ? (event) => onTitleClick(event, group.latest ?? items[0])
-              : undefined
+            onViewTicket ? (event) => onViewTicket(event, group) : undefined
           }>
             View ticket →
           </Link>

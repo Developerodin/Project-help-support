@@ -14,6 +14,7 @@ export const markRead = (id) => apiFetch(`/notifications/${id}/read`, { method: 
 export const markAllRead = (params = {}) => {
   const qs = new URLSearchParams();
   if (params.project) qs.set('project', params.project);
+  if (params.ticket) qs.set('ticket', params.ticket);
   const q = qs.toString();
   return apiFetch(`/notifications/read-all${q ? `?${q}` : ''}`, { method: 'POST' });
 };

@@ -1,3 +1,5 @@
+import { notificationEventLabel } from '@pms/shared';
+
 /** Lucide icon names from shared/components/icons.jsx */
 const NOTIFICATION_EVENT_ICONS = {
   TICKET_CREATED: 'plus',
@@ -8,17 +10,6 @@ const NOTIFICATION_EVENT_ICONS = {
   TICKET_COMMENTED: 'msg',
   TICKET_MENTIONED: 'user',
   TICKET_ESTIMATE_SET: 'chart',
-};
-
-const NOTIFICATION_SHORT_ACTIONS = {
-  TICKET_CREATED: 'Filed',
-  TICKET_ASSIGNED: 'Assigned',
-  TICKET_STAGE_CHANGED: 'Stage changed',
-  TICKET_REOPENED: 'Reopened',
-  TICKET_CLOSED: 'Closed',
-  TICKET_COMMENTED: 'New comment',
-  TICKET_MENTIONED: 'Mentioned',
-  TICKET_ESTIMATE_SET: 'Estimates updated',
 };
 
 /** Design-system modifier classes for event chips (icon + label, not color-only). */
@@ -41,36 +32,38 @@ export function notificationEventChipClass(event) {
   return NOTIFICATION_EVENT_CHIP_CLASS[event] ?? 'notif-chip--neutral';
 }
 
-export function notificationShortAction(event) {
-  return NOTIFICATION_SHORT_ACTIONS[event] ?? 'Update';
+/**
+ * Chip text for a row, or null when the title already says it. Titles are
+ * human sentences written by the server and change over time, so they are
+ * only compared against, never parsed.
+ */
+export function notificationChipLabel(item) {
+  const label = notificationEventLabel(item?.event);
+  if (!item?.event || !label) return null;
+  const title = item?.title?.trim().toLowerCase() ?? '';
+  return title.includes(label.toLowerCase()) ? null : label;
 }
 
-const SHORT_ACTION_TO_EVENT = Object.freeze(
-  Object.fromEntries(
-    Object.entries(NOTIFICATION_SHORT_ACTIONS).map(([eventKey, label]) => [label, eventKey]),
-  ),
-);
-
-/** Prefer the action encoded in `title` ("WEB-1 · Stage changed") when present. */
-export function notificationEffectiveEvent(item) {
-  const title = item?.title?.trim();
-  if (title?.includes(' · ')) {
-    const actionLabel = title.split(' · ').slice(1).join(' · ').trim();
-    const fromTitle = SHORT_ACTION_TO_EVENT[actionLabel];
-    if (fromTitle) return fromTitle;
-  }
-  return item?.event;
-}
-
-/** Strip origin so Next.js Link can navigate in-app. */
+/**
+ * Same-origin path so Next.js Link navigates in-app. Stored links are absolute
+ * and older rows can name another host, so only path, query and hash are kept.
+ */
 export function notificationHref(link) {
   if (!link) return '/notifications';
   try {
     const url = new URL(link);
-    return `${url.pathname}${url.search}`;
+    return `${url.pathname}${url.search}${url.hash}`;
   } catch {
     return link.startsWith('/') ? link : '/notifications';
   }
+}
+
+/** The populated ticket's ObjectId, for read-all?ticket=. */
+export function notificationTicketObjectId(item) {
+  const { ticket } = item ?? {};
+  if (!ticket) return null;
+  if (typeof ticket === 'string') return ticket;
+  return ticket.id ?? ticket._id ?? null;
 }
 
 export function notificationTicketKey(item) {
@@ -87,29 +80,13 @@ export function notificationTicketKey(item) {
   return null;
 }
 
-/**
- * Primary line: ticket key + short action. Parses backend titles like "WEB-1 · Assigned".
- */
-/**
- * @param {{ omitTicketKey?: boolean }} [options] — action-only line when grouped under a ticket header
- */
-export function notificationPrimaryLine(item, options = {}) {
-  const { omitTicketKey = false } = options;
+/** Primary line: the server's title as written; falls back to ticket key + event label. */
+export function notificationPrimaryLine(item) {
   const title = item?.title?.trim();
-  const action = notificationShortAction(notificationEffectiveEvent(item));
-
-  if (title?.includes(' · ')) {
-    if (omitTicketKey) {
-      const rest = title.split(' · ').slice(1).join(' · ').trim();
-      return rest || action;
-    }
-    return title;
-  }
-
+  if (title) return title;
+  const action = notificationEventLabel(item?.event) || 'Update';
   const key = notificationTicketKey(item);
-  if (omitTicketKey) return action;
-  if (key) return `${key} · ${action}`;
-  return title || action;
+  return key ? `${key} · ${action}` : action;
 }
 
 export function formatRelativeTime(iso) {
@@ -132,7 +109,49 @@ export function formatRelativeTime(iso) {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-/** Group inbox page results by ticket key (within current page). */
+/** Full date and time for a `title` tooltip next to a relative time. */
+export function formatAbsoluteTime(iso) {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+/** "Today", "Yesterday", or a date, in the viewer's local time zone. */
+export function notificationDayLabel(iso, now = new Date()) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  const startOf = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((startOf(now) - startOf(date)) / 86_400_000);
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  return date.toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    ...(date.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }),
+  });
+}
+
+/**
+ * Inbox ticket groups under day headers, by each group's latest update.
+ * Groups arrive newest-first, so consecutive runs share a day.
+ */
+export function groupsByDay(groups, now = new Date()) {
+  const days = [];
+  for (const group of groups) {
+    const label = notificationDayLabel(group.latest?.createdAt, now);
+    const last = days[days.length - 1];
+    if (last?.label === label) last.groups.push(group);
+    else days.push({ label, groups: [group] });
+  }
+  return days;
+}
+
+/**
+ * Group inbox page results by ticket key. Only within the current page: a
+ * ticket whose updates straddle a page boundary shows as a card on each page.
+ */
 export function groupNotificationsByTicket(items) {
   const groups = new Map();
   const order = [];
@@ -212,12 +231,7 @@ export function notificationUpdateDescription(item) {
 
   const ticketTitle = item?.ticket?.title?.trim();
   if (ticketTitle && body === ticketTitle) return null;
-
-  const title = item?.title?.trim();
-  if (title?.includes(' · ')) {
-    const actionLabel = title.split(' · ').slice(1).join(' · ').trim();
-    if (body === actionLabel) return null;
-  }
+  if (body === item?.title?.trim()) return null;
 
   return body;
 }

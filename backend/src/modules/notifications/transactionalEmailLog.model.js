@@ -17,7 +17,7 @@ const transactionalEmailLogSchema = new mongoose.Schema(
     subject: { type: String, required: true },
     text: { type: String, required: true },
     html: { type: String, required: true },
-    status: { type: String, enum: ['pending', 'sent', 'failed'], default: 'pending', index: true },
+    status: { type: String, enum: ['pending', 'sending', 'sent', 'failed'], default: 'pending', index: true },
     attemptCount: { type: Number, default: 0 },
     lastAttemptAt: { type: Date },
     sentAt: { type: Date },
@@ -28,6 +28,12 @@ const transactionalEmailLogSchema = new mongoose.Schema(
 );
 
 transactionalEmailLogSchema.index({ status: 1, lastAttemptAt: 1 });
+// Same retention as ticket mail: delivered rows go after 90 days; pending and
+// failed rows stay until someone looks at them.
+transactionalEmailLogSchema.index(
+  { sentAt: 1 },
+  { expireAfterSeconds: 90 * 24 * 60 * 60, partialFilterExpression: { status: 'sent' } },
+);
 
 transactionalEmailLogSchema.plugin(toJSON);
 

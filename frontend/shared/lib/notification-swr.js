@@ -1,46 +1,33 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { mutate as globalMutate } from 'swr';
 import { listNotifications, markAllRead, markRead } from '@/shared/api/notifications.js';
 import { normalizeApiError } from '@/shared/lib/api-error.js';
 import { showToast } from '@/shared/lib/toast.js';
-import { useProject } from '@/shared/contexts/project-context.jsx';
-import { useHistorySearch } from '@/shared/lib/use-history-search.js';
-import { resolveViewProject } from '@/shared/lib/ticket-list-query.js';
+import { notificationTicketObjectId } from '@/shared/lib/notification-utils.js';
 
 export const POLL_MS_HIDDEN = 30_000;
 export const POLL_MS_VISIBLE = 15_000;
 export const NOTIFICATION_DROPDOWN_LIMIT = 8;
 export const NOTIFICATION_INBOX_LIMIT = 30;
 
-const projectKeySegment = (projectId) => (projectId ? String(projectId) : 'none');
-
+// Notifications are the person's own, across every project they are in, so
+// no key carries a project: the bell, inbox and sidebar badge all agree.
 export const notificationSwrKeys = {
-  unreadCount: (projectId) => `notifications-unread-count:${projectKeySegment(projectId)}`,
-  recent: (projectId) => `notifications-recent:${projectKeySegment(projectId)}`,
-  inbox: (page, limit, unreadOnly = false, projectId) =>
-    `notifications-inbox:${projectKeySegment(projectId)}:${page}:${limit}:${unreadOnly ? 'unread' : 'all'}`,
+  unreadCount: () => 'notifications-unread-count',
+  recent: () => 'notifications-recent',
+  inbox: (page, limit, unreadOnly = false) =>
+    `notifications-inbox:${page}:${limit}:${unreadOnly ? 'unread' : 'all'}`,
 };
-
-/** URL `project` wins; otherwise the active project from the switcher. */
-export function useNotificationProjectScope() {
-  const searchString = useHistorySearch();
-  const { activeProjectId, loading: projectLoading } = useProject();
-  const projectId = useMemo(
-    () => resolveViewProject(searchString, activeProjectId),
-    [searchString, activeProjectId],
-  );
-  return { projectId, projectLoading };
-}
-
-export function listNotificationsParams(base, projectId) {
-  if (!projectId) return null;
-  return { ...base, project: projectId };
-}
 
 /** Pair scope key with params so SWR never runs a fetcher while params are null. */
 export function notificationListSwrKey(scopeKey, params) {
   if (!scopeKey || !params) return null;
   return [scopeKey, params];
+}
+
+/** Unread total across everything: one row fetched, `totalResults` read. */
+export function unreadCountSwrKey() {
+  return notificationListSwrKey(notificationSwrKeys.unreadCount(), { unread: true, limit: 1 });
 }
 
 export function fetchNotificationList(key) {
@@ -49,9 +36,24 @@ export function fetchNotificationList(key) {
   return listNotifications(params);
 }
 
-export function isNotificationSwrKey(key) {
-  return typeof key === 'string' && key.startsWith('notifications');
+/**
+ * The scope string of a cache key. A mutate filter is handed the key as it was
+ * passed to useSWR, so `[scopeKey, params]` arrives as the array, not a string.
+ */
+function scopeOf(key) {
+  const scope = Array.isArray(key) ? key[0] : key;
+  return typeof scope === 'string' ? scope : '';
 }
+
+export function isNotificationSwrKey(key) {
+  return scopeOf(key).startsWith('notifications');
+}
+
+const isUnreadCountKey = (key) => scopeOf(key) === notificationSwrKeys.unreadCount();
+const isListKey = (key) => {
+  const scope = scopeOf(key);
+  return scope === notificationSwrKeys.recent() || scope.startsWith('notifications-inbox:');
+};
 
 export function mutateNotifications() {
   return globalMutate(isNotificationSwrKey, undefined, { revalidate: true });
@@ -95,18 +97,8 @@ function patchListMarkAllRead(data) {
 }
 
 export async function markNotificationRead(id) {
-  await globalMutate(
-    (key) => typeof key === 'string' && key.startsWith('notifications-unread-count:'),
-    (data) => patchUnreadCountMarkRead(data, id),
-    { revalidate: false },
-  );
-  await globalMutate(
-    (key) => typeof key === 'string' && (
-      key.startsWith('notifications-recent:') || key.startsWith('notifications-inbox:')
-    ),
-    (data) => patchListMarkRead(data, id),
-    { revalidate: false },
-  );
+  await globalMutate(isUnreadCountKey, (data) => patchUnreadCountMarkRead(data, id), { revalidate: false });
+  await globalMutate(isListKey, (data) => patchListMarkRead(data, id), { revalidate: false });
   try {
     await markRead(id);
     await mutateNotifications();
@@ -117,30 +109,54 @@ export async function markNotificationRead(id) {
   }
 }
 
-export async function markAllNotificationsRead(projectId) {
-  const unreadKey = notificationSwrKeys.unreadCount(projectId);
-  const listKeyMatcher = (key) => typeof key === 'string' && (
-    key === notificationSwrKeys.recent(projectId)
-    || (key.startsWith(`notifications-inbox:${projectKeySegment(projectId)}:`))
-  );
-
+/** Every project. */
+export async function markAllNotificationsRead() {
   await globalMutate(
-    unreadKey,
+    isUnreadCountKey,
     (data) => (data ? { ...data, totalResults: 0, results: [] } : data),
     { revalidate: false },
   );
-  await globalMutate(
-    listKeyMatcher,
-    (data) => patchListMarkAllRead(data),
-    { revalidate: false },
-  );
+  await globalMutate(isListKey, (data) => patchListMarkAllRead(data), { revalidate: false });
   try {
-    const params = projectId ? { project: projectId } : {};
-    await markAllRead(params);
+    await markAllRead();
     await mutateNotifications();
   } catch (err) {
     await mutateNotifications();
     showToast(normalizeApiError(err)?.message || 'Could not mark all as read', { type: 'error' });
+    throw err;
+  }
+}
+
+/**
+ * Opening a grouped row (several updates on one ticket) reads them all.
+ * The badge drops by the unread rows for that ticket found in cached lists —
+ * a lower bound when some sit on pages not loaded; the refetch settles it.
+ */
+export async function markTicketNotificationsRead(ticketObjectId) {
+  const now = new Date().toISOString();
+  const cleared = new Set();
+  await globalMutate(isListKey, (data) => {
+    if (!data?.results) return data;
+    return {
+      ...data,
+      results: data.results.map((item) => {
+        if (item.readAt || notificationTicketObjectId(item) !== ticketObjectId) return item;
+        cleared.add(item.id);
+        return { ...item, readAt: now };
+      }),
+    };
+  }, { revalidate: false });
+  await globalMutate(
+    isUnreadCountKey,
+    (data) => (data ? { ...data, totalResults: Math.max(0, (data.totalResults ?? 0) - cleared.size) } : data),
+    { revalidate: false },
+  );
+  try {
+    await markAllRead({ ticket: ticketObjectId });
+    await mutateNotifications();
+  } catch (err) {
+    await mutateNotifications();
+    showToast(normalizeApiError(err)?.message || 'Could not mark notifications as read', { type: 'error' });
     throw err;
   }
 }

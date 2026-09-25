@@ -118,10 +118,11 @@ self.addEventListener('push', (event) => {
   }
 
   event.waitUntil(
-    self.registration.showNotification(data.title || 'ProwPlus', {
+    // No `badge`: Android draws it as a monochrome mask, so a full-colour icon
+    // shows as a white square.
+    self.registration.showNotification(data.title || 'Notification', {
       body: data.body || '',
       icon: '/icons/icon-192-prowplus.png',
-      badge: '/icons/icon-192-prowplus.png',
       tag: data.tag,
       // A replaced banner (same ticket) still alerts; without a tag nothing is replaced.
       renotify: Boolean(data.tag),
@@ -134,8 +135,9 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  let target = new URL(event.notification.data?.url || '/', self.location.origin);
-  if (target.origin !== self.location.origin) target = new URL('/', self.location.origin);
+  // Links from another host (an older deployment) keep their path here.
+  const raw = new URL(event.notification.data?.url || '/', self.location.origin);
+  const target = new URL(`${raw.pathname}${raw.search}${raw.hash}`, self.location.origin);
 
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });

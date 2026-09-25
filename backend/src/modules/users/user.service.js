@@ -15,6 +15,7 @@ import {
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
 import { revokeAllRefreshTokens, hashToken } from '../auth/token.service.js';
+import PushSubscription from '../notifications/pushSubscription.model.js';
 import { recordRbacAudit } from '../rbac/rbac-audit.js';
 
 /** Keep in sync with auth.service.js INVITE_TTL_HOURS. */
@@ -178,6 +179,10 @@ export async function updateUser(actor, id, body, auditContext = {}) {
   };
 
   const user = await User.findByIdAndUpdate(id, { $set: nextBody }, { new: true, runValidators: true });
+  // A deactivated person's devices must stop receiving ticket pushes.
+  if (previous.status === 'active' && user.status !== 'active') {
+    await PushSubscription.deleteMany({ user: user._id });
+  }
 
   await recordRbacAudit(actor, 'user.update', {
     userId: String(id),

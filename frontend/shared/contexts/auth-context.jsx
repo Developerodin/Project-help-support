@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { useRouter } from 'next/navigation';
 import { apiFetch, isTransientApiError, setAccessToken, setSessionLostHandler } from '../api/client.js';
 import { clearAssistantChats } from '../lib/assistant-chat-storage.js';
-import { disablePushQuietly, syncPush } from '../lib/push.js';
+import { disablePushQuietly, syncPush, unsubscribePushInBrowser } from '../lib/push.js';
 import {
   applyDocumentBranding,
   neutralBranding,
@@ -62,6 +62,10 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     setSessionLostHandler(() => {
+      // Signed out without a logout (refresh rejected): this device must stop
+      // showing the person's ticket updates, and there's no session left to
+      // tell the server with.
+      unsubscribePushInBrowser().catch(() => {});
       setAccessToken(null);
       setImpersonation(null);
       resetBrandingToNeutral();
@@ -101,6 +105,8 @@ export function AuthProvider({ children }) {
         } catch (error) {
           if (cancelled) return;
           if (isTransientApiError(error)) continue;
+          // No valid session on this device: same as the session-lost case above.
+          unsubscribePushInBrowser().catch(() => {});
           setAccessToken(null);
           setUser(null);
           setImpersonation(null);

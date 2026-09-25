@@ -5,6 +5,7 @@ import { brandAttachments, BrandLogoRequiredError } from '../../platform/email/l
 import { brandedFrom, ticketBranding } from './branding.js';
 import logger from '../../platform/logger.js';
 import { getTransport } from '../../platform/mailer.js';
+import User from '../users/user.model.js';
 import EmailLog from './emailLog.model.js';
 import TransactionalEmailLog from './transactionalEmailLog.model.js';
 
@@ -39,7 +40,8 @@ function assertClientBrand(required, context) {
   }
 }
 
-async function failRowsForPolicy(rows, error) {
+/** `counted`: the sweep's claim already bumped attemptCount for this try. */
+async function failRowsForPolicy(rows, error, { counted = false } = {}) {
   if (!rows.length) return;
   const now = new Date();
   await EmailLog.updateMany(
@@ -50,10 +52,59 @@ async function failRowsForPolicy(rows, error) {
         lastAttemptAt: now,
         error,
       },
-      $inc: { attemptCount: 1 },
+      ...(counted ? {} : { $inc: { attemptCount: 1 } }),
     },
   );
 }
+
+/**
+ * Rows a sweep may pick up. `sending` is included because a claim stamps
+ * lastAttemptAt = now: a live claim is inside the grace window and invisible,
+ * while one whose process died before finishing ages out of it and is retried.
+ */
+function retryableFilter(maxAttempts, cutoff) {
+  return {
+    status: { $in: ['pending', 'failed', 'sending'] },
+    attemptCount: { $lt: maxAttempts },
+    $or: [{ lastAttemptAt: { $lt: cutoff } }, { lastAttemptAt: null, createdAt: { $lt: cutoff } }],
+  };
+}
+
+/** Out of attempts. A `sending` row only counts once its claim has gone stale. */
+function exhaustedFilter(maxAttempts, cutoff) {
+  return {
+    attemptCount: { $gte: maxAttempts },
+    $or: [
+      { status: { $in: ['pending', 'failed'] } },
+      { status: 'sending', lastAttemptAt: { $lt: cutoff } },
+    ],
+  };
+}
+
+/**
+ * The claim is the only thing standing between two sweeps (two instances, or a
+ * boot replay overlapping an interval tick) and a duplicate send: whichever
+ * findOneAndUpdate matches first owns the row, the other gets null. The
+ * attempt is counted here, so a row that crashes its process every time still
+ * hits the cap instead of looping forever.
+ */
+function claimRow(Model, id, maxAttempts, cutoff) {
+  return Model.findOneAndUpdate(
+    { _id: id, ...retryableFilter(maxAttempts, cutoff) },
+    { $set: { status: 'sending', lastAttemptAt: new Date() }, $inc: { attemptCount: 1 } },
+    { new: true },
+  );
+}
+
+/** Never retried again: attemptCount is lifted to the cap. */
+function abandonRow(Model, id, maxAttempts, error) {
+  return Model.updateOne(
+    { _id: id },
+    { $set: { status: 'failed', error }, $max: { attemptCount: maxAttempts } },
+  );
+}
+
+const INACTIVE_RECIPIENT = 'Recipient is no longer active';
 
 
 function domainOf(config) {
@@ -89,8 +140,9 @@ export class TransactionalEmailDeliveryError extends Error {
   }
 }
 
-async function attempt(row, transport, config, attachments, bcc = null) {
+async function attempt(row, transport, config, attachments, bcc = null, { counted = false } = {}) {
   const now = new Date();
+  const inc = counted ? {} : { $inc: { attemptCount: 1 } };
   try {
     await transport.sendMail({
       from: row.from,
@@ -110,21 +162,22 @@ async function attempt(row, transport, config, attachments, bcc = null) {
 
     await EmailLog.updateOne({ _id: row._id }, {
       $set: { status: 'sent', sentAt: now, lastAttemptAt: now, error: null },
-      $inc: { attemptCount: 1 },
+      ...inc,
     });
     return true;
   } catch (err) {
     await EmailLog.updateOne({ _id: row._id }, {
       $set: { status: 'failed', lastAttemptAt: now, error: String(err.message || err) },
-      $inc: { attemptCount: 1 },
+      ...inc,
     });
     logger.error('Email send failed', { emailLogId: String(row._id), error: err.message });
     return false;
   }
 }
 
-async function attemptTransactional(row, transport, attachments) {
+async function attemptTransactional(row, transport, attachments, { counted = false } = {}) {
   const now = new Date();
+  const inc = counted ? {} : { $inc: { attemptCount: 1 } };
   try {
     await transport.sendMail({
       from: row.from,
@@ -137,13 +190,13 @@ async function attemptTransactional(row, transport, attachments) {
     });
     await TransactionalEmailLog.updateOne({ _id: row._id }, {
       $set: { status: 'sent', sentAt: now, lastAttemptAt: now, error: null },
-      $inc: { attemptCount: 1 },
+      ...inc,
     });
     return { ok: true, error: null };
   } catch (err) {
     await TransactionalEmailLog.updateOne({ _id: row._id }, {
       $set: { status: 'failed', lastAttemptAt: now, error: String(err.message || err) },
-      $inc: { attemptCount: 1 },
+      ...inc,
     });
     logger.error('Transactional email send failed', {
       transactionalEmailLogId: String(row._id),
@@ -266,6 +319,10 @@ export async function sendTicketEmail(event, ticket, recipients, context, config
  * The sweep. Only rows older than the grace period are picked up, long enough
  * that a row mid-flight in a healthy process is never touched. After the cap
  * the row stays `failed` and stops — no unbounded loop hammering a mailbox.
+ *
+ * Each row is claimed before it is sent (see claimRow), and one row's error is
+ * logged and counted rather than ending the batch; that row keeps its claim and
+ * becomes eligible again after the grace period.
  */
 export async function retryPendingEmails(config, deps = {}, options = {}) {
   if (!config.features.email) return { attempted: 0, sent: 0, failed: 0 };
@@ -279,66 +336,77 @@ export async function retryPendingEmails(config, deps = {}, options = {}) {
   const cutoff = new Date(Date.now() - graceMs);
 
   // Cap is sticky: a row that already used its attempts is failed, not retried forever.
-  await EmailLog.updateMany(
-    { status: { $in: ['pending', 'failed'] }, attemptCount: { $gte: maxAttempts } },
-    { $set: { status: 'failed' } },
-  );
+  await EmailLog.updateMany(exhaustedFilter(maxAttempts, cutoff), { $set: { status: 'failed' } });
 
-  const rows = await EmailLog.find({
-    status: { $in: ['pending', 'failed'] },
-    attemptCount: { $lt: maxAttempts },
-    $or: [{ lastAttemptAt: { $lt: cutoff } }, { lastAttemptAt: null, createdAt: { $lt: cutoff } }],
-  }).sort({ createdAt: 1 }).limit(limit)
-    .populate({ path: 'recipientUserId', select: 'role roles' })
-    .populate({
-      path: 'ticket',
-      populate: {
-        path: 'project',
-        select: 'brand client',
-        populate: { path: 'client', select: 'name logoKey' },
-      },
-    });
+  const candidates = await EmailLog.find(retryableFilter(maxAttempts, cutoff))
+    .sort({ createdAt: 1 }).limit(limit).select('_id').lean();
 
+  let attempted = 0;
   let sent = 0;
   let failed = 0;
-  for (const row of rows) {
-    const snapshot = row.renderSnapshot ?? null;
-    const hasSnapshotBody = typeof snapshot?.text === 'string' && typeof snapshot?.html === 'string';
-    const ticket = row.ticket ?? { ticketId: '', title: '' };
-    const currentBranding = ticketBranding(ticket, config) ?? {};
-    const context = hasSnapshotBody ? (snapshot.context ?? {}) : currentBranding;
-    const { text, html } = hasSnapshotBody
-      ? { text: snapshot.text, html: snapshot.html }
-      : renderBody(row.event, ticket, context, config);
-    // Rows written before this policy existed carry no flag; fall back to the
-    // recipient's own role rather than assuming the send was already cleared.
-    const requireBrandLogo = typeof snapshot?.requireBrandLogo === 'boolean'
-      ? snapshot.requireBrandLogo
-      : isExternalUser(row.recipientUserId ?? {});
-    let attachments;
+  for (const { _id } of candidates) {
+    const row = await claimRow(EmailLog, _id, maxAttempts, cutoff)
+      .populate({ path: 'recipientUserId', select: 'role roles status' })
+      .populate({
+        path: 'ticket',
+        populate: {
+          path: 'project',
+          select: 'brand client',
+          populate: { path: 'client', select: 'name logoKey' },
+        },
+      });
+    if (!row) continue; // another sweep claimed it first
+    attempted += 1;
     try {
-      assertClientBrand(requireBrandLogo, context);
-      attachments = await brandAttachments(config, {
-        logoKey: snapshot?.brandLogoKey || context.brandLogoKey || currentBranding.brandLogoKey,
-        requireCompanyMark: requireBrandLogo,
-      });
+      if (await retryTicketRow(row, transport, config, maxAttempts)) sent += 1; else failed += 1;
     } catch (err) {
-      if (!(err instanceof BrandLogoRequiredError)) throw err;
-      const error = String(err.message || err);
-      await failRowsForPolicy([row], error);
-      logger.error('Ticket email retry blocked by branding policy', {
-        emailLogId: String(row._id),
-        ticket: ticket?.ticketId,
-        error,
-      });
       failed += 1;
-      continue;
+      logger.error('Ticket email retry errored', { emailLogId: String(row._id), error: err.message });
     }
-    const ok = await attempt({ ...row.toObject(), text, html }, transport, config, attachments);
-    if (ok) sent += 1; else failed += 1;
   }
 
-  return { attempted: rows.length, sent, failed };
+  return { attempted, sent, failed };
+}
+
+async function retryTicketRow(row, transport, config, maxAttempts) {
+  // Deactivated or deleted since the event: they no longer get ticket mail.
+  if (row.recipientUserId?.status !== 'active') {
+    await abandonRow(EmailLog, row._id, maxAttempts, INACTIVE_RECIPIENT);
+    return false;
+  }
+
+  const snapshot = row.renderSnapshot ?? null;
+  const hasSnapshotBody = typeof snapshot?.text === 'string' && typeof snapshot?.html === 'string';
+  const ticket = row.ticket ?? { ticketId: '', title: '' };
+  const currentBranding = ticketBranding(ticket, config) ?? {};
+  const context = hasSnapshotBody ? (snapshot.context ?? {}) : currentBranding;
+  const { text, html } = hasSnapshotBody
+    ? { text: snapshot.text, html: snapshot.html }
+    : renderBody(row.event, ticket, context, config);
+  // Rows written before this policy existed carry no flag; fall back to the
+  // recipient's own role rather than assuming the send was already cleared.
+  const requireBrandLogo = typeof snapshot?.requireBrandLogo === 'boolean'
+    ? snapshot.requireBrandLogo
+    : isExternalUser(row.recipientUserId ?? {});
+  let attachments;
+  try {
+    assertClientBrand(requireBrandLogo, context);
+    attachments = await brandAttachments(config, {
+      logoKey: snapshot?.brandLogoKey || context.brandLogoKey || currentBranding.brandLogoKey,
+      requireCompanyMark: requireBrandLogo,
+    });
+  } catch (err) {
+    if (!(err instanceof BrandLogoRequiredError)) throw err;
+    const error = String(err.message || err);
+    await failRowsForPolicy([row], error, { counted: true });
+    logger.error('Ticket email retry blocked by branding policy', {
+      emailLogId: String(row._id),
+      ticket: ticket?.ticketId,
+      error,
+    });
+    return false;
+  }
+  return attempt({ ...row.toObject(), text, html }, transport, config, attachments, null, { counted: true });
 }
 
 export async function sendTransactionalEmail(kind, message, config, deps = {}, options = {}) {
@@ -408,28 +476,40 @@ export async function retryPendingTransactionalEmails(config, deps = {}, options
   const limit = options.limit ?? DEFAULT_RETRY_LIMIT;
   const cutoff = new Date(Date.now() - graceMs);
 
-  await TransactionalEmailLog.updateMany(
-    { status: { $in: ['pending', 'failed'] }, attemptCount: { $gte: maxAttempts } },
-    { $set: { status: 'failed' } },
-  );
+  await TransactionalEmailLog.updateMany(exhaustedFilter(maxAttempts, cutoff), { $set: { status: 'failed' } });
 
-  const rows = await TransactionalEmailLog.find({
-    status: { $in: ['pending', 'failed'] },
-    attemptCount: { $lt: maxAttempts },
-    $or: [{ lastAttemptAt: { $lt: cutoff } }, { lastAttemptAt: null, createdAt: { $lt: cutoff } }],
-  }).sort({ createdAt: 1 }).limit(limit);
+  const candidates = await TransactionalEmailLog.find(retryableFilter(maxAttempts, cutoff))
+    .sort({ createdAt: 1 }).limit(limit).select('_id').lean();
 
+  let attempted = 0;
   let sent = 0;
   let failed = 0;
 
-  for (const row of rows) {
-    // Per row, not once for the batch: two queued rows can belong to two
-    // different clients and must not share one mark.
-    const attachments = await brandAttachments(config, { logoKey: row.brandLogoKey });
-    const result = await attemptTransactional(row.toObject(), transport, attachments);
-    if (result.ok) sent += 1; else failed += 1;
+  for (const { _id } of candidates) {
+    const row = await claimRow(TransactionalEmailLog, _id, maxAttempts, cutoff);
+    if (!row) continue; // another sweep claimed it first
+    attempted += 1;
+    try {
+      // Rows only carry an address. A deactivated or deleted account keeps its
+      // email, so that is what is checked; an address with no account is sent.
+      const gone = await User.exists({ email: row.to?.[0], status: { $in: ['inactive', 'deleted'] } });
+      if (gone) {
+        await abandonRow(TransactionalEmailLog, row._id, maxAttempts, INACTIVE_RECIPIENT);
+        failed += 1;
+        continue;
+      }
+      // Per row, not once for the batch: two queued rows can belong to two
+      // different clients and must not share one mark.
+      const attachments = await brandAttachments(config, { logoKey: row.brandLogoKey });
+      const result = await attemptTransactional(row.toObject(), transport, attachments, { counted: true });
+      if (result.ok) sent += 1; else failed += 1;
+    } catch (err) {
+      failed += 1;
+      logger.error('Transactional email retry errored', {
+        transactionalEmailLogId: String(row._id), error: err.message,
+      });
+    }
   }
 
-  return { attempted: rows.length, sent, failed };
+  return { attempted, sent, failed };
 }
-

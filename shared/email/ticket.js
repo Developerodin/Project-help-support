@@ -50,6 +50,13 @@ const EVENT_COPY = Object.freeze({
   },
 });
 
+/** TICKET_ASSIGNED as the previous assignee reads it (context.unassignedYou). */
+const UNASSIGNED_COPY = Object.freeze({
+  kicker: 'Unassigned',
+  lead: (actor) => `${actor} unassigned you from this ticket.`,
+  cta: 'Open ticket',
+});
+
 const FALLBACK_COPY = Object.freeze({
   kicker: 'Ticket updated',
   lead: (actor) => `${actor} updated this ticket.`,
@@ -128,7 +135,7 @@ function transitionStrip(from, to) {
 export function ticketEmailSubject(event, ticket, context = {}) {
   const subjects = {
     TICKET_CREATED: (t) => `[${t.ticketId}] Filed: ${t.title}`,
-    TICKET_ASSIGNED: (t) => `[${t.ticketId}] Assigned: ${t.title}`,
+    TICKET_ASSIGNED: (t, c) => `[${t.ticketId}] ${c.unassignedYou ? 'Unassigned' : 'Assigned'}: ${t.title}`,
     TICKET_STAGE_CHANGED: (t, c) => `[${t.ticketId}] ${stageLabel(c.to)}: ${t.title}`,
     TICKET_REOPENED: (t) => `[${t.ticketId}] Reopened: ${t.title}`,
     TICKET_CLOSED: (t) => `[${t.ticketId}] Closed: ${t.title}`,
@@ -184,7 +191,9 @@ function ticketBrandName(context = {}) {
 
 export function renderTicketEmail(event, ticket, context = {}, config = {}) {
   const link = `${config.frontendBaseUrl}/tickets?ticket=${encodeURIComponent(ticket.ticketId)}`;
-  const copy = EVENT_COPY[event] ?? FALLBACK_COPY;
+  const copy = event === 'TICKET_ASSIGNED' && context.unassignedYou
+    ? UNASSIGNED_COPY
+    : (EVENT_COPY[event] ?? FALLBACK_COPY);
   const actor = context.actorName || 'Someone';
   const lead = copy.lead(actor);
 

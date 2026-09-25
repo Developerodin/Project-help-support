@@ -5,6 +5,7 @@ import Team from '../teams/team.model.js';
 import Project from '../projects/project.model.js';
 import User from '../users/user.model.js';
 import ProjectTeamMember from '../projects/project-team-member.model.js';
+import { assertCanViewTicket } from '../tickets/ticket.service.js';
 
 /** Stages whose entry broadcasts to every qa user. */
 const QA_BROADCAST_STAGES = new Set(['ready_qa', 'deployed_staging', 'qa_approved']);
@@ -63,7 +64,26 @@ async function externallyAssignedForClient(users, clientId) {
   return new Set(rows.map((row) => idStr(row.user)).filter(Boolean));
 }
 
-async function filterVisibleUsersForTicket(users, ticket) {
+/**
+ * The same check GET /tickets/:id makes. Without it a mention, a watcher row or
+ * a stage broadcast could hand comment text to someone the ticket page would
+ * refuse — e.g. a developer outside the ticket's team, or a scoped user whose
+ * grants do not cover this project.
+ *
+ * One permission-context load per internal recipient: fine for a ticket's
+ * handful of people; batch it if a broadcast ever reaches hundreds.
+ */
+async function internalCanViewTicket(user, ticket) {
+  try {
+    await assertCanViewTicket(user, ticket);
+    return true;
+  } catch (err) {
+    if (err?.statusCode === 403) return false;
+    throw err;
+  }
+}
+
+async function filterVisibleUsersForTicket(users, ticket, { exemptInternalId = null } = {}) {
   const externalUsers = users.filter((user) => isExternalUser(user));
   const scope = externalUsers.length > 0 ? await ticketScopeIds(ticket) : null;
   const allowedExternalByBrand = externalUsers.length > 0
@@ -73,7 +93,7 @@ async function filterVisibleUsersForTicket(users, ticket) {
   const visible = [];
   for (const user of users) {
     if (!isExternalUser(user)) {
-      visible.push(user);
+      if (idStr(user._id) === exemptInternalId || await internalCanViewTicket(user, ticket)) visible.push(user);
       continue;
     }
 
@@ -128,6 +148,8 @@ export async function getNotificationRecipients(event, ticket, actor, context = 
     for (const w of ticket.watchers || []) ids.add(idStr(w));
     if (ticket.assignedTo) ids.add(idStr(ticket.assignedTo));
     if (ticket.testedBy) ids.add(idStr(ticket.testedBy));
+    // Whoever lost the ticket hears about it too ("unassigned you").
+    if (event === 'TICKET_ASSIGNED' && context.previousAssignee) ids.add(idStr(context.previousAssignee));
 
     if (idStr(ticket.team)) {
       await addTeamMembers(ids, ticket.team);
@@ -148,7 +170,11 @@ export async function getNotificationRecipients(event, ticket, actor, context = 
   if (ids.size === 0) return [];
 
   const users = await User.find({ _id: { $in: [...ids] }, status: 'active' });
-  const visibleUsers = await filterVisibleUsersForTicket(users, ticket);
+  // A previous assignee usually loses access with the assignment itself; they
+  // still get told, and the row carries only the ticket title.
+  const visibleUsers = await filterVisibleUsersForTicket(users, ticket, {
+    exemptInternalId: event === 'TICKET_ASSIGNED' ? idStr(context.previousAssignee) : null,
+  });
 
   return visibleUsers.map((user) => ({
     user,

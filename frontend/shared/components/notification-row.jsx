@@ -1,11 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { notificationEventLabel } from '@pms/shared';
 import Icon from '@/shared/components/icons.jsx';
 import {
+  formatAbsoluteTime,
   formatRelativeTime,
-  notificationEffectiveEvent,
+  notificationChipLabel,
   notificationEventChipClass,
   notificationEventIconName,
   notificationHref,
@@ -20,7 +20,6 @@ export default function NotificationRow({
   item,
   as = 'link',
   className = '',
-  omitTicketKey = false,
   bodyLines = 1,
   onNavigate,
   onMarkRead,
@@ -28,8 +27,8 @@ export default function NotificationRow({
 }) {
   const unread = !item.readAt;
   const href = notificationHref(item.link);
-  const primary = notificationPrimaryLine(item, { omitTicketKey });
-  const effectiveEvent = notificationEffectiveEvent(item);
+  const primary = notificationPrimaryLine(item);
+  const chipLabel = notificationChipLabel(item);
   const body = item.body?.trim() ?? '';
 
   const rowClass = [
@@ -40,7 +39,10 @@ export default function NotificationRow({
   ].filter(Boolean).join(' ');
 
   const titleInner = (
-    <span className="notif-row__title-text">{primary}</span>
+    <span className="notif-row__title-text">
+      {unread ? <span className="sr-only">Unread: </span> : null}
+      {primary}
+    </span>
   );
 
   const titleNode = as === 'link' ? (
@@ -64,20 +66,33 @@ export default function NotificationRow({
           <p className="notif-row__body" title={body}>{body}</p>
         ) : null}
         <p className="notif-row__meta meta">
-          <span
-            className={`chip chip-sm notif-row__event ${notificationEventChipClass(effectiveEvent)}`}
-          >
-            <Icon name={notificationEventIconName(effectiveEvent)} size={11} aria-hidden="true" />
-            {notificationEventLabel(effectiveEvent)}
-          </span>
-          <span className="notif-row__meta-sep" aria-hidden="true"> · </span>
-          <time dateTime={item.createdAt}>{formatRelativeTime(item.createdAt)}</time>
+          {item.project?.key ? (
+            <>
+              <span className="chip chip-sm notif-chip--neutral" title={item.project.name}>
+                {item.project.key}
+              </span>
+              <span className="notif-row__meta-sep" aria-hidden="true"> · </span>
+            </>
+          ) : null}
+          {chipLabel ? (
+            <>
+              <span className={`chip chip-sm notif-row__event ${notificationEventChipClass(item.event)}`}>
+                <Icon name={notificationEventIconName(item.event)} size={11} aria-hidden="true" />
+                {chipLabel}
+              </span>
+              <span className="notif-row__meta-sep" aria-hidden="true"> · </span>
+            </>
+          ) : null}
+          <time dateTime={item.createdAt} title={formatAbsoluteTime(item.createdAt)}>
+            {formatRelativeTime(item.createdAt)}
+          </time>
         </p>
       </div>
       {showMarkRead && unread && onMarkRead ? (
         <button
           type="button"
           className="btn btn-sm btn-ghost notif-row__mark-read"
+          aria-label={`Mark read: ${primary}`}
           onClick={() => onMarkRead(item.id)}
         >
           Mark read

@@ -11,14 +11,14 @@ export const NOTIFICATION_EVENTS = Object.freeze([
 
 /** Human-readable labels for UI display; API keys stay SCREAMING_SNAKE_CASE. */
 export const NOTIFICATION_EVENT_LABELS = Object.freeze({
-  TICKET_CREATED: 'Ticket created',
-  TICKET_ASSIGNED: 'Ticket assigned',
-  TICKET_STAGE_CHANGED: 'Ticket stage changed',
-  TICKET_REOPENED: 'Ticket reopened',
-  TICKET_CLOSED: 'Ticket closed',
-  TICKET_COMMENTED: 'Ticket commented',
-  TICKET_MENTIONED: 'Ticket mentioned',
-  TICKET_ESTIMATE_SET: 'Ticket estimate set',
+  TICKET_CREATED: 'New ticket',
+  TICKET_ASSIGNED: 'Assigned',
+  TICKET_STAGE_CHANGED: 'Stage changed',
+  TICKET_REOPENED: 'Reopened',
+  TICKET_CLOSED: 'Closed',
+  TICKET_COMMENTED: 'New comment',
+  TICKET_MENTIONED: 'Mentioned you',
+  TICKET_ESTIMATE_SET: 'Dates updated',
 });
 
 export function notificationEventLabel(event) {

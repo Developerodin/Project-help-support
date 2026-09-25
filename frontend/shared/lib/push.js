@@ -92,6 +92,16 @@ export async function disablePush() {
 }
 
 /**
+ * Browser side only, for when the session is already gone and the server
+ * can't be told: the server drops the endpoint itself on the next push (410).
+ */
+export async function unsubscribePushInBrowser() {
+  const reg = await registration();
+  const subscription = await reg?.pushManager.getSubscription();
+  await subscription?.unsubscribe();
+}
+
+/**
  * On sign-in: re-links an existing subscription to whoever is signed in now,
  * and refreshes it if the browser rotated it. Never subscribes on its own.
  */

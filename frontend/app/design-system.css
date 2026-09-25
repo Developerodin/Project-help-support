@@ -3944,6 +3944,11 @@ a.button3{ display:block; text-align:center; text-decoration:none; cursor:pointe
 }
 .notif-bell__head{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .notif-bell__empty{ padding:10px 8px; }
+.notif-bell__push{
+  display:flex; align-items:center; gap:6px;
+  padding:6px 9px; border-bottom:1px solid var(--rule);
+}
+.notif-bell__push .meta{ flex:1; }
 .notif-bell__loading{ padding:12px 8px; }
 .notif-bell__error{
   display:flex; flex-direction:column; align-items:flex-start; gap:8px;
@@ -4192,6 +4197,11 @@ a.button3{ display:block; text-align:center; text-decoration:none; cursor:pointe
 .notif-list{
   display:flex; flex-direction:column; gap:12px;
   width:100%;
+}
+.notif-inbox__day + .notif-inbox__day{ margin-top:20px; }
+.notif-inbox__day-label{
+  margin:0 0 8px; font-size:0.6875rem; font-weight:600;
+  text-transform:uppercase; letter-spacing:0.04em; color:var(--ink-3);
 }
 .notif-row{
   display:flex; align-items:flex-start; gap:10px;

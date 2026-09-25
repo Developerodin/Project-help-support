@@ -426,10 +426,13 @@ export function sanitizeExternalTicket(ticketJson, { viewerId } = {}) {
     // is an internal staff id; neither is populated anywhere, so it would ship raw.
     blockerReason,
     blockedBy,
+    // Why staff closed the ticket is an internal judgement, same as a QA note.
+    closeReason,
     ...rest
   } = ticketJson;
   void blockerReason;
   void blockedBy;
+  void closeReason;
 
   const hiddenAttachmentIds = internalAttachmentIds(comments, stageHistory);
   const visibleAttachments = (attachments || [])

@@ -57,10 +57,14 @@ export async function removeSubscription(user, endpoint) {
   await PushSubscription.deleteOne({ user: user._id, endpoint });
 }
 
-/** Same-origin path, so the service worker opens the ticket inside the installed app. */
-function pathOf(link) {
+/**
+ * Same-origin path, so the service worker opens the ticket inside the installed
+ * app. `notif` names the row, so opening the ticket from a banner can mark it read.
+ */
+function pathOf(link, notificationId) {
   try {
     const url = new URL(link);
+    url.searchParams.set('notif', notificationId);
     return `${url.pathname}${url.search}`;
   } catch {
     return '/notifications';
@@ -68,11 +72,12 @@ function pathOf(link) {
 }
 
 function payloadFor(notification) {
+  const id = String(notification._id);
   return JSON.stringify({
-    id: String(notification._id),
+    id,
     title: notification.title,
     body: notification.body || '',
-    url: pathOf(notification.link),
+    url: pathOf(notification.link, id),
     // Later updates on the same ticket replace the earlier banner instead of stacking.
     tag: notification.ticket ? `ticket-${notification.ticket}` : undefined,
   });

@@ -11,13 +11,25 @@ function replayOptions(config) {
   };
 }
 
+const IDLE = Object.freeze({ attempted: 0, sent: 0, failed: 0 });
+
+// A slow SMTP server can make one sweep outlast the interval. The next tick is
+// skipped rather than stacked; the row claims keep a second process safe too.
+let sweeping = false;
+
 async function replayOnce(config, deps = {}) {
-  const options = replayOptions(config);
-  const [ticket, transactional] = await Promise.all([
-    retryPendingEmails(config, deps, options),
-    retryPendingTransactionalEmails(config, deps, options),
-  ]);
-  return { ticket, transactional };
+  if (sweeping) return { ticket: IDLE, transactional: IDLE };
+  sweeping = true;
+  try {
+    const options = replayOptions(config);
+    const [ticket, transactional] = await Promise.all([
+      retryPendingEmails(config, deps, options),
+      retryPendingTransactionalEmails(config, deps, options),
+    ]);
+    return { ticket, transactional };
+  } finally {
+    sweeping = false;
+  }
 }
 
 function shouldLogReplay(result) {

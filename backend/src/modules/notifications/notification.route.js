@@ -20,6 +20,7 @@ const listSchema = {
 const readAllSchema = {
   query: Joi.object({
     project: objectId,
+    ticket: objectId,
   }),
 };
 

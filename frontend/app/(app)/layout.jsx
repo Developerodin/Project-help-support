@@ -16,6 +16,7 @@ import PwaInstallButton from '@/shared/components/pwa-install-button.jsx';
 import AppSidebar from '@/shared/components/app-sidebar.jsx';
 import ExternalWorkspaceNotice from '@/shared/components/external-workspace-notice.jsx';
 import TicketCommentToasts from '@/shared/components/ticket-comment-toasts.jsx';
+import NotificationLinkRead from '@/shared/components/notification-link-read.jsx';
 import AssistantWidget from '@/shared/components/assistant/assistant-widget.jsx';
 import { RealtimeProvider } from '@/shared/contexts/realtime-context.jsx';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/shared/components/ui/sidebar';
@@ -158,6 +159,7 @@ export default function AppLayout({ children }) {
             <ProjectProvider>
               <RealtimeProvider>
                 <TicketCommentToasts />
+                <NotificationLinkRead />
                 <AssistantWidget />
                 <AppShell>{children}</AppShell>
               </RealtimeProvider>

@@ -1,7 +1,8 @@
-import { NOTIFICATION_EVENTS, isExternalUser } from '@pms/shared';
+import { NOTIFICATION_EVENTS, externalFacingTicketStatus, isExternalUser } from '@pms/shared';
 import logger from '../../platform/logger.js';
 import { getTransport } from '../../platform/mailer.js';
 import Ticket from '../tickets/ticket.model.js';
+import { publishNotificationCreated } from '../realtime/realtime.service.js';
 import { getNotificationRecipients } from './recipients.js';
 import { createInAppNotifications } from './notification.service.js';
 import { sendPushForNotifications } from './push.service.js';
@@ -54,6 +55,9 @@ function buildEmailContext(event, ticket, actor) {
     requestId: event.requestId,
     actorName: actor?.name || 'Someone',
     mentions: event.mentions,
+    commentId: event.commentId,
+    // TICKET_ASSIGNED only: who held the ticket before, when that changed.
+    previousAssignee: event.previousAssignee,
   };
 
   const commentEntry = findCommentOnTicket(ticket, event.commentId);
@@ -79,23 +83,45 @@ function stripExternalContext(context) {
   return safe;
 }
 
-async function fanOut(eventKey, ticket, actor, context, config, deps, { hideFromExternal = false } = {}) {
-  const recipients = await getNotificationRecipients(eventKey, ticket, actor, context);
-  if (recipients.length === 0) return;
+/** A client sees the collapsed status (Under Review / Live / Closed), never the pipeline stage. */
+function externalizeStages(context) {
+  return {
+    ...context,
+    ...(context.from ? { from: externalFacingTicketStatus(context.from) } : {}),
+    to: externalFacingTicketStatus(context.to),
+  };
+}
 
-  // An internal comment must not surface to an external recipient on ANY
-  // channel — not even as "someone commented" — so they are dropped entirely
-  // before either channel runs, rather than merely having context stripped.
-  const visible = hideFromExternal
-    ? recipients.filter((r) => !isExternalUser(r.user))
-    : recipients;
-  if (visible.length === 0) return;
+/** e.g. In Progress -> Ready for QA: both read "Under Review" to a client, so nothing happened for them. */
+function isInvisibleToExternal(eventKey, context) {
+  return eventKey === 'TICKET_STAGE_CHANGED'
+    && Boolean(context.from && context.to)
+    && externalFacingTicketStatus(context.from) === externalFacingTicketStatus(context.to);
+}
+
+/** Returns the recipients it notified, so the caller can keep them out of a second fan-out. */
+async function fanOut(eventKey, ticket, actor, context, config, deps, {
+  hideFromExternal = false, excludeUserIds = null,
+} = {}) {
+  const recipients = await getNotificationRecipients(eventKey, ticket, actor, context);
+
+  // An internal comment, or a stage move a client cannot tell apart, must not
+  // surface to an external recipient on ANY channel — not even as "someone
+  // commented" — so they are dropped before either channel runs, rather than
+  // merely having context stripped.
+  const dropExternal = hideFromExternal || isInvisibleToExternal(eventKey, context);
+  const visible = recipients.filter((r) => {
+    if (excludeUserIds?.has(String(r.user._id))) return false;
+    return !(dropExternal && isExternalUser(r.user));
+  });
+  if (visible.length === 0) return [];
 
   const emailTicket = await resolveTicketForEmail(ticket, config);
   const branding = ticketBranding(emailTicket, config);
   const emailContext = branding ? { ...context, ...branding } : context;
 
   const inAppRows = await createInAppNotifications(eventKey, ticket, visible, config, context);
+  if (inAppRows.length) publishNotificationCreated(inAppRows.map((row) => row.user));
   // Not awaited: push services can be slow, and the request already succeeded.
   // Push mirrors the in-app rows, so it obeys the in-app preferences.
   (deps.sendPush ?? sendPushForNotifications)(inAppRows, config).catch((err) => {
@@ -104,31 +130,35 @@ async function fanOut(eventKey, ticket, actor, context, config, deps, { hideFrom
 
   // Context is built ONCE per event and would otherwise be shared verbatim
   // across every recipient's email. Split it here, at send time, rather than
-  // threading a per-recipient context through sendTicketEmail/renderTicketEmail.
-  const internalRecipients = visible.filter((r) => !isExternalUser(r.user));
-  const externalRecipients = visible.filter((r) => isExternalUser(r.user));
+  // threading a per-recipient context through sendTicketEmail/renderTicketEmail:
+  // external recipients lose notes and see client-facing statuses, and a
+  // previous assignee reads "unassigned you" instead of "assigned to you".
+  const previousAssignee = eventKey === 'TICKET_ASSIGNED' ? context.previousAssignee : null;
+  const groups = new Map();
+  for (const r of visible) {
+    const external = isExternalUser(r.user);
+    const unassigned = Boolean(previousAssignee) && String(r.user._id) === String(previousAssignee);
+    const key = `${external}:${unassigned}`;
+    if (!groups.has(key)) {
+      let groupContext = external ? externalizeStages(stripExternalContext(emailContext)) : emailContext;
+      if (unassigned) groupContext = { ...groupContext, unassignedYou: true };
+      groups.set(key, { external, context: groupContext, recipients: [] });
+    }
+    groups.get(key).recipients.push(r);
+  }
 
+  // Internal groups first, so the test sink copy shows the internal rendering.
   let testSinkUsed = false;
-  if (internalRecipients.length) {
-    await sendTicketEmail(eventKey, emailTicket, internalRecipients, emailContext, config, {
+  const ordered = [...groups.values()].sort((a, b) => Number(a.external) - Number(b.external));
+  for (const group of ordered) {
+    await sendTicketEmail(eventKey, emailTicket, group.recipients, group.context, config, {
       ...deps,
-      allowTestSink: true,
+      allowTestSink: !testSinkUsed,
     });
     testSinkUsed = true;
   }
-  if (externalRecipients.length) {
-    await sendTicketEmail(
-      eventKey,
-      emailTicket,
-      externalRecipients,
-      stripExternalContext(emailContext),
-      config,
-      {
-        ...deps,
-        allowTestSink: !testSinkUsed,
-      },
-    );
-  }
+
+  return visible;
 }
 
 /**
@@ -152,20 +182,26 @@ export async function dispatchTicketEvent({ event, ticket, actor, config, deps =
     const commentIsInternal = event.type === 'TICKET_COMMENTED'
       && findCommentOnTicket(ticket, event.commentId)?.internal === true;
 
-    await fanOut(event.type, ticket, actor, context, config, deps, {
-      hideFromExternal: commentIsInternal,
-    });
-
     // TICKET_MENTIONED is its OWN fan-out with its own recipient set and its own
     // preference key — it never unions the comment audience, or mentioning one
-    // person notifies the whole ticket twice.
+    // person notifies the whole ticket twice. It runs first so that whoever
+    // hears about this comment as a mention is left out of the comment fan-out.
+    const mentioned = new Set();
     if (event.type === 'TICKET_COMMENTED' && event.mentions?.length) {
-      await fanOut(
+      const heard = await fanOut(
         'TICKET_MENTIONED', ticket, actor,
         { ...context, mentions: event.mentions }, config, deps,
         { hideFromExternal: commentIsInternal },
       );
+      for (const r of heard) {
+        if (r.channels.inApp || r.channels.email) mentioned.add(String(r.user._id));
+      }
     }
+
+    await fanOut(event.type, ticket, actor, context, config, deps, {
+      hideFromExternal: commentIsInternal,
+      excludeUserIds: mentioned,
+    });
   } catch (err) {
     logger.error('Notification dispatch failed', {
       error: err.message, event: event?.type, ticket: ticket?.ticketId,

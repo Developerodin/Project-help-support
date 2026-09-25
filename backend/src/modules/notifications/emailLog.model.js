@@ -16,7 +16,7 @@ const emailLogSchema = new mongoose.Schema(
     from: { type: String },
     subject: { type: String },
     template: { type: String },
-    status: { type: String, enum: ['pending', 'sent', 'failed'], default: 'pending', index: true },
+    status: { type: String, enum: ['pending', 'sending', 'sent', 'failed'], default: 'pending', index: true },
     attemptCount: { type: Number, default: 0 },
     lastAttemptAt: { type: Date },
     /** Deterministic: <eventId>.<recipientUserId>@<domain>. Stable across retries. */
@@ -40,6 +40,12 @@ const emailLogSchema = new mongoose.Schema(
 );
 
 emailLogSchema.index({ status: 1, lastAttemptAt: 1 });
+// Delivered mail is kept 90 days for support questions, then dropped. Only
+// `sent` rows expire: a pending or failed row is the outbox and the evidence.
+emailLogSchema.index(
+  { sentAt: 1 },
+  { expireAfterSeconds: 90 * 24 * 60 * 60, partialFilterExpression: { status: 'sent' } },
+);
 
 emailLogSchema.plugin(toJSON);
 

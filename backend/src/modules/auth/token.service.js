@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { getUserRoles, pickPrimaryRole } from '@pms/shared';
 import User, { MAX_REFRESH_TOKENS } from '../users/user.model.js';
+import PushSubscription from '../notifications/pushSubscription.model.js';
 import { ApiError } from '../../platform/errors.js';
 
 /** Raw tokens are never persisted — only this digest. Same rule as invite tokens. */
@@ -112,9 +113,15 @@ export async function revokeRefreshToken(presentedRaw) {
   );
 }
 
+/**
+ * Every "sign out everywhere" path (password reset, account removal, a replayed
+ * refresh token) comes through here, so the person's devices stop receiving
+ * push too — a lost phone must not keep showing ticket updates.
+ */
 export async function revokeAllRefreshTokens(userId) {
   await User.updateOne(
     { _id: userId },
     { $set: { refreshTokens: [], consumedRefreshTokens: [] } },
   );
+  await PushSubscription.deleteMany({ user: userId });
 }

@@ -27,6 +27,13 @@ export function didEstimateFieldsChange(beforeTicket, afterTicket) {
   );
 }
 
+/** Who a reassignment took the ticket from — only when there was someone and it changed. */
+function previousAssigneeOf(beforeTicket, afterTicket) {
+  const ref = (t) => (t?.assignedTo ? String(t.assignedTo._id ?? t.assignedTo) : null);
+  const previous = ref(beforeTicket);
+  return previous && previous !== ref(afterTicket) ? previous : undefined;
+}
+
 export const list = catchAsync(async (req, res) => {
   res.json(await ticketService.listTickets(req.user, req.query, req.permissionContext));
 });
@@ -58,29 +65,26 @@ export const patch = (config) => catchAsync(async (req, res) => {
   const ticket = await ticketService.patchTicket(req.user, req.params.id, req.body, req.permissionContext);
   res.json(ticket);
 
-  if (!estimatePatched) {
-    const doc = await ticketService.resolveTicketDocForNotifications(ticket.id);
-    publishTicketUpdatedRealtime(doc, req.user);
-    return;
-  }
-
   const doc = await ticketService.resolveTicketDocForNotifications(ticket.id);
-  if (!didEstimateFieldsChange(beforeDoc, doc)) return;
-
-  await dispatchTicketEvent({
-    event: { type: 'TICKET_ESTIMATE_SET', requestId: req.id },
-    ticket: doc, actor: req.user, config,
-  });
+  // Unchanged estimates notify nobody, but the rest of the PATCH still did
+  // change the ticket, so the realtime nudge goes out either way.
+  if (estimatePatched && didEstimateFieldsChange(beforeDoc, doc)) {
+    await dispatchTicketEvent({
+      event: { type: 'TICKET_ESTIMATE_SET', requestId: req.id },
+      ticket: doc, actor: req.user, config,
+    });
+  }
   publishTicketUpdatedRealtime(doc, req.user);
 });
 
 export const assign = (config) => catchAsync(async (req, res) => {
+  const beforeDoc = await ticketService.resolveTicketDoc(req.params.id);
   const ticket = await ticketService.assignTicket(req.user, req.params.id, req.body, req.permissionContext);
   res.json(ticket);
 
   const doc = await ticketService.resolveTicketDocForNotifications(ticket.id);
   await dispatchTicketEvent({
-    event: { type: 'TICKET_ASSIGNED', requestId: req.id },
+    event: { type: 'TICKET_ASSIGNED', requestId: req.id, previousAssignee: previousAssigneeOf(beforeDoc, doc) },
     ticket: doc, actor: req.user, config,
   });
   publishTicketUpdatedRealtime(doc, req.user);
@@ -107,16 +111,29 @@ export const remove = catchAsync(async (req, res) => {
 });
 
 export const bulk = (config) => catchAsync(async (req, res) => {
+  const isAssign = req.body?.action === 'assign';
+  // Keyed by the id as the caller sent it, which is what each result echoes.
+  const beforeDocs = new Map();
+  if (isAssign) {
+    for (const id of req.body.ids || []) {
+      beforeDocs.set(id, await ticketService.resolveTicketDoc(id).catch(() => null));
+    }
+  }
+
   const result = await ticketService.bulkTickets(req.user, req.body, req.permissionContext);
   res.json(result);
 
-  if (req.body?.action !== 'assign') return;
+  if (!isAssign) return;
 
   for (const item of result.results) {
     if (!item.ok || !item.ticketId) continue;
     const doc = await ticketService.resolveTicketDocForNotifications(item.ticketId);
     await dispatchTicketEvent({
-      event: { type: 'TICKET_ASSIGNED', requestId: req.id },
+      event: {
+        type: 'TICKET_ASSIGNED',
+        requestId: req.id,
+        previousAssignee: previousAssigneeOf(beforeDocs.get(item.id), doc),
+      },
       ticket: doc, actor: req.user, config,
     });
     publishTicketUpdatedRealtime(doc, req.user);

@@ -16,15 +16,6 @@ import { mutateNotifications } from '@/shared/lib/notification-swr.js';
 import { disablePush, enablePush, pushStatus } from '@/shared/lib/push.js';
 import { showToast } from '@/shared/lib/toast.js';
 
-const HIGH_IMPACT_EVENTS = new Set([
-  'TICKET_CREATED',
-  'TICKET_ASSIGNED',
-  'TICKET_STAGE_CHANGED',
-  'TICKET_REOPENED',
-  'TICKET_CLOSED',
-  'TICKET_MENTIONED',
-]);
-
 function buildPrefs(user) {
   return {
     email: { ...DEFAULT_NOTIFICATION_PREFS.email, ...(user?.notificationPrefs?.email || {}) },
@@ -32,26 +23,17 @@ function buildPrefs(user) {
   };
 }
 
-function channelLabel(channel) {
-  return channel === 'inApp' ? 'in-app' : 'email';
-}
-
+/** Only turning off an event's last channel asks first: after that, it reaches you nowhere. */
 function wouldDisableAllChannels(prefs, channel, event, enabled) {
   if (enabled) return false;
   const otherChannel = channel === 'inApp' ? 'email' : 'inApp';
   return !prefs[otherChannel][event];
 }
 
-function toggleNeedsConfirm(prefs, channel, event, enabled) {
-  if (enabled) return false;
-  if (wouldDisableAllChannels(prefs, channel, event, enabled)) return true;
-  return HIGH_IMPACT_EVENTS.has(event);
-}
-
 const PUSH_STATUS_TEXT = {
   unsupported: "This browser can't receive push notifications.",
   'needs-install': 'On iPhone and iPad, push works only in the Home Screen app. In Safari tap Share → Add to Home Screen, open the app from there, and turn push on.',
-  'no-worker': 'Push is available in the installed app and the production site.',
+  'no-worker': "Push isn't available in this browser session. Reload the page, or open the installed app.",
   denied: 'Notifications are blocked for this site. Allow them in your browser or system settings, then reload this page.',
   off: 'Get a notification on this device when something in your in-app list happens, even with the app closed.',
   on: 'On for this device. It follows your In app choices below.',
@@ -87,7 +69,7 @@ function PushDeviceSetting() {
         showToast('Push turned on for this device');
       }
     } catch (err) {
-      showToast(normalizeApiError(err)?.message || err?.message || 'Could not change push');
+      showToast(normalizeApiError(err)?.message || err?.message || 'Could not change push', { type: 'error' });
     } finally {
       setStatus(await pushStatus());
       setBusy(false);
@@ -118,33 +100,47 @@ export default function NotificationSettingsPage() {
   const [prefs, setPrefs] = useState(() => buildPrefs(user));
   const [error, setError] = useState(null);
   const [pendingToggle, setPendingToggle] = useState(null);
-  const [saveBusy, setSaveBusy] = useState(false);
+  // Only the checkbox being saved locks; the rest of the table stays usable.
+  const [savingKeys, setSavingKeys] = useState(() => new Set());
   const [resetBusy, setResetBusy] = useState(false);
+  const [saveStatus, setSaveStatus] = useState('');
 
   useEffect(() => {
     setPrefs(buildPrefs(user));
   }, [user]);
 
+  /*
+   * Saves on different rows can overlap. Each response is the whole prefs
+   * object, so one that lands out of order can briefly show another row's old
+   * value until its own response arrives; the server has both either way.
+   */
   const applyToggle = useCallback(async (channel, event, enabled) => {
-    setSaveBusy(true);
+    const key = `${channel}:${event}`;
+    setSavingKeys((prev) => new Set(prev).add(key));
     setError(null);
+    setSaveStatus('Saving…');
     try {
       const updated = await updateNotificationPrefs({ [channel]: { [event]: enabled } });
       await refreshUser(updated);
       setPrefs(buildPrefs(updated));
       await mutateNotifications();
-      showToast(`${enabled ? 'Enabled' : 'Disabled'} ${channelLabel(channel)} for ${notificationEventLabel(event)}`);
+      setSaveStatus('Saved');
     } catch (err) {
       setError(err);
-      showToast(normalizeApiError(err)?.message || 'Could not save preference');
+      setSaveStatus('');
+      showToast(normalizeApiError(err)?.message || 'Could not save preference', { type: 'error' });
     } finally {
-      setSaveBusy(false);
+      setSavingKeys((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
     }
   }, [refreshUser]);
 
   function requestToggle(channel, event) {
     const enabled = !prefs[channel][event];
-    if (toggleNeedsConfirm(prefs, channel, event, enabled)) {
+    if (wouldDisableAllChannels(prefs, channel, event, enabled)) {
       setPendingToggle({ channel, event, enabled });
       return;
     }
@@ -161,21 +157,23 @@ export default function NotificationSettingsPage() {
   async function handleRestoreDefaults() {
     setResetBusy(true);
     setError(null);
+    setSaveStatus('Saving…');
     try {
       const updated = await resetNotificationPrefs();
       await refreshUser(updated);
       setPrefs(buildPrefs(updated));
       await mutateNotifications();
-      showToast('Notification preferences restored to defaults');
+      setSaveStatus('Defaults restored');
     } catch (err) {
       setError(err);
-      showToast(normalizeApiError(err)?.message || 'Could not restore defaults');
+      setSaveStatus('');
+      showToast(normalizeApiError(err)?.message || 'Could not restore defaults', { type: 'error' });
     } finally {
       setResetBusy(false);
     }
   }
 
-  const busy = saveBusy || resetBusy;
+  const checkboxDisabled = (channel, event) => resetBusy || savingKeys.has(`${channel}:${event}`);
 
   return (
     <>
@@ -188,10 +186,11 @@ export default function NotificationSettingsPage() {
           type="button"
           className="btn btn-sm"
           onClick={handleRestoreDefaults}
-          disabled={busy}
+          disabled={resetBusy || savingKeys.size > 0}
         >
           Restore defaults
         </button>
+        <span className="meta" role="status" aria-live="polite">{saveStatus}</span>
       </div>
       <FormError error={error} />
       <PushDeviceSetting />
@@ -210,7 +209,7 @@ export default function NotificationSettingsPage() {
                     type="checkbox"
                     aria-label={`${notificationEventLabel(event)} in app`}
                     checked={prefs.inApp[event]}
-                    disabled={busy}
+                    disabled={checkboxDisabled('inApp', event)}
                     onChange={() => requestToggle('inApp', event)}
                   />
                 </td>
@@ -219,7 +218,7 @@ export default function NotificationSettingsPage() {
                     type="checkbox"
                     aria-label={`${notificationEventLabel(event)} email`}
                     checked={prefs.email[event]}
-                    disabled={busy}
+                    disabled={checkboxDisabled('email', event)}
                     onChange={() => requestToggle('email', event)}
                   />
                 </td>
@@ -231,19 +230,16 @@ export default function NotificationSettingsPage() {
 
       <ConfirmDialog
         open={Boolean(pendingToggle)}
-        title={pendingToggle?.enabled ? 'Enable notification?' : 'Disable notification?'}
+        title="Turn off the last channel?"
         message={
           pendingToggle
-            ? `${pendingToggle.enabled ? 'Enable' : 'Disable'} ${channelLabel(pendingToggle.channel)} notifications for ${notificationEventLabel(pendingToggle.event)}?`
+            ? `"${notificationEventLabel(pendingToggle.event)}" will no longer reach you in the app or by email.`
             : ''
         }
-        confirmLabel={pendingToggle?.enabled ? 'Enable' : 'Disable'}
+        confirmLabel="Turn off"
         cancelLabel="Cancel"
-        busy={saveBusy}
         onConfirm={confirmToggle}
-        onCancel={() => {
-          if (!saveBusy) setPendingToggle(null);
-        }}
+        onCancel={() => setPendingToggle(null)}
       />
     </>
   );

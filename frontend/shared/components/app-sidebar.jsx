@@ -4,14 +4,12 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import useSWR from 'swr';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
-import { listNotifications } from '@/shared/api/notifications.js';
 import { NAV_GROUPS, canAccessNavItem } from '@/shared/lib/route-permissions.js';
 import {
-  notificationSwrKeys,
-  listNotificationsParams,
+  fetchNotificationList,
   unreadCountFrom,
+  unreadCountSwrKey,
   useNotificationPollInterval,
-  useNotificationProjectScope,
 } from '@/shared/lib/notification-swr.js';
 import { usePermissionContext } from '@/shared/hooks/use-permission-context.js';
 import { permissionContextForUi } from '@/shared/lib/permission-context-ui.js';
@@ -43,13 +41,7 @@ export default function AppSidebar() {
   const { permissionContext } = usePermissionContext();
   const pathname = usePathname();
   const refreshInterval = useNotificationPollInterval();
-  const { projectId } = useNotificationProjectScope();
-  const unreadParams = listNotificationsParams({ unread: true, limit: 1 }, projectId);
-  const { data: unreadData } = useSWR(
-    unreadParams ? notificationSwrKeys.unreadCount(projectId) : null,
-    () => listNotifications(unreadParams),
-    { refreshInterval },
-  );
+  const { data: unreadData } = useSWR(unreadCountSwrKey(), fetchNotificationList, { refreshInterval });
   const navUnread = unreadCountFrom(unreadData);
   const navUnreadBadge = navUnread > 99 ? '99+' : String(navUnread);
 
