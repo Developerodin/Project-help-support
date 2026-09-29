@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import mongoose from 'mongoose';
 import { ApiError } from '../../platform/errors.js';
 import logger from '../../platform/logger.js';
@@ -7,7 +8,8 @@ import logger from '../../platform/logger.js';
  * live in Mongo rather than process memory:
  *   - a daily spend cap per user in rupees (chat and voice alike),
  *   - a monthly token budget for the whole workspace, with a warning at 80%,
- *   - one chat request in flight per user.
+ *   - one chat request in flight per user,
+ *   - the user's last few replies, so read-aloud only speaks what the assistant said.
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -42,6 +44,47 @@ const lockSchema = new mongoose.Schema(
 );
 lockSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 export const AssistantLock = mongoose.models.AssistantLock || mongoose.model('AssistantLock', lockSchema);
+
+const replySchema = new mongoose.Schema(
+  {
+    _id: { type: String }, // user id
+    hashes: { type: [String], default: [] }, // newest last
+    expiresAt: { type: Date, required: true },
+  },
+  { versionKey: false },
+);
+replySchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+export const AssistantReply = mongoose.models.AssistantReply || mongoose.model('AssistantReply', replySchema);
+
+/** A few, since a voice turn can be read aloud after the next one was sent. */
+const RECENT_REPLIES = 5;
+const REPLY_TTL_MS = 30 * 60 * 1000;
+/** The speech route takes at most this many characters; the widget cuts replies to it the same way. */
+const SPOKEN_CHARS = 2000;
+
+/** The same for the reply as sent and as the widget sends it back to be spoken. */
+const replyHash = (text) => createHash('sha256')
+  .update(String(text).slice(0, SPOKEN_CHARS).trim().replace(/\s+/g, ' '))
+  .digest('hex');
+
+/** Remembers a reply just sent to this user, so it can be read aloud. */
+export async function rememberReply(user, text, now = new Date()) {
+  if (!text) return;
+  await AssistantReply.updateOne(
+    { _id: String(user._id) },
+    {
+      $push: { hashes: { $each: [replyHash(text)], $slice: -RECENT_REPLIES } },
+      $set: { expiresAt: new Date(now.getTime() + REPLY_TTL_MS) },
+    },
+    { upsert: true },
+  );
+}
+
+/** Whether `text` is one of the replies recently sent to this user. */
+export async function isRecentReply(user, text, now = new Date()) {
+  const found = await AssistantReply.findOne({ _id: String(user._id), expiresAt: { $gt: now } }).lean();
+  return Boolean(found?.hashes?.includes(replyHash(text)));
+}
 
 /** About 15 spoken characters a second, for costing read-aloud from its text. */
 const SPEECH_CHARS_PER_MIN = 900;

@@ -1698,6 +1698,7 @@ export default function AssistantWidget() {
                 Ask about your tickets, file a new one, or say where to go, like &ldquo;open the board&rdquo; or
                 &ldquo;show overdue tickets&rdquo;. Tap the mic to talk, or hold <kbd>Space</kbd> anywhere outside a text box.
               </p>
+              <p>It only helps with this app, not general questions, writing or coding.</p>
               <div className="assistant-suggestions">
                 {SUGGESTIONS.map((suggestion) => (
                   <button key={suggestion} type="button" className="btn btn-sm" onClick={() => handleUtterance(suggestion)}>

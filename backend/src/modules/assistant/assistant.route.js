@@ -12,8 +12,9 @@ import { validate } from '../../platform/validate.js';
 import { chat } from './assistant.service.js';
 import { TICKET_TABS, projectRoster } from './assistant.tools.js';
 import {
-  checkAllowance, estimateAudioSeconds, getAllowance, recordUsage, withChatLock,
+  checkAllowance, estimateAudioSeconds, getAllowance, isRecentReply, recordUsage, rememberReply, withChatLock,
 } from './assistant.guard.js';
+import { speechAllowed } from './assistant.scope.js';
 import { speak, transcribe } from './openai.client.js';
 
 const MINUTE = 60 * 1000;
@@ -123,6 +124,7 @@ export default function assistantRoutes(config) {
         const turn = await chat(config, req.user, req.permissionContext, messages, { mode, page, signal: cancelled.signal });
         logger.info('assistant: chat timing', { mode, ms: Date.now() - started });
         await recordUsage(config, req.user, turn.usage);
+        await rememberReply(req.user, turn.reply);
         return turn;
       });
       res.json({ reply, actions });
@@ -157,6 +159,10 @@ export default function assistantRoutes(config) {
 
   router.post('/speech', requireAssistant(config), voiceLimiter, validate(speechSchema), async (req, res, next) => {
     try {
+      // Read-aloud is for the assistant's replies, not a free text-to-speech service.
+      if (!speechAllowed(req.body.text, { isRecentReply: await isRecentReply(req.user, req.body.text) })) {
+        throw new ApiError(400, 'SPEECH_NOT_ALLOWED', 'Only the assistant\'s replies can be read aloud.');
+      }
       await checkAllowance(config, req.user);
       // Interrupted or left: stop synthesising audio nobody will hear.
       const cancelled = new AbortController();
