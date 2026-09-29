@@ -38,7 +38,7 @@ const sections = [
     body: (
       <p>
         The assistant answers from the data your account can see, and it can make mistakes. Check important details in the app before relying on them.
-        On WhatsApp it can only look things up; changes are made in the app. WhatsApp’s own terms also apply to your use of WhatsApp.
+        On WhatsApp it can look things up and file new tickets you confirm; other changes are made in the app. WhatsApp’s own terms also apply to your use of WhatsApp.
       </p>
     ),
   },

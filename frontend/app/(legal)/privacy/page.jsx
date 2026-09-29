@@ -8,7 +8,7 @@ export const metadata = { title: `Privacy policy · ${BRAND_NAME}` };
 const summary = [
   { term: 'No selling, no ads', detail: 'Your data is used only to run ProwPlus.' },
   { term: 'Your access, nothing more', detail: 'The assistant sees only what your account can see in the app.' },
-  { term: 'Read-only on WhatsApp', detail: 'It can look things up there, never change anything.' },
+  { term: 'You confirm every change', detail: 'On WhatsApp it looks things up and files a ticket only after you reply yes.' },
   { term: 'Short memory', detail: 'WhatsApp conversations are deleted after 30 minutes.' },
 ];
 
@@ -42,7 +42,7 @@ const sections = [
     title: 'The assistant and WhatsApp',
     body: (
       <ul>
-        <li>The assistant works with the same access as your account. On WhatsApp it can look things up but can’t create, change or delete anything.</li>
+        <li>The assistant works with the same access as your account. On WhatsApp it can look things up and file new tickets, each only after you reply “yes”; it can’t change or delete anything.</li>
         <li>To write a reply, your message and the app data it needs are sent to OpenAI. We ask OpenAI not to store these requests.</li>
         <li>Voice input in the app is sent to OpenAI to be turned into text. We don’t keep the recordings.</li>
         <li>WhatsApp messages travel through Meta’s WhatsApp Business Platform, where WhatsApp’s own terms and privacy policy apply.</li>

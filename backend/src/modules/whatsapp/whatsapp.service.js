@@ -5,6 +5,10 @@ import User from '../users/user.model.js';
 import { loadPermissionContextForUser } from '../rbac/rbac.service.js';
 import { chat } from '../assistant/assistant.service.js';
 import { checkAllowance, recordUsage, withChatLock } from '../assistant/assistant.guard.js';
+import { createTicket, resolveTicketDocForNotifications } from '../tickets/ticket.service.js';
+import { createTicketSchema } from '../tickets/ticket.validation.js';
+import { dispatchTicketEvent } from '../notifications/dispatch.js';
+import { publishTicketUpdatedRealtime } from '../realtime/realtime.service.js';
 import { WhatsappLink, WhatsappLinkCode, WhatsappState } from './whatsapp.model.js';
 
 const MINUTE = 60 * 1000;
@@ -20,6 +24,9 @@ const MAX_BODY = 4096;
 const GRAPH = 'https://graph.facebook.com/v26.0';
 
 const LINK_MESSAGE = /^\s*link\s+(\d{8})\s*$/i;
+// Answers to "Reply yes to create it or no to cancel" (English, Hindi, Hinglish).
+const YES = /^\s*(yes|y|yeah|yep|ok|okay|confirm|create|create it|haan|han|ha|haa|हाँ|हां)\s*[.!]*\s*$/i;
+const NO = /^\s*(no|n|nope|cancel|nahi|nahin|na|नहीं)\s*[.!]*\s*$/i;
 const hash = (code) => crypto.createHash('sha256').update(code).digest('hex');
 const later = (ms) => new Date(Date.now() + ms);
 
@@ -71,7 +78,7 @@ async function tryLink(sender, code) {
   await WhatsappLink.deleteMany({ $or: [{ user: user._id }, { waId: sender.waId }, ...(sender.bsuid ? [{ bsuid: sender.bsuid }] : [])] });
   await WhatsappLink.create({ user: user._id, waId: sender.waId, bsuid: sender.bsuid });
   logger.info('whatsapp linked', { userId: String(user._id) });
-  return `Linked to ${user.name}. Ask me about your tickets and projects. I can look things up here; changes are made in the app.`;
+  return `Linked to ${user.name}. Ask me about your tickets and projects, or tell me about a new ticket to file.`;
 }
 
 async function findLink(sender) {
@@ -98,26 +105,102 @@ async function ask(config, link, text) {
   if (!can(user, 'assistant.use', permissionContext)) return REPLIES.notAllowed;
 
   const key = `chat:${user._id}`;
-  const history = (await WhatsappState.findById(key).lean())?.messages ?? [];
-  const messages = [...history, { role: 'user', content: text.slice(0, 4000) }];
+  const state = await WhatsappState.findById(key).lean();
+  const messages = [...(state?.messages ?? []), { role: 'user', content: text.slice(0, 4000) }];
+  // draft: undefined keeps the waiting draft, null drops it, a body replaces it.
+  const save = (reply, note, draft) => WhatsappState.updateOne(
+    { _id: key },
+    {
+      $set: {
+        messages: [...messages, { role: 'assistant', content: note ? `${reply}
+
+${note}` : reply }].slice(-HISTORY_MESSAGES),
+        expiresAt: later(HISTORY_TTL_MS),
+        ...(draft ? { draft } : {}),
+      },
+      ...(draft === null ? { $unset: { draft: 1 } } : {}),
+    },
+    { upsert: true },
+  );
+
+  if (state?.draft && (YES.test(text) || NO.test(text))) {
+    // Taking the draft out atomically is what stops a double "yes" filing it twice.
+    const claimed = await WhatsappState.findOneAndUpdate(
+      { _id: key, draft: { $exists: true } },
+      { $unset: { draft: 1 } },
+    ).lean();
+    if (claimed?.draft) {
+      const reply = YES.test(text) ? await fileTicket(config, user, permissionContext, claimed.draft) : 'Cancelled. Nothing was created.';
+      await save(reply, null, null);
+      return reply;
+    }
+  }
+
   try {
-    const { reply } = await withChatLock(user, async () => {
+    const turn = await withChatLock(user, async () => {
       await checkAllowance(config, user);
-      const turn = await chat(config, user, permissionContext, messages, { mode: 'whatsapp' });
-      await recordUsage(config, user, turn.usage);
-      return turn;
+      const result = await chat(config, user, permissionContext, messages, { mode: 'whatsapp' });
+      await recordUsage(config, user, result.usage);
+      return result;
     });
-    await WhatsappState.updateOne(
-      { _id: key },
-      { $set: { messages: [...messages, { role: 'assistant', content: reply }].slice(-HISTORY_MESSAGES), expiresAt: later(HISTORY_TTL_MS) } },
-      { upsert: true },
-    );
-    return reply;
+    const drafted = turn.actions.filter((action) => action.type === 'create_ticket').at(-1);
+    // The model sees its draft on later turns the same way the app shows it one ([Draft …] notes).
+    const note = drafted
+      ? `[Draft "New ticket in ${drafted.projectKey}": ${draftSummary(drafted.body)}. Status: waiting for the user to reply yes or no]`
+      : null;
+    await save(turn.reply, note, drafted?.body);
+    return turn.reply;
   } catch (err) {
     // Budget spent, or still answering the last one: ApiError messages are written for the user.
     if (err?.isOperational) return err.message;
     throw err;
   }
+}
+
+function draftSummary(body) {
+  return ['title', 'module', 'page', 'category', 'severity', 'priority', 'environment', 'description']
+    .filter((field) => body[field])
+    .map((field) => `${field}: ${String(body[field]).slice(0, 300)}`)
+    .join('; ');
+}
+
+/**
+ * What confirming the card does in the app (POST /tickets): the same validation,
+ * and createTicket re-checks this user's permission and project access.
+ */
+async function fileTicket(config, user, permissionContext, draft) {
+  const { value, error } = createTicketSchema.body.validate(draft);
+  if (error) return `I couldn't create it: ${error.message}`;
+  let ticket;
+  try {
+    ticket = await createTicket(user, value, permissionContext);
+  } catch (err) {
+    if (err?.isOperational) return `I couldn't create it: ${err.message}`;
+    throw err;
+  }
+  logger.info('whatsapp ticket created', { userId: String(user._id), ticketId: ticket.ticketId });
+  // As in the controller: a notification failure must not read as "not filed".
+  try {
+    const doc = await resolveTicketDocForNotifications(ticket.id);
+    await dispatchTicketEvent({ event: { type: 'TICKET_CREATED' }, ticket: doc, actor: user, config });
+    publishTicketUpdatedRealtime(doc, user);
+  } catch (err) {
+    logger.error('whatsapp ticket notify failed', { ticketId: ticket.ticketId, error: err.message });
+  }
+  return `Created *${ticket.ticketId}*: ${ticket.title}`;
+}
+
+/**
+ * The model sometimes writes markdown; WhatsApp has its own marks
+ * (*bold*, _italic_) and shows the rest as literal symbols.
+ */
+export function toWhatsapp(text) {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '*$1*')
+    .replace(/__(.+?)__/g, '_$1_')
+    .replace(/^#{1,6}\s+(.+)$/gm, '*$1*')
+    .replace(/^(\s*)[*•]\s+/gm, '$1- ')
+    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '$1: $2');
 }
 
 /** What to reply to one incoming message, or null when it was already answered. */
@@ -144,7 +227,7 @@ export async function send(config, to, body) {
     method: 'POST',
     headers: { Authorization: `Bearer ${config.whatsapp.token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      messaging_product: 'whatsapp', to, type: 'text', text: { body: body.slice(0, MAX_BODY) },
+      messaging_product: 'whatsapp', to, type: 'text', text: { body: toWhatsapp(body).slice(0, MAX_BODY) },
     }),
     signal: AbortSignal.timeout(15_000),
   });

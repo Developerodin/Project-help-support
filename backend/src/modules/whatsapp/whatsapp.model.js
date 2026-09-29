@@ -33,13 +33,15 @@ export const WhatsappLinkCode = mongoose.models.WhatsappLinkCode || mongoose.mod
  * Short-lived state keyed by a string:
  *   "seen:<message id>"   Meta redelivers; a message is answered once.
  *   "fail:<wa id>"        wrong link codes from one sender, to stop guessing.
- *   "chat:<user id>"      the recent conversation, kept server-side so it can't be forged.
+ *   "chat:<user id>"      the recent conversation, kept server-side so it can't be forged,
+ *                         and the new-ticket draft waiting for a yes (the ticket body).
  */
 const stateSchema = new mongoose.Schema(
   {
     _id: { type: String },
     count: { type: Number, default: 0 },
     messages: { type: [{ _id: false, role: String, content: String }], default: undefined },
+    draft: { type: mongoose.Schema.Types.Mixed, default: undefined },
     expiresAt: { type: Date, required: true },
   },
   { versionKey: false },
