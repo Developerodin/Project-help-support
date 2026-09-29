@@ -6,7 +6,9 @@ const objectId = mongoose.Schema.Types.ObjectId;
 const rbacAuditLogSchema = new mongoose.Schema(
   {
     action: { type: String, required: true, index: true },
-    category: { type: String, enum: ['policy', 'access', 'security', 'whatsapp'], required: true, index: true },
+    category: {
+      type: String, enum: ['policy', 'access', 'security', 'whatsapp', 'ticket'], required: true, index: true,
+    },
     // Null only for WhatsApp events from a number with no account behind it (code guessing, strangers).
     actor: {
       type: objectId, ref: 'User', default: null, index: true, required() { return this.category !== 'whatsapp'; },
@@ -14,6 +16,9 @@ const rbacAuditLogSchema = new mongoose.Schema(
     initiator: { type: objectId, ref: 'User', default: null, index: true },
     targetUser: { type: objectId, ref: 'User', default: null, index: true },
     assignment: { type: objectId, ref: 'AccessAssignment', default: null },
+    // Plain values rather than refs: ticket rows must stay readable after the ticket is deleted.
+    ticketId: { type: String, default: null },
+    project: { type: objectId, default: null },
   // ponytail: append-only blob — no query layer, just replay what changed.
     details: { type: mongoose.Schema.Types.Mixed, default: {} },
   },
@@ -21,6 +26,9 @@ const rbacAuditLogSchema = new mongoose.Schema(
 );
 
 rbacAuditLogSchema.index({ createdAt: -1 });
+rbacAuditLogSchema.index({ category: 1, createdAt: -1 });
+rbacAuditLogSchema.index({ ticketId: 1, createdAt: -1 }, { partialFilterExpression: { ticketId: { $type: 'string' } } });
+rbacAuditLogSchema.index({ project: 1, createdAt: -1 }, { partialFilterExpression: { project: { $type: 'objectId' } } });
 
 rbacAuditLogSchema.plugin(toJSON);
 

@@ -6,6 +6,7 @@ const POLICY_MATRIX_DETAIL_LIMIT = 8000;
 
 function auditCategory(action) {
   if (action.startsWith('whatsapp.')) return 'whatsapp';
+  if (action.startsWith('ticket.')) return 'ticket';
   if (action.startsWith('security.')) return 'security';
   if (action.startsWith('user.')) return 'security';
   if (
@@ -72,13 +73,18 @@ async function persistRbacAudit(actor, action, details = {}) {
     if (exists) return;
   }
 
+  const category = auditCategory(action);
+  const ticketId = typeof details.ticketId === 'string' && details.ticketId ? details.ticketId : null;
+
   await RbacAuditLog.create({
     action,
-    category: auditCategory(action),
+    category,
     actor: actor?._id ?? null,
     initiator: initiatorUserId || null,
     targetUser: targetUserId,
     assignment: assignmentId,
+    ticketId,
+    project: category === 'ticket' ? (details.projectId ?? null) : null,
     details: storedDetails,
   });
 }

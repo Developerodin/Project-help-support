@@ -38,6 +38,7 @@ import {
   resolvePermissionContext,
 } from '../access/scope-enforcement.js';
 import Ticket from './ticket.model.js';
+import { diffTicketChanges, recordTicketAudit } from './ticket-audit.js';
 import {
   discussionNewReplyFilterStages,
   discussionUnreadByTicketIds,
@@ -145,6 +146,8 @@ export async function createTicket(actor, body, permissionContext = null, { via 
     stageHistory: [{ to: 'pending', by: actor._id, at: now }],
     activityLog: [{ action: 'created', performedBy: actor._id, at: now, changes: [], ...(via ? { via } : {}) }],
   });
+
+  await recordTicketAudit(actor, 'ticket.created', ticket, { status: ticket.status }, { via });
 
   return ticket.toJSON();
 }
@@ -844,6 +847,11 @@ export async function patchTicket(actor, idOrKey, body, permissionContext = null
     $push: { activityLog: { action: 'updated', performedBy: actor._id, at: new Date(), changes } },
   });
 
+  const auditChanges = diffTicketChanges(changes);
+  if (auditChanges.length) {
+    await recordTicketAudit(actor, 'ticket.updated', written, { changes: auditChanges });
+  }
+
   return written.toJSON();
 }
 
@@ -887,21 +895,39 @@ export async function assignTicket(actor, idOrKey, { assignedTo, team, revision 
     $push: { activityLog: { action: 'assigned', performedBy: actor._id, at: new Date(), changes } },
   });
 
+  const auditChanges = diffTicketChanges(changes);
+  if (auditChanges.length) {
+    await recordTicketAudit(actor, 'ticket.assigned', written, { changes: auditChanges });
+  }
+
   return written.toJSON();
 }
 
-/** Watch/unwatch carry no revision: $addToSet and $pull are already idempotent. */
+/**
+ * Watch/unwatch carry no revision: $addToSet and $pull are already idempotent.
+ * The membership test lives in the filter because schema timestamps bump
+ * updatedAt on every write, so modifiedCount alone cannot tell a no-op apart.
+ */
+export async function setWatching(actor, ticket, watching) {
+  const result = watching
+    ? await Ticket.updateOne({ _id: ticket._id, watchers: { $ne: actor._id } }, { $addToSet: { watchers: actor._id } })
+    : await Ticket.updateOne({ _id: ticket._id, watchers: actor._id }, { $pull: { watchers: actor._id } });
+  if (result.matchedCount) {
+    await recordTicketAudit(actor, watching ? 'ticket.watched' : 'ticket.unwatched', ticket);
+  }
+}
+
 export async function watchTicket(actor, idOrKey) {
   const ticket = await resolveTicketDoc(idOrKey);
   await assertCanViewTicket(actor, ticket);
-  await Ticket.updateOne({ _id: ticket._id }, { $addToSet: { watchers: actor._id } });
+  await setWatching(actor, ticket, true);
   return getTicket(actor, String(ticket._id));
 }
 
 export async function unwatchTicket(actor, idOrKey) {
   const ticket = await resolveTicketDoc(idOrKey);
   await assertCanViewTicket(actor, ticket);
-  await Ticket.updateOne({ _id: ticket._id }, { $pull: { watchers: actor._id } });
+  await setWatching(actor, ticket, false);
   return getTicket(actor, String(ticket._id));
 }
 
@@ -940,6 +966,8 @@ export async function setBlocked(actor, idOrKey, { revision, reason }, permissio
     },
   });
 
+  await recordTicketAudit(actor, 'ticket.blocked', written, { reason: note });
+
   return written.toJSON();
 }
 
@@ -967,6 +995,8 @@ export async function clearBlocked(actor, idOrKey, { revision }, permissionConte
       },
     },
   });
+
+  await recordTicketAudit(actor, 'ticket.unblocked', written, { previousReason: ticket.blockerReason ?? null });
 
   return written.toJSON();
 }
@@ -999,7 +1029,12 @@ export async function deleteTicket(idOrKey, actor = null, permissionContext = nu
       permissionContext,
     );
   }
-  await Ticket.deleteOne({ _id: ticket._id });
+  const { deletedCount } = await Ticket.deleteOne({ _id: ticket._id });
+  // Only the delete that actually removed the document records it, from the in-memory
+  // snapshot: a failed or lost-race delete must not leave a permanent "deleted" row.
+  if (deletedCount) {
+    await recordTicketAudit(actor, 'ticket.deleted', ticket, { status: ticket.status });
+  }
   // Bulk delete comes through here too. Rows would otherwise dangle, linking to
   // a ticket that no longer opens.
   await Notification.deleteMany({ ticket: ticket._id });

@@ -11,6 +11,7 @@ import { ApiError } from '../../platform/errors.js';
 import { assertActiveUsers } from '../teams/team.service.js';
 import { canExternalViewTicket, sanitizeExternalTicket } from '../access/external-auth.service.js';
 import Ticket from './ticket.model.js';
+import { recordTicketAudit } from './ticket-audit.js';
 import {
   resolveTicketDoc,
   getTicket,
@@ -284,6 +285,14 @@ export async function transitionTicket(actor, idOrKey, {
   let type = 'TICKET_STAGE_CHANGED';
   if (verdict.isReopen) type = 'TICKET_REOPENED';
   else if (verdict.isClose) type = 'TICKET_CLOSED';
+
+  await recordTicketAudit(actor, 'ticket.transitioned', written, {
+    from,
+    to,
+    ...(verdict.decision ? { decision: verdict.decision } : {}),
+    ...(verdict.isReopen ? { reopened: true } : {}),
+    ...(verdict.isClose ? { closed: true } : {}),
+  });
 
   // The event is RETURNED rather than dispatched: the stage machine emits, and
   // knows nothing about recipients. Phase 4's notification module consumes it.

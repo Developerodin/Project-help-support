@@ -1,4 +1,4 @@
-import { ROLE_LABELS } from '@pms/shared';
+import { BOARD_LABELS, ROLE_LABELS, stageLabel } from '@pms/shared';
 
 /**
  * Audit rows are written by the backend as `<subject>.<verb>` enums. The table
@@ -33,6 +33,20 @@ export const AUDIT_ACTION_LABELS = Object.freeze({
   'whatsapp.attach_failed': 'WhatsApp files not attached',
   'whatsapp.attach_cancelled': 'WhatsApp files cancelled',
   'whatsapp.attach_skipped': 'WhatsApp files skipped',
+  'ticket.created': 'Ticket created',
+  'ticket.updated': 'Ticket edited',
+  'ticket.assigned': 'Ticket assigned',
+  'ticket.transitioned': 'Stage changed',
+  'ticket.blocked': 'Ticket blocked',
+  'ticket.unblocked': 'Ticket unblocked',
+  'ticket.comment_added': 'Comment added',
+  'ticket.comment_edited': 'Comment edited',
+  'ticket.comment_deleted': 'Comment deleted',
+  'ticket.attachments_added': 'Files attached',
+  'ticket.attachment_removed': 'File removed',
+  'ticket.watched': 'Ticket watched',
+  'ticket.unwatched': 'Ticket unwatched',
+  'ticket.deleted': 'Ticket deleted',
 });
 
 export const AUDIT_CATEGORY_LABELS = Object.freeze({
@@ -40,6 +54,7 @@ export const AUDIT_CATEGORY_LABELS = Object.freeze({
   access: 'Access',
   security: 'Security',
   whatsapp: 'WhatsApp',
+  ticket: 'Tickets',
 });
 
 /** Unknown enums still read as prose rather than as a raw identifier. */
@@ -54,6 +69,16 @@ export function formatAuditActor(actor) {
   if (!actor) return '—';
   if (typeof actor === 'string') return actor;
   return actor.name || actor.email || actor.id || '—';
+}
+
+/**
+ * Muted line under the actor's name. Display names are not unique (the seeded admin is
+ * literally named "Administrator"), so the email is what identifies the person.
+ */
+export function formatAuditActorDetail(actor) {
+  if (!actor || typeof actor !== 'object') return null;
+  if (!actor.name || !actor.email || actor.name === actor.email) return null;
+  return actor.email;
 }
 
 export function auditInitiatorId(row) {
@@ -73,13 +98,15 @@ export function auditActorId(row) {
 /** Show initiator only when it differs from the session actor (impersonation). */
 export function formatAuditActorWithInitiator(row) {
   const actorLabel = formatAuditActor(row?.actor);
+  const actorDetail = formatAuditActorDetail(row?.actor);
   const initiatorId = auditInitiatorId(row);
   const actorId = auditActorId(row);
   if (!initiatorId || (actorId && String(initiatorId) === String(actorId))) {
-    return { actor: actorLabel, initiator: null };
+    return { actor: actorLabel, actorDetail, initiator: null };
   }
   return {
     actor: actorLabel,
+    actorDetail,
     initiator: formatAuditActor(row.initiator),
   };
 }
@@ -88,17 +115,74 @@ function roleLabel(role) {
   return ROLE_LABELS[role] || role;
 }
 
+function listWithRemainder(items, shownCount = 2) {
+  const shown = items.slice(0, shownCount);
+  const rest = items.length - shown.length;
+  return rest > 0 ? `${shown.join(', ')} +${rest} more` : shown.join(', ');
+}
+
+/** Backend-resolved name first, then the raw id so the cell is never blank when a subject exists. */
+function namedSubject(row, key, noun) {
+  const details = row?.details || {};
+  const name = row?.subjectNames?.[key] || details[`${key}Name`];
+  if (name) return String(name);
+  const id = details[`${key}Id`];
+  return id ? `${noun} ${id}` : null;
+}
+
+function auditSubject(row) {
+  const details = row?.details || {};
+  const action = row?.action || '';
+
+  if (action.startsWith('role_matrix.') || action.startsWith('board_permissions.')) {
+    const changes = Array.isArray(details.changes) ? details.changes : [];
+    let roles = [...new Set(changes.map((c) => c?.role).filter(Boolean))];
+    // A save with no effective change has an empty diff; fall back to the subject it was saved for.
+    if (!roles.length) {
+      roles = Array.isArray(details.roles) ? details.roles.filter(Boolean) : [];
+      if (!roles.length && details.role) roles = [details.role];
+    }
+    if (roles.length) return listWithRemainder(roles.map(roleLabel));
+    if (details.board) return BOARD_LABELS[details.board] || String(details.board);
+    return namedSubject(row, 'project', 'Project');
+  }
+  if (action === 'scoped_assignment.project_testers_sync') {
+    return namedSubject(row, 'project', 'Project') || namedSubject(row, 'client', 'Company');
+  }
+  if (action.startsWith('scoped_assignment.bulk_') || action === 'scoped_assignment.company_sync') {
+    return namedSubject(row, 'client', 'Company') || namedSubject(row, 'project', 'Project');
+  }
+  if (action.startsWith('whatsapp.')) {
+    return details.waId ? `+${details.waId}` : null;
+  }
+  if (action.startsWith('ticket.')) {
+    return row?.ticketId || details.ticketId || null;
+  }
+  if (action.startsWith('security.impersonation.')) {
+    const id = details.targetId || details.targetUserId;
+    return id ? `User ${id}` : null;
+  }
+  return null;
+}
+
+/**
+ * The user account the event was about, or failing that the role, project,
+ * company or phone number its details name.
+ */
+export function formatAuditTarget(row) {
+  if (row?.targetUser) return formatAuditActor(row.targetUser);
+  return auditSubject(row) || formatAuditActor(null);
+}
+
 function plural(count, noun) {
   return `${count} ${noun}${count === 1 ? '' : 's'}`;
 }
 
 /** "Developer +tickets.edit, Tester −teams.view" — first two, then a remainder count. */
 function describeMatrixChanges(changes) {
-  const shown = changes.slice(0, 2).map(
-    (c) => `${roleLabel(c.role)} ${c.after ? '+' : '−'}${c.permission}`,
-  );
-  const rest = changes.length - shown.length;
-  return rest > 0 ? `${shown.join(', ')} +${rest} more` : shown.join(', ');
+  return listWithRemainder(changes.map(
+    (c) => `${roleLabel(c.role)} ${c.after ? '+' : '−'}${c.permission ?? `${c.board}.${c.capability}`}`,
+  ));
 }
 
 function describePermissionDelta(previous, next) {
@@ -128,6 +212,95 @@ function describeBulkCounts(details) {
   return parts.length ? parts.join(' · ') : 'Bulk assignment change';
 }
 
+const TICKET_FIELD_LABELS = {
+  title: 'Title',
+  description: 'Description',
+  stepsToReproduce: 'Steps to reproduce',
+  module: 'Module',
+  page: 'Page',
+  environment: 'Environment',
+  category: 'Category',
+  labels: 'Labels',
+  severity: 'Severity',
+  priority: 'Priority',
+  testedBy: 'Tester',
+  assignedTo: 'Assignee',
+  team: 'Team',
+  estimatedResolutionAt: 'Resolution estimate',
+  expectedReleaseDate: 'Expected release',
+};
+const TICKET_PROSE_FIELDS = new Set(['description', 'stepsToReproduce']);
+const TICKET_REF_FIELDS = new Set(['assignedTo', 'testedBy', 'team']);
+const TICKET_DATE_FIELDS = new Set(['estimatedResolutionAt', 'expectedReleaseDate']);
+
+function ticketFieldValue(change, side) {
+  const value = change[side];
+  if (TICKET_REF_FIELDS.has(change.field)) {
+    if (!value) return 'nobody';
+    return change[`${side}Label`] || 'a removed record';
+  }
+  if (value == null || value === '') return 'empty';
+  if (TICKET_DATE_FIELDS.has(change.field)) return String(value).slice(0, 10);
+  if (Array.isArray(value)) return value.join(', ');
+  return String(value).replace(/_/g, ' ');
+}
+
+/** "Priority: high to urgent; Description edited" for the first two fields, then a count. */
+function describeTicketChanges(changes) {
+  const parts = changes.map((change) => {
+    const label = TICKET_FIELD_LABELS[change.field] || change.field;
+    if (TICKET_PROSE_FIELDS.has(change.field)) return `${label} edited`;
+    return `${label}: ${ticketFieldValue(change, 'from')} to ${ticketFieldValue(change, 'to')}`;
+  });
+  const shown = parts.slice(0, 2).join('; ');
+  const rest = parts.length - 2;
+  return rest > 0 ? `${shown}; +${rest} more` : shown || 'No field changes';
+}
+
+function summariseTicketEvent(row) {
+  const details = row?.details || {};
+  const files = Array.isArray(details.files) ? details.files : [];
+  const title = details.title ? `"${details.title}"` : 'ticket';
+  const fromWhatsApp = details.via === 'whatsapp' ? ' from WhatsApp' : '';
+  switch (row.action) {
+    case 'ticket.created': return `Created ${title}${fromWhatsApp}`;
+    case 'ticket.updated':
+    case 'ticket.assigned':
+      return describeTicketChanges(Array.isArray(details.changes) ? details.changes : []);
+    case 'ticket.transitioned': {
+      let move = `${stageLabel(details.from)} to ${stageLabel(details.to)}`;
+      if (details.reopened) move += ' (reopened)';
+      else if (details.closed) move += ' (closed)';
+      return move;
+    }
+    case 'ticket.blocked': return details.reason ? `Blocked: ${details.reason}` : 'Blocked';
+    case 'ticket.unblocked': return 'Blocker cleared';
+    case 'ticket.comment_added': {
+      const count = details.mentionCount || 0;
+      const mentions = count ? `, mentioning ${count === 1 ? '1 person' : `${count} people`}` : '';
+      return `${details.internal ? 'Internal comment' : 'Comment'} added${mentions}`;
+    }
+    case 'ticket.comment_edited': return `${details.internal ? 'Internal comment' : 'Comment'} edited`;
+    case 'ticket.comment_deleted': return `${details.internal ? 'Internal comment' : 'Comment'} deleted`;
+    case 'ticket.attachments_added':
+      return files.length ? `Attached ${listWithRemainder(files)}${fromWhatsApp}` : `Files attached${fromWhatsApp}`;
+    case 'ticket.attachment_removed': return files.length ? `Removed ${files.join(', ')}` : 'File removed';
+    case 'ticket.watched': return 'Started watching';
+    case 'ticket.unwatched': return 'Stopped watching';
+    case 'ticket.deleted':
+      return `Deleted ${title}${details.status ? ` while in ${stageLabel(details.status)}` : ''}`;
+    default: return formatAuditAction(row.action);
+  }
+}
+
+/** "WEB-12 · Web App · Priority: high to urgent". Project name when it still resolves, else the key. */
+function summariseTicketRow(row) {
+  const details = row?.details || {};
+  const ticketId = row?.ticketId || details.ticketId;
+  const project = row?.subjectNames?.project || details.projectKey;
+  return [ticketId, project, summariseTicketEvent(row)].filter(Boolean).join(' · ');
+}
+
 /**
  * One human sentence per row. Never dumps raw JSON into the table — an
  * unrecognised shape falls back to the field names that changed.
@@ -135,6 +308,8 @@ function describeBulkCounts(details) {
 export function summariseAuditDetails(row) {
   const details = row?.details || {};
   const action = row?.action;
+
+  if (action?.startsWith('ticket.')) return summariseTicketRow(row);
 
   if (action?.startsWith('whatsapp.')) {
     // Who said yes is the actor; this is which phone and what came of it.

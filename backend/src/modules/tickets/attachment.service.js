@@ -6,6 +6,7 @@ import * as defaultStorage from '../../platform/s3.js';
 import Ticket from './ticket.model.js';
 import { resolveTicketDoc, assertCanViewTicket, assertCanDeleteTicket } from './ticket.service.js';
 import { findComment } from './comment.service.js';
+import { recordTicketAudit } from './ticket-audit.js';
 import { canExternalViewTicket } from '../access/external-auth.service.js';
 
 const sameId = (a, b) => !!a && !!b && String(a._id ?? a) === String(b._id ?? b);
@@ -207,6 +208,13 @@ export async function addAttachments(actor, idOrKey, files, config, opts = {}) {
     return buildAttachmentResult(replayed, replayedComment, false);
   }
 
+  await recordTicketAudit(actor, 'ticket.attachments_added', written, {
+    files: entries.map((e) => e.name),
+    count: entries.length,
+    ...(commentId ? { commentId: String(commentId) } : {}),
+    ...(commentCreated ? { withComment: true } : {}),
+  }, { via });
+
   const attachments = written.attachments.slice(-entries.length);
   let comment = null;
 
@@ -247,6 +255,12 @@ export async function removeAttachment(actor, idOrKey, attachmentId, config, opt
       },
     },
   );
+
+  await recordTicketAudit(actor, 'ticket.attachment_removed', ticket, {
+    attachmentId: String(attachment._id),
+    files: [attachment.name],
+    count: 1,
+  });
 
   // The object goes AFTER the row: an orphan S3 object is recoverable garbage;
   // a row pointing at a deleted object is a broken download for every user.

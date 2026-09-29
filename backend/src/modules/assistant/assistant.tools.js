@@ -423,7 +423,7 @@ const SET_PAGE_FILTERS = fn(
     throughput_group_by: nullableEnum(['day', 'week']),
     window_days: { type: ['integer', 'null'], enum: [...ANALYTICS_WINDOWS, null], description: 'Throughput window in days.' },
     breakdown: nullableEnum(['severity', 'module', 'assignee', 'team', 'priority', 'category', 'environment', 'label']),
-    audit_category: nullableEnum(['policy', 'access', 'security', 'whatsapp', ANY]),
+    audit_category: nullableEnum(['policy', 'access', 'security', 'whatsapp', 'ticket', ANY]),
     audit_action: nullable({ type: 'string' }),
     audit_order: nullableEnum(['newest', 'oldest']),
     rows: { type: ['integer', 'null'], enum: [20, 50, 100, null], description: 'Rows per page.' },

@@ -4,6 +4,7 @@ import { assertActiveUsers } from '../teams/team.service.js';
 import { canExternalViewTicket } from '../access/external-auth.service.js';
 import Ticket from './ticket.model.js';
 import { resolveTicketDoc, assertCanViewTicket, assertCanEditTicket } from './ticket.service.js';
+import { recordTicketAudit } from './ticket-audit.js';
 
 const sameId = (a, b) => !!a && !!b && String(a._id ?? a) === String(b._id ?? b);
 
@@ -90,6 +91,13 @@ export async function addComment(actor, idOrKey, { content, mentions = [], clien
 
   const comment = written.comments.at(-1);
 
+  // The comment body stays on the ticket; the audit row records that it happened.
+  await recordTicketAudit(actor, 'ticket.comment_added', written, {
+    commentId: String(comment._id),
+    internal: comment.internal === true,
+    mentionCount: mentions.length,
+  });
+
   return {
     comment,
     created: true,
@@ -126,6 +134,11 @@ export async function editComment(actor, idOrKey, commentId, { content }, permis
     },
   );
 
+  await recordTicketAudit(actor, 'ticket.comment_edited', ticket, {
+    commentId: String(comment._id),
+    internal: comment.internal === true,
+  });
+
   return (await Ticket.findById(ticket._id)).comments.id(comment._id);
 }
 
@@ -148,6 +161,12 @@ export async function deleteComment(actor, idOrKey, commentId, permissionContext
       },
     },
   );
+
+  await recordTicketAudit(actor, 'ticket.comment_deleted', ticket, {
+    commentId: String(comment._id),
+    commentAuthorId: comment.commentedBy ? String(comment.commentedBy._id ?? comment.commentedBy) : null,
+    internal: comment.internal === true,
+  });
 
   return { id: String(comment._id) };
 }

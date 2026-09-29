@@ -1,5 +1,5 @@
 import Ticket from '../tickets/ticket.model.js';
-import { assertCanViewTicket, resolveTicketDoc } from '../tickets/ticket.service.js';
+import { assertCanViewTicket, resolveTicketDoc, setWatching } from '../tickets/ticket.service.js';
 import TicketMute from './ticketMute.model.js';
 import { roleAudienceIds } from './recipients.js';
 
@@ -47,10 +47,7 @@ export async function getTicketSettings(actor, ticketId) {
 export async function updateTicketSettings(actor, ticketId, { muted, following }) {
   const ticket = await viewableTicket(actor, ticketId);
 
-  if (following !== undefined) {
-    const op = following ? '$addToSet' : '$pull';
-    await Ticket.updateOne({ _id: ticket._id }, { [op]: { watchers: actor._id } });
-  }
+  if (following !== undefined) await setWatching(actor, ticket, Boolean(following));
   if (muted === true) {
     try {
       await TicketMute.updateOne(
