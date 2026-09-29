@@ -7,6 +7,7 @@ import { updateMe } from '@/shared/api/users.js';
 import { listTeams } from '@/shared/api/teams.js';
 import { listProjects } from '@/shared/api/projects.js';
 import AccessDetailsDrawer from '@/shared/components/profile/access-details-drawer.jsx';
+import WhatsappPanel from '@/shared/components/profile/whatsapp-panel.jsx';
 import RoleBadges from '@/shared/components/role-badges.jsx';
 import ThemeToggle from '@/shared/components/theme-toggle.jsx';
 import FormError from '@/shared/components/form-error.jsx';
@@ -352,6 +353,8 @@ export default function ProfilePage() {
               </button>
             </div>
           </Panel>
+
+          <WhatsappPanel />
 
           <Panel
             id="profile-security"

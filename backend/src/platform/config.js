@@ -12,6 +12,7 @@ const CAPABILITY_GROUPS = {
   storage: ['AWS_REGION', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'S3_BUCKET'],
   email: ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USERNAME', 'SMTP_PASSWORD', 'EMAIL_FROM'],
   seed: ['SEED_ADMIN_EMAIL', 'SEED_ADMIN_PASSWORD'],
+  whatsapp: ['WHATSAPP_VERIFY_TOKEN', 'WHATSAPP_APP_SECRET', 'WHATSAPP_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID'],
 };
 
 const PLACEHOLDERS = new Set([
@@ -248,6 +249,7 @@ export function loadConfig(env = process.env) {
   const storage = readGroup(env, 'storage');
   const email = readGroup(env, 'email');
   const seed = readGroup(env, 'seed');
+  const whatsapp = readGroup(env, 'whatsapp');
   const ticketNotificationSink = readTicketNotificationSink(env, isProduction);
   const push = readPush(env);
 
@@ -366,6 +368,13 @@ export function loadConfig(env = process.env) {
     seed: seed && {
       adminEmail: seed.SEED_ADMIN_EMAIL,
       adminPassword: seed.SEED_ADMIN_PASSWORD,
+    },
+    // Meta webhook at /v1/whatsapp/webhook, answered by the assistant. Absent: off.
+    whatsapp: whatsapp && {
+      verifyToken: whatsapp.WHATSAPP_VERIFY_TOKEN,
+      appSecret: whatsapp.WHATSAPP_APP_SECRET,
+      token: whatsapp.WHATSAPP_TOKEN,
+      phoneNumberId: whatsapp.WHATSAPP_PHONE_NUMBER_ID,
     },
     realtime: {
       enabled: readBoolean(env, 'REALTIME_SSE_ENABLED', true),

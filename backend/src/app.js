@@ -7,7 +7,7 @@ import compression from 'compression';
 import morgan from 'morgan';
 
 import { requestId } from './platform/requestId.js';
-import { redactSensitiveQuery } from './platform/logger.js';
+import logger, { redactSensitiveQuery } from './platform/logger.js';
 import { ApiError, errorConverter, errorHandler } from './platform/errors.js';
 import { isDbReady } from './platform/db.js';
 import { buildOriginMatcher } from './platform/origin-policy.js';
@@ -23,6 +23,7 @@ import assistantRoutes from './modules/assistant/assistant.route.js';
 import analyticsRoutes from './modules/tickets/analytics.route.js';
 import rbacRoutes from './modules/rbac/rbac.route.js';
 import realtimeRoutes from './modules/realtime/realtime.route.js';
+import whatsappWebhookRoutes, { whatsappLinkRoutes } from './modules/whatsapp/whatsapp.route.js';
 
 export function createApp(config, { deliverReset, deliverInvite } = {}) {
   setDefaultTimeZone(config.defaultTimeZone);
@@ -42,6 +43,8 @@ export function createApp(config, { deliverReset, deliverInvite } = {}) {
     credentials: true,
     exposedHeaders: ['Location'],
   }));
+  // Before express.json: Meta signs the raw body.
+  if (config.whatsapp) app.use('/v1/whatsapp', whatsappWebhookRoutes(config));
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: true }));
   app.use(cookieParser());
@@ -50,7 +53,12 @@ export function createApp(config, { deliverReset, deliverInvite } = {}) {
 
   if (config.nodeEnv !== 'test') {
     morgan.token('safeUrl', (req) => redactSensitiveQuery(req.originalUrl || req.url));
-    app.use(morgan(':method :safeUrl :status :response-time ms - reqId=:res[x-request-id]'));
+    app.use(config.isProduction
+      ? morgan(':method :safeUrl :status :response-time ms - reqId=:res[x-request-id]')
+      // Locally, through the logger so request lines read like every other `info:` line.
+      : morgan(':method :safeUrl :status :response-time[0]ms', {
+        stream: { write: (line) => logger.info(line.trim()) },
+      }));
   }
 
   // Liveness: is the process up. Readiness: can it actually serve. Without the
@@ -80,6 +88,7 @@ export function createApp(config, { deliverReset, deliverInvite } = {}) {
   app.use('/v1/rbac', rbacRoutes(config));
   app.use('/v1/realtime', realtimeRoutes(config));
   app.use('/v1/assistant', assistantRoutes(config));
+  app.use('/v1/whatsapp', whatsappLinkRoutes(config));
 
   app.use('/v1', (_req, _res, next) => next(new ApiError(404, 'NOT_FOUND', 'Resource not found')));
 

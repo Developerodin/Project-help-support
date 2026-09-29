@@ -526,6 +526,15 @@ const SWITCH_PROJECT = fn(
   { project_key: nullable({ type: 'string', description: 'Key from the project list, e.g. WEB.' }) },
 );
 
+/**
+ * Lookups only, for chats with no app around them to confirm a draft or move a
+ * page (WhatsApp). An allow-list, so a new tool stays out until it is added here.
+ */
+export const READ_ONLY_TOOLS = new Set([
+  'search_tickets', 'get_ticket', 'get_ticket_discussion', 'recent_comments', 'list_projects',
+  'list_teams', 'list_clients', 'search_users', 'get_notification_settings', 'get_analytics',
+]);
+
 /** Tools offered to this user. Proposals they could never confirm aren't offered. */
 export function toolsFor(user, permissionContext) {
   const external = isExternalUser(user);
@@ -1736,6 +1745,7 @@ export async function runTool(name, rawArgs, ctx) {
   if (!toolsFor(ctx.user, ctx.permissionContext).some((tool) => tool.name === name)) {
     return { error: `${name} is not available to this user.` };
   }
+  if (ctx.readOnly && !READ_ONLY_TOOLS.has(name)) return { error: `${name} is not available here; this chat can only look things up.` };
   let args;
   try {
     args = JSON.parse(rawArgs || '{}');

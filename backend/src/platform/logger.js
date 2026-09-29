@@ -3,11 +3,23 @@ import winston from 'winston';
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
   silent: process.env.NODE_ENV === 'test',
-  format: winston.format.combine(
-    winston.format.timestamp(),
-    winston.format.errors({ stack: true }),
-    winston.format.json(),
-  ),
+  // JSON in production for log tooling; `info: message key=value` locally, like Dharwin.
+  format: process.env.NODE_ENV === 'production'
+    ? winston.format.combine(
+      winston.format.timestamp(),
+      winston.format.errors({ stack: true }),
+      winston.format.json(),
+    )
+    : winston.format.combine(
+      winston.format.errors({ stack: true }),
+      winston.format.colorize(),
+      winston.format.printf(({ level, message, stack, ...meta }) => {
+        const extra = Object.entries(meta).map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`);
+        // Expected 4xx (operational) errors skip the stack; crashes keep it.
+        const trace = stack && meta.operational !== true ? `\n${stack}` : '';
+        return [`${level}: ${message}`, ...extra].join(' ') + trace;
+      }),
+    ),
   transports: [new winston.transports.Console()],
 });
 
@@ -23,8 +35,8 @@ const logger = winston.createLogger({
  */
 export function redactSensitiveQuery(url) {
   if (!url || !url.includes('token=')) return url;
-  // `token` is the email unsubscribe link's.
-  return url.replace(/([?&](?:access_)?token=)[^&]*/g, '$1REDACTED');
+  // `token` is the email unsubscribe link's; `hub.verify_token` is Meta's WhatsApp handshake.
+  return url.replace(/([?&](?:access_|hub\.verify_)?token=)[^&]*/g, '$1REDACTED');
 }
 
 export default logger;

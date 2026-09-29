@@ -2,7 +2,9 @@ import { LANES, STAGES, isExternalUser } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import logger from '../../platform/logger.js';
 import { createResponse } from './openai.client.js';
-import { projectRoster, runTool, toolsFor } from './assistant.tools.js';
+import {
+  READ_ONLY_TOOLS, projectRoster, runTool, toolsFor,
+} from './assistant.tools.js';
 import {
   SCOPE_REFUSAL, checkReply, checkScope, draftInScope, sanitizeHistory,
 } from './assistant.scope.js';
@@ -68,6 +70,11 @@ const TEAM_RULES = `- Admin help: you can look up people (search_users), teams, 
 const VOICE_RULES = `
 
 Voice mode: the user is talking, not typing, and hears your reply read aloud. Keep it to one or two short spoken sentences with no lists or symbols. They see a small card with a compact preview of any draft, not the full chat: when you draft something, give the key details in one sentence and ask them to check the preview and say "confirm" or "cancel". Never refer to "the card below".`;
+
+/** Added on WhatsApp: plain text, and lookups only (READ_ONLY_TOOLS). */
+const WHATSAPP_RULES = `
+
+WhatsApp: the user is messaging you on WhatsApp, not using the app. Write short plain text; *bold* is fine, but no tables, headings or links. You can only look things up here. You cannot create, comment on, assign, move or change anything, and you cannot open pages; for any of that, tell them to do it in the app. Never mention cards, drafts, pages or buttons.`;
 
 /**
  * Where the user is looking, from the browser (validated by the route). It only
@@ -172,13 +179,16 @@ export async function chat(config, user, permissionContext, messages, {
     // Where the user is (path, query, project), so tools can check an action fits the page.
     page,
     activeProjectKey: page?.project || null,
+    // WhatsApp has no app around it to confirm a draft or open a page.
+    readOnly: mode === 'whatsapp',
     // The chat notes each report it showed ([Report shown: …]); download_report needs one.
     hasReport: history.some((message) => message.role === 'assistant' && message.content.includes('[Report shown:')),
   };
-  const tools = toolsFor(user, permissionContext);
+  const tools = toolsFor(user, permissionContext).filter((tool) => !ctx.readOnly || READ_ONLY_TOOLS.has(tool.name));
   const instructions = instructionsFor(user, now)
     + projectContext(await projectRoster(ctx))
     + (mode === 'voice' ? VOICE_RULES : '')
+    + (ctx.readOnly ? WHATSAPP_RULES : '')
     + whereTheUserIs(page);
   const input = history.map((message) => ({ role: message.role, content: message.content }));
   // What the user typed or pasted: their own words and code may go into a draft.
