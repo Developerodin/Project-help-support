@@ -239,6 +239,7 @@
 }
 .rbac-audit-cat--policy { color: var(--sig); border-color: var(--sig-line); background: var(--sig-wash); }
 .rbac-audit-cat--access { color: var(--ink-2); }
+.rbac-audit-cat--ticket { color: var(--ink); }
 .rbac-audit-cat--security { color: var(--warn, #9a6700); border-color: color-mix(in srgb, var(--warn, #9a6700) 35%, transparent); background: color-mix(in srgb, var(--warn, #9a6700) 8%, transparent); }
 .rbac-audit-initiator { display: block; margin-top: 0.15rem; }
 .rbac-audit-outbox { margin-bottom: var(--gap); }
@@ -247,21 +248,6 @@
   max-width: 22rem;
   font-size: 0.8125rem;
   color: var(--ink-2);
-}
-
-.rbac-audit-more {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-  justify-content: center;
-  padding: 0.75rem 0 0;
-}
-
-.rbac-audit-more-error {
-  width: 100%;
-  max-width: 32rem;
-  text-align: left;
 }
 
 .rbac-audit-field {
@@ -537,6 +523,10 @@
 
 .rbac-audit-refreshing {
   margin: 0 0 0.5rem;
+}
+
+.rbac-audit .pager {
+  margin-top: 12px;
 }
 
 .rbac-audit-cards {
