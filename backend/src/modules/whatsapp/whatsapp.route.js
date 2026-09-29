@@ -6,7 +6,7 @@ import { ApiError } from '../../platform/errors.js';
 import logger from '../../platform/logger.js';
 import { auditContextFromRequest } from '../rbac/rbac-audit.js';
 import {
-  REPLIES, answer, getBusinessNumber, linkStatus, send, startLink, unlink,
+  REPLIES, answer, getBusinessNumber, linkStatus, markRead, send, startLink, unlink,
 } from './whatsapp.service.js';
 
 function safeEqual(a, b) {
@@ -22,18 +22,24 @@ function senderOf(value, message) {
   return { waId: message.from ?? contact?.wa_id, bsuid: contact?.user_id };
 }
 
-/** Answers one message. Runs after Meta has its 200, so failures are logged, not returned. */
-async function handle(config, value, message) {
+/**
+ * Answers one message. Runs after Meta has its 200, so failures are logged, not returned.
+ * Blue ticks mean the message was taken up: set with "typing…", or once the reply is out if that call never landed.
+ */
+export async function handle(config, value, message) {
   const sender = senderOf(value, message);
   if (!sender.waId) return;
+  const receipt = {};
   let reply;
   try {
-    reply = await answer(config, sender, message);
+    reply = await answer(config, sender, message, { receipt });
   } catch (err) {
     logger.error('whatsapp message failed', { id: message.id, error: err.message, stack: err.stack });
     reply = REPLIES.failed;
   }
-  if (reply) await send(config, sender.waId, reply);
+  if (!reply) return;
+  const sent = await send(config, sender.waId, reply);
+  if (sent && receipt.accepted && !receipt.read) await markRead(config, message.id);
 }
 
 /**

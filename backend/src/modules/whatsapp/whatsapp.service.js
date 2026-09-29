@@ -39,6 +39,8 @@ const MAX_BODY = 4096;
 const MAX_FILES = 10;
 /** The transcriber's own cap in the app (assistant.route.js). */
 const MAX_AUDIO_BYTES = 5 * MB;
+/** Meta shows "typing…" for up to 25 seconds; sent again before then while the answer is still coming. */
+const TYPING_REFRESH_MS = 20_000;
 const GRAPH = 'https://graph.facebook.com/v26.0';
 
 const LINK_MESSAGE = /^\s*link\s+(\d{8})\s*$/i;
@@ -651,9 +653,11 @@ export function toWhatsapp(text) {
 
 /**
  * What to reply to one incoming message, or null when it was already answered.
- * `storage` stands in for S3 in tests, as in attachment.service.js.
+ * `storage` stands in for S3 in tests, as in attachment.service.js. `receipt`, if
+ * given, is filled in: `accepted` once the message is taken up for a linked user
+ * (the same gate as "typing"), and `read` once Meta has taken its read receipt.
  */
-export async function answer(config, sender, message, { storage } = {}) {
+export async function answer(config, sender, message, { storage, receipt = {} } = {}) {
   try {
     await WhatsappState.create({ _id: `seen:${message.id}`, expiresAt: later(SEEN_TTL_MS) });
   } catch (err) {
@@ -672,22 +676,79 @@ export async function answer(config, sender, message, { storage } = {}) {
   }
   const session = await open(config, link, storage);
   if (typeof session === 'string') return session;
-  if (message.type === 'text') return ask(config, session, text, message.id, message.timestamp);
-  if (message.type === 'audio') return listen(config, session, message);
-  if (FILE_TYPES.has(message.type)) return receiveFile(config, session, message);
-  return REPLIES.unsupported;
+  const supported = message.type === 'text' || message.type === 'audio' || FILE_TYPES.has(message.type);
+  if (!supported) return REPLIES.unsupported;
+  receipt.accepted = true;
+  const stopTyping = keepTyping(config, message.id);
+  try {
+    if (message.type === 'text') return await ask(config, session, text, message.id, message.timestamp);
+    if (message.type === 'audio') return await listen(config, session, message);
+    return await receiveFile(config, session, message);
+  } finally {
+    receipt.read = await stopTyping();
+  }
 }
 
-export async function send(config, to, body) {
-  const res = await fetch(`${GRAPH}/${config.whatsapp.phoneNumberId}/messages`, {
+/**
+ * Marks the message read with "typing…" now, and again before Meta's 25 seconds
+ * run out, until the answer is ready. If Meta refuses "typing…", the message is
+ * still marked read on its own, unless it already is. Stopping waits for a call
+ * still in flight, so it can't land after the reply and show the indicator again,
+ * and says whether the message was marked read.
+ */
+function keepTyping(config, messageId) {
+  let read = false;
+  async function refresh() {
+    if (await postRead(config, messageId, true)) read = true;
+    else if (!read) read = await markRead(config, messageId);
+  }
+  let pending = refresh();
+  // Remove this interval, keeping the first call, if Meta ignores a repeat for the same message.
+  const timer = setInterval(() => { pending = refresh(); }, TYPING_REFRESH_MS);
+  timer.unref();
+  return async () => {
+    clearInterval(timer);
+    await pending;
+    return read;
+  };
+}
+
+/** POSTs one message-endpoint payload to Meta. */
+function postMessage(config, payload, timeoutMs) {
+  return fetch(`${GRAPH}/${config.whatsapp.phoneNumberId}/messages`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${config.whatsapp.token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      messaging_product: 'whatsapp', to, type: 'text', text: { body: toWhatsapp(body).slice(0, MAX_BODY) },
-    }),
-    signal: AbortSignal.timeout(15_000),
+    body: JSON.stringify({ messaging_product: 'whatsapp', ...payload }),
+    signal: AbortSignal.timeout(timeoutMs),
   });
+}
+
+/** One read receipt for an incoming message, with "typing…" if asked. True when Meta took it; never throws. */
+async function postRead(config, messageId, withTyping) {
+  const payload = { status: 'read', message_id: messageId };
+  if (withTyping) payload.typing_indicator = { type: 'text' };
+  try {
+    const res = await postMessage(config, payload, 5_000);
+    if (!res.ok) logger.warn('whatsapp read receipt failed', { status: res.status, typing: withTyping });
+    return res.ok;
+  } catch (err) {
+    logger.warn('whatsapp read receipt failed', { error: err.message, typing: withTyping });
+    return false;
+  }
+}
+
+/** Blue ticks for a message taken up: marks it read without "typing…". */
+export function markRead(config, messageId) {
+  return postRead(config, messageId, false);
+}
+
+/** Sends a text reply. True when Meta took it. */
+export async function send(config, to, body) {
+  const res = await postMessage(config, {
+    to, type: 'text', text: { body: toWhatsapp(body).slice(0, MAX_BODY) },
+  }, 15_000);
   if (!res.ok) logger.error('whatsapp send failed', { status: res.status, body: (await res.text()).slice(0, 500) });
+  return res.ok;
 }
 
 /** The business number people message, for the app's "open WhatsApp" link. Cached; null if Meta can't be reached. */
