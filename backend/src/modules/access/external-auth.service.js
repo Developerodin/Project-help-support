@@ -314,6 +314,8 @@ function pickPerson(person) {
   if (!person) return null;
   if (typeof person.toJSON === 'function') {
     person = person.toJSON();
+    // A bare (unpopulated) ObjectId serializes to its hex string.
+    if (typeof person === 'string') return { id: person, name: null };
   }
   const rawId = person._id ?? person.id;
   if (rawId == null) return { name: person.name ?? null };
