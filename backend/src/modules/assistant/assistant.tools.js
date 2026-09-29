@@ -201,7 +201,8 @@ const PROPOSE_NOTIFICATION_SETTINGS = fn(
 
 const PROPOSE_CREATE = fn(
   'propose_create_ticket',
-  'Draft a new ticket. The user sees it as a card and must confirm; nothing is created until they do.',
+  'Draft a new ticket. The user sees it as a card and must confirm; nothing is created until they do. '
+    + 'Fill every field you can work out from the conversation and list the ones you inferred in guessed.',
   {
     project_key: { type: 'string' },
     title: { type: 'string', description: '5 to 200 characters.' },
@@ -213,6 +214,11 @@ const PROPOSE_CREATE = fn(
     priority: nullableEnum(PRIORITIES),
     severity: nullableEnum(SEVERITIES),
     environment: nullableEnum(ENVIRONMENTS),
+    guessed: nullable({
+      type: 'array',
+      items: { type: 'string', enum: ['module', 'page', 'category', 'severity', 'priority', 'environment'] },
+      description: 'Fields you inferred rather than the user saying them, so they can check those.',
+    }),
   },
 );
 
@@ -326,7 +332,7 @@ const DESTINATIONS = Object.freeze({
   ticket: { path: '/tickets', label: 'Ticket' },
   notifications: { path: '/notifications', label: 'Notifications' },
   ui_qa: { path: '/ui-qa', label: 'UI & QA' },
-  audit_log: { path: '/audit-log', label: 'RBAC audit log' },
+  audit_log: { path: '/audit-log', label: 'Audit log' },
   user_roles: { path: '/settings/rbac-preview/matrix', label: 'User roles' },
   notification_settings: { path: '/settings/notifications', label: 'Notification settings' },
   projects: { path: '/projects', label: 'Projects' },
@@ -387,7 +393,7 @@ const FILTER_PAGES = Object.freeze({
     label: 'Analytics',
     fields: ['trend_group_by', 'throughput_group_by', 'window_days', 'breakdown'],
   },
-  audit_log: { path: '/audit-log', label: 'RBAC audit log', fields: ['audit_category', 'audit_action', 'audit_order', 'rows'] },
+  audit_log: { path: '/audit-log', label: 'Audit log', fields: ['audit_category', 'audit_action', 'audit_order', 'rows'] },
 });
 const PAGE_ROWS = [20, 50, 100];
 /** Lists with numbered pages (change_page), by path. */
@@ -417,7 +423,7 @@ const SET_PAGE_FILTERS = fn(
     throughput_group_by: nullableEnum(['day', 'week']),
     window_days: { type: ['integer', 'null'], enum: [...ANALYTICS_WINDOWS, null], description: 'Throughput window in days.' },
     breakdown: nullableEnum(['severity', 'module', 'assignee', 'team', 'priority', 'category', 'environment', 'label']),
-    audit_category: nullableEnum(['policy', 'access', 'security', ANY]),
+    audit_category: nullableEnum(['policy', 'access', 'security', 'whatsapp', ANY]),
     audit_action: nullable({ type: 'string' }),
     audit_order: nullableEnum(['newest', 'oldest']),
     rows: { type: ['integer', 'null'], enum: [20, 50, 100, null], description: 'Rows per page.' },
@@ -528,13 +534,14 @@ const SWITCH_PROJECT = fn(
 
 /**
  * WhatsApp has no app around it to show a card or move a page: lookups, plus a
- * new-ticket draft the user confirms by replying yes (whatsapp.service.js).
- * An allow-list, so a new tool stays out until it is added here.
+ * new-ticket draft or files for an existing ticket, which the user confirms by
+ * replying yes (whatsapp.service.js). An allow-list, so a new tool stays out
+ * until it is added here.
  */
 export const WHATSAPP_TOOLS = new Set([
   'search_tickets', 'get_ticket', 'get_ticket_discussion', 'recent_comments', 'list_projects',
   'list_teams', 'list_clients', 'search_users', 'get_notification_settings', 'get_analytics',
-  'propose_create_ticket',
+  'propose_create_ticket', 'propose_attach_files',
 ]);
 
 /** Tools offered to this user. Proposals they could never confirm aren't offered. */
@@ -1443,7 +1450,8 @@ const HANDLERS = {
     if (!args.severity) missing.push(`severity (${SEVERITIES.join(', ')})`);
     if (!args.priority) missing.push(`priority (${PRIORITIES.join(', ')})`);
     if (missing.length) {
-      throw new ToolError(`Not drafted yet. Ask the user for: ${missing.join('; ')}. Ask one or two at a time and offer the choices.`);
+      throw new ToolError(`Not drafted yet. Missing: ${missing.join('; ')}. Infer each from the conversation if you reasonably can `
+        + '(and list it in guessed); ask only for what you cannot tell, one or two at a time, offering the choices.');
     }
     try {
       assertModuleAndPage(project, args.module || undefined, args.page || undefined);
@@ -1455,6 +1463,7 @@ const HANDLERS = {
       projectKey: project.key,
       // Lets the card offer module/page pickers so the user can correct the draft.
       modules,
+      guessed: (args.guessed || []).filter((field) => args[field]),
       body: {
         project: String(project.id),
         title,

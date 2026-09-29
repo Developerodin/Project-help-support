@@ -8,7 +8,7 @@ export const metadata = { title: `Privacy policy · ${BRAND_NAME}` };
 const summary = [
   { term: 'No selling, no ads', detail: 'Your data is used only to run ProwPlus.' },
   { term: 'Your access, nothing more', detail: 'The assistant sees only what your account can see in the app.' },
-  { term: 'You confirm every change', detail: 'On WhatsApp it looks things up and files a ticket only after you reply yes.' },
+  { term: 'You confirm every change', detail: 'On WhatsApp it looks things up, and files a ticket or attaches a file only after you reply yes.' },
   { term: 'Short memory', detail: 'WhatsApp conversations are deleted after 30 minutes.' },
 ];
 
@@ -22,7 +22,7 @@ const sections = [
         <li><strong>Work you put in the app:</strong> tickets, comments, attachments, reports and settings.</li>
         <li><strong>Notifications:</strong> your email and in-app preferences, and a push subscription for each device where you turn notifications on.</li>
         <li><strong>Assistant conversations:</strong> what you type or say to the assistant, and its replies.</li>
-        <li><strong>WhatsApp, if you link it:</strong> your WhatsApp number, the user ID WhatsApp gives us for you, and the messages you exchange with our WhatsApp number.</li>
+        <li><strong>WhatsApp, if you link it:</strong> your WhatsApp number, the user ID WhatsApp gives us for you, and the messages, voice notes and files you exchange with our WhatsApp number.</li>
         <li><strong>Technical logs:</strong> requests to our servers with times and error details, kept to run and secure the service.</li>
       </ul>
     ),
@@ -42,9 +42,10 @@ const sections = [
     title: 'The assistant and WhatsApp',
     body: (
       <ul>
-        <li>The assistant works with the same access as your account. On WhatsApp it can look things up and file new tickets, each only after you reply “yes”; it can’t change or delete anything.</li>
+        <li>The assistant works with the same access as your account. On WhatsApp it can look things up, file new tickets and add files you send to a ticket, each only after you reply “yes”; it can’t change or delete anything else.</li>
         <li>To write a reply, your message and the app data it needs are sent to OpenAI. We ask OpenAI not to store these requests.</li>
-        <li>Voice input in the app is sent to OpenAI to be turned into text. We don’t keep the recordings.</li>
+        <li>Voice input in the app and voice notes on WhatsApp are sent to OpenAI to be turned into text. We don’t keep the recordings.</li>
+        <li>A photo, video or document you send on WhatsApp is stored only if you reply “yes” to attach it, and then it is kept with the ticket like any other attachment.</li>
         <li>WhatsApp messages travel through Meta’s WhatsApp Business Platform, where WhatsApp’s own terms and privacy policy apply.</li>
         <li>Your recent WhatsApp conversation is kept for 30 minutes so the assistant can follow up, then deleted.</li>
       </ul>
@@ -74,6 +75,9 @@ const sections = [
       <p>
         Account and work data stays while your organisation uses {BRAND_NAME}. Short-lived data deletes itself: WhatsApp link codes after
         10&nbsp;minutes, the WhatsApp conversation after 30&nbsp;minutes, and the assistant’s usage counters after a few days.
+        When you link or unlink WhatsApp, or file a ticket or attach files from it (or cancel either), the audit log keeps who did it, the number, when, and
+        the ticket and file names, never the conversation. It stays after you unlink. To protect accounts, it also notes a number that
+        enters too many wrong link codes, and once a day a number that messages us without being linked (the number and time, not the message).
       </p>
     ),
   },

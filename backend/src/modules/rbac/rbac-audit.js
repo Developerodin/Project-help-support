@@ -5,6 +5,7 @@ import RbacAuditOutbox from './rbacAuditOutbox.model.js';
 const POLICY_MATRIX_DETAIL_LIMIT = 8000;
 
 function auditCategory(action) {
+  if (action.startsWith('whatsapp.')) return 'whatsapp';
   if (action.startsWith('security.')) return 'security';
   if (action.startsWith('user.')) return 'security';
   if (
@@ -65,7 +66,7 @@ async function persistRbacAudit(actor, action, details = {}) {
   if (outboxId) {
     const exists = await RbacAuditLog.exists({
       action,
-      actor: actor._id,
+      actor: actor?._id ?? null,
       'details.outboxId': outboxId,
     });
     if (exists) return;
@@ -74,7 +75,7 @@ async function persistRbacAudit(actor, action, details = {}) {
   await RbacAuditLog.create({
     action,
     category: auditCategory(action),
-    actor: actor._id,
+    actor: actor?._id ?? null,
     initiator: initiatorUserId || null,
     targetUser: targetUserId,
     assignment: assignmentId,
@@ -85,7 +86,7 @@ async function persistRbacAudit(actor, action, details = {}) {
 async function enqueueAuditOutbox(actor, action, details, error) {
   await RbacAuditOutbox.create({
     action,
-    actor: actor._id,
+    actor: actor?._id ?? null,
     details,
     attempts: 1,
     lastError: error?.message || String(error),
@@ -103,11 +104,13 @@ function mergeAuditContext(details, auditContext = {}) {
   return merged;
 }
 
+/** `actor` may be null only for `whatsapp.*` events from a number with no account. */
 export async function recordRbacAudit(actor, action, details = {}, auditContext = {}) {
   const payload = mergeAuditContext(details, auditContext);
+  const actorId = actor ? String(actor._id) : null;
   logger.info(`rbac.${action.replace(/\./g, '_')}`, {
     action,
-    actorId: String(actor._id),
+    actorId,
     initiatorUserId: payload.initiatorUserId ?? null,
     ...payload,
   });
@@ -117,7 +120,7 @@ export async function recordRbacAudit(actor, action, details = {}, auditContext 
   } catch (err) {
     logger.error('rbac.audit_persist_failed', {
       action,
-      actorId: String(actor._id),
+      actorId,
       error: err.message,
       stack: err.stack,
     });
@@ -126,7 +129,7 @@ export async function recordRbacAudit(actor, action, details = {}, auditContext 
     } catch (outboxErr) {
       logger.error('rbac.audit_outbox_enqueue_failed', {
         action,
-        actorId: String(actor._id),
+        actorId,
         error: outboxErr.message,
         stack: outboxErr.stack,
       });

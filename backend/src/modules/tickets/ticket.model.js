@@ -65,6 +65,8 @@ const activityLogSchema = new mongoose.Schema(
     performedBy: { type: objectId, ref: 'User', required: true },
     at: { type: Date, default: Date.now },
     changes: { type: [activityChangeSchema], default: [] },
+    // Where it was done when not in the app, e.g. 'whatsapp'.
+    via: { type: String, default: undefined },
   },
   { _id: true },
 );

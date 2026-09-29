@@ -131,7 +131,7 @@ function fromActivity(entry, index) {
 
   switch (entry?.action) {
     case 'created':
-      return [{ ...base, id, kind: 'created', summary: 'Opened this ticket' }];
+      return [{ ...base, id, kind: 'created', summary: entry?.via === 'whatsapp' ? 'Opened this ticket from WhatsApp' : 'Opened this ticket' }];
     case 'assigned': {
       const change = rawChanges.find((c) => c?.field === 'assignedTo');
       const changes = buildChanges(change ? [change] : []);
@@ -167,7 +167,7 @@ function fromActivity(entry, index) {
         ...base,
         id,
         kind: 'file',
-        summary: `Attached ${n} file${n === 1 ? '' : 's'}`,
+        summary: `Attached ${n} file${n === 1 ? '' : 's'}${entry?.via === 'whatsapp' ? ' from WhatsApp' : ''}`,
       }];
     }
     case 'attachment_removed': {

@@ -4,6 +4,7 @@ import { can } from '@pms/shared';
 import { auth } from '../../platform/auth.js';
 import { ApiError } from '../../platform/errors.js';
 import logger from '../../platform/logger.js';
+import { auditContextFromRequest } from '../rbac/rbac-audit.js';
 import {
   REPLIES, answer, getBusinessNumber, linkStatus, send, startLink, unlink,
 } from './whatsapp.service.js';
@@ -117,7 +118,7 @@ export function whatsappLinkRoutes(config) {
 
   router.delete('/link', async (req, res, next) => {
     try {
-      await unlink(req.user);
+      await unlink(req.user, auditContextFromRequest(req));
       return res.json({ linked: false });
     } catch (err) {
       return next(err);

@@ -70,7 +70,7 @@ async function assertHasTicketPermission(actor, permission, permissionContext = 
   return ctx;
 }
 
-export async function createTicket(actor, body, permissionContext = null) {
+export async function createTicket(actor, body, permissionContext = null, { via } = {}) {
   await assertHasTicketPermission(actor, 'tickets.create', permissionContext);
   const project = await Project.findById(body.project);
   if (!project) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
@@ -143,7 +143,7 @@ export async function createTicket(actor, body, permissionContext = null) {
     // special-casing "the first stage has no history row".
     currentStageEnteredAt: now,
     stageHistory: [{ to: 'pending', by: actor._id, at: now }],
-    activityLog: [{ action: 'created', performedBy: actor._id, at: now, changes: [] }],
+    activityLog: [{ action: 'created', performedBy: actor._id, at: now, changes: [], ...(via ? { via } : {}) }],
   });
 
   return ticket.toJSON();

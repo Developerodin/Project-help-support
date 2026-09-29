@@ -6,7 +6,9 @@ const objectId = mongoose.Schema.Types.ObjectId;
 const rbacAuditOutboxSchema = new mongoose.Schema(
   {
     action: { type: String, required: true, index: true },
-    actor: { type: objectId, ref: 'User', required: true, index: true },
+    actor: {
+      type: objectId, ref: 'User', default: null, index: true, required() { return !this.action?.startsWith('whatsapp.'); },
+    },
     details: { type: mongoose.Schema.Types.Mixed, default: {} },
     attempts: { type: Number, default: 0 },
     lastError: { type: String, default: null },

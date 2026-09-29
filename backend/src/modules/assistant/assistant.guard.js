@@ -91,11 +91,12 @@ const SPEECH_CHARS_PER_MIN = 900;
 /**
  * Browser voice notes (opus) run about 2–4 KB a second; assuming 2 KB a second
  * over-estimates their length, so the cap errs on the safe side. Recordings are
- * capped at 60 seconds in the browser, so the estimate is too.
+ * capped at 60 seconds in the browser, so the estimate is too; WhatsApp voice
+ * notes have no such cap and pass their own.
  * ponytail: byte-based estimate; read the duration from the upload if exact
  * voice costing ever matters.
  */
-export const estimateAudioSeconds = (bytes) => Math.min(60, Math.max(1, bytes / 2000));
+export const estimateAudioSeconds = (bytes, maxSeconds = 60) => Math.min(maxSeconds, Math.max(1, bytes / 2000));
 
 /** Estimated USD cost of one call from what it used. */
 export function costUsd(prices, {

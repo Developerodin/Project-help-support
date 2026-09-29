@@ -20,7 +20,7 @@ const DEFAULT_LIMIT = 50;
 
 const SORT_OPTIONS = ['createdAt:desc', 'createdAt:asc'];
 
-const CATEGORIES = ['', 'policy', 'access', 'security'];
+const CATEGORIES = ['', 'policy', 'access', 'security', 'whatsapp'];
 
 
 
@@ -126,9 +126,9 @@ export default function AuditLogPage() {
 
         <div>
 
-          <h1>RBAC audit</h1>
+          <h1>Audit log</h1>
 
-          <p className="sub">Append-only trail of RBAC policy, scoped access, and security events.</p>
+          <p className="sub">Append-only trail of role policy, scoped access, security events and actions taken from WhatsApp.</p>
 
         </div>
 

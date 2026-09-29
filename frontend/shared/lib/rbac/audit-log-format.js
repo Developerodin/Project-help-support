@@ -22,12 +22,24 @@ export const AUDIT_ACTION_LABELS = Object.freeze({
   'user.update': 'User updated',
   'user.delete': 'User deleted',
   'user.reactivate': 'User reactivated',
+  'whatsapp.linked': 'WhatsApp linked',
+  'whatsapp.unlinked': 'WhatsApp unlinked',
+  'whatsapp.link_blocked': 'WhatsApp link codes blocked',
+  'whatsapp.unknown_sender': 'Unlinked number messaged',
+  'whatsapp.ticket_created': 'Ticket filed from WhatsApp',
+  'whatsapp.ticket_failed': 'WhatsApp ticket failed',
+  'whatsapp.ticket_cancelled': 'WhatsApp ticket cancelled',
+  'whatsapp.attach_added': 'Files attached from WhatsApp',
+  'whatsapp.attach_failed': 'WhatsApp files not attached',
+  'whatsapp.attach_cancelled': 'WhatsApp files cancelled',
+  'whatsapp.attach_skipped': 'WhatsApp files skipped',
 });
 
 export const AUDIT_CATEGORY_LABELS = Object.freeze({
   policy: 'Policy',
   access: 'Access',
   security: 'Security',
+  whatsapp: 'WhatsApp',
 });
 
 /** Unknown enums still read as prose rather than as a raw identifier. */
@@ -123,6 +135,36 @@ function describeBulkCounts(details) {
 export function summariseAuditDetails(row) {
   const details = row?.details || {};
   const action = row?.action;
+
+  if (action?.startsWith('whatsapp.')) {
+    // Who said yes is the actor; this is which phone and what came of it.
+    const number = details.waId ? `+${details.waId}` : 'a WhatsApp number';
+    const from = `from ${number}`;
+    const files = Array.isArray(details.files) ? details.files : [];
+    const owner = row?.targetUser ? formatAuditActor(row.targetUser) : null;
+    switch (action) {
+      case 'whatsapp.linked': return `Linked ${number}`;
+      case 'whatsapp.unlinked':
+        return details.reason === 'replaced'
+          ? `${number} unlinked from ${owner || 'an account'}: replaced by a new link`
+          : `Unlinked ${number} from their profile`;
+      case 'whatsapp.link_blocked':
+        return `${plural(details.attempts || 5, 'wrong link code')} ${from}; linking paused for an hour`
+          + `${owner ? `. The number is linked to ${owner}` : ''}`;
+      case 'whatsapp.unknown_sender': {
+        const kind = details.type ? `${details.type.charAt(0).toUpperCase()}${details.type.slice(1)}` : 'A';
+        return `${kind} message ${from}, not linked to an account; no account data was sent`;
+      }
+      case 'whatsapp.ticket_created':
+        return `${details.ticketId}: ${details.title}${files.length ? `, with ${plural(files.length, 'file')}` : ''} (${from})`;
+      case 'whatsapp.ticket_failed': return `${details.title}: ${details.reason} (${from})`;
+      case 'whatsapp.attach_added': return `${files.join(', ')} to ${details.ticketId} (${from})`;
+      case 'whatsapp.attach_failed': return `${details.ticketId}: ${details.reason} (${from})`;
+      case 'whatsapp.attach_cancelled': return `${files.join(', ')} for ${details.ticketId} (${from})`;
+      case 'whatsapp.attach_skipped': return `${files.join(', ')} for ${details.ticketId || details.title} (${from})`;
+      default: return `${details.title || details.ticketId || 'WhatsApp'} (${from})`;
+    }
+  }
 
   if (action === 'security.impersonation.start' || action === 'security.impersonation.stop') {
     const target = details.targetId || details.targetUserId;

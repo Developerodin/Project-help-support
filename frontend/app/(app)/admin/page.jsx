@@ -32,7 +32,7 @@ const ADMIN_DESTINATIONS = [
 
 const AUDIT_DESTINATION = {
   href: '/audit-log',
-  label: 'RBAC audit',
+  label: 'Audit log',
   description: 'Review policy and scoped access changes across the workspace.',
   icon: 'list',
 };

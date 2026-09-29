@@ -541,12 +541,15 @@ function Choice({ label, value, options, onChange, disabled }) {
  * A drafted ticket as an editable form: whatever the assistant filled in, the
  * user can correct before confirming, without another round of chat.
  */
-function TicketDraftFields({ action, onChange }) {
+export function TicketDraftFields({ action, onChange }) {
   const { body } = action;
   const busy = action.status === 'busy';
-  const set = (patch) => onChange({ body: { ...body, ...patch } });
+  // A field the user picks themselves is no longer a guess.
+  const set = (patch) => onChange({ body: { ...body, ...patch }, guessed: action.guessed?.filter((field) => !(field in patch)) });
   const modules = action.modules || [];
   const pages = modules.find((module) => module.label === body.module)?.pages || [];
+  // Fields the assistant inferred rather than was told, so the user checks those first.
+  const label = (field, text) => (action.guessed?.includes(field) ? `${text} (guessed)` : text);
   return (
     <div className="assistant-draft">
       <label className="assistant-field is-wide">
@@ -556,7 +559,7 @@ function TicketDraftFields({ action, onChange }) {
       {modules.length ? (
         <>
           <Choice
-            label="Module"
+            label={label('module', 'Module')}
             value={body.module}
             options={modules.map((module) => module.label)}
             disabled={busy}
@@ -566,14 +569,14 @@ function TicketDraftFields({ action, onChange }) {
             }}
           />
           {pages.length ? (
-            <Choice label="Page" value={body.page} options={pages} disabled={busy} onChange={(page) => set({ page })} />
+            <Choice label={label('page', 'Page')} value={body.page} options={pages} disabled={busy} onChange={(page) => set({ page })} />
           ) : null}
         </>
       ) : null}
-      <Choice label="Category" value={body.category} options={CATEGORIES} disabled={busy} onChange={(category) => set({ category })} />
-      <Choice label="Severity" value={body.severity} options={SEVERITIES} disabled={busy} onChange={(severity) => set({ severity })} />
-      <Choice label="Priority" value={body.priority} options={PRIORITIES} disabled={busy} onChange={(priority) => set({ priority })} />
-      <Choice label="Environment" value={body.environment} options={ENVIRONMENTS} disabled={busy} onChange={(environment) => set({ environment })} />
+      <Choice label={label('category', 'Category')} value={body.category} options={CATEGORIES} disabled={busy} onChange={(category) => set({ category })} />
+      <Choice label={label('severity', 'Severity')} value={body.severity} options={SEVERITIES} disabled={busy} onChange={(severity) => set({ severity })} />
+      <Choice label={label('priority', 'Priority')} value={body.priority} options={PRIORITIES} disabled={busy} onChange={(priority) => set({ priority })} />
+      <Choice label={label('environment', 'Environment')} value={body.environment} options={ENVIRONMENTS} disabled={busy} onChange={(environment) => set({ environment })} />
       <label className="assistant-field is-wide">
         <span>Details</span>
         <textarea

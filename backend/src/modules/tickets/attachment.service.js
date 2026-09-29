@@ -56,6 +56,7 @@ export async function addAttachments(actor, idOrKey, files, config, opts = {}) {
     commentContent,
     commentClientRef,
     permissionContext = null,
+    via,
   } = opts;
 
   defaultStorage.assertStorageEnabled(config);
@@ -128,6 +129,7 @@ export async function addAttachments(actor, idOrKey, files, config, opts = {}) {
     performedBy: actor._id,
     at: new Date(),
     changes: entries.map((e) => ({ field: 'attachment', from: null, to: e.name })),
+    ...(via ? { via } : {}),
   };
 
   const filter = { _id: ticket._id };

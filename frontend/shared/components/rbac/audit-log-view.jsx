@@ -23,6 +23,7 @@ const CATEGORY_FILTERS = [
   { value: 'policy', label: AUDIT_CATEGORY_LABELS.policy },
   { value: 'access', label: AUDIT_CATEGORY_LABELS.access },
   { value: 'security', label: AUDIT_CATEGORY_LABELS.security },
+  { value: 'whatsapp', label: AUDIT_CATEGORY_LABELS.whatsapp },
 ];
 
 const SORT_FILTERS = [
@@ -309,7 +310,7 @@ export default function AuditLogView({
     body = (
       <div className="empty-state">
         <h3>{query.category ? `No ${(AUDIT_CATEGORY_LABELS[query.category] || query.category).toLowerCase()} entries yet` : 'No audit entries yet'}</h3>
-        <p>Policy, access, and security mutations will appear here.</p>
+        <p>Policy, access, security and WhatsApp actions will appear here.</p>
         {query.category && (
           <button type="button" className="btn btn-sm" onClick={() => onQueryChange({ category: '' })}>
             Show all entries

@@ -94,7 +94,7 @@ export const listAuditLogSchema = {
     page: Joi.number().integer().min(1).default(1),
     limit: Joi.number().integer().min(1).max(100).default(20),
     sortBy: Joi.string().trim(),
-    category: Joi.string().valid('policy', 'access', 'security'),
+    category: Joi.string().valid('policy', 'access', 'security', 'whatsapp'),
     action: Joi.string().trim(),
     targetUserId: objectId,
     actorId: objectId,

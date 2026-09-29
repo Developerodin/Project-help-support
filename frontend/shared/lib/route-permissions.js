@@ -45,7 +45,7 @@ export const NAV_GROUPS = [
       { href: '/projects', id: 'projects', label: 'Projects', icon: 'layers' },
       { href: '/teams', id: 'teams', label: 'Teams', icon: 'teams' },
       { href: '/users', id: 'people', label: 'People', icon: 'user' },
-      { href: '/audit-log', id: 'audit-log', label: 'RBAC audit', icon: 'list' },
+      { href: '/audit-log', id: 'audit-log', label: 'Audit log', icon: 'list' },
       { href: '/settings/rbac-preview/matrix', id: 'rbac-preview', label: 'User roles', icon: 'lock' },
     ],
   },
