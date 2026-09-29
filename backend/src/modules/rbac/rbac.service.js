@@ -28,6 +28,8 @@ import {
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
 import User from '../users/user.model.js';
+import Client from '../clients/client.model.js';
+import Project from '../projects/project.model.js';
 import { loadScopedAssignmentsForUser } from '../access/scoped-access.service.js';
 import RoleMatrix from './roleMatrix.model.js';
 import BoardRoleMatrix from './boardRoleMatrix.model.js';
@@ -141,7 +143,13 @@ export async function updateBoardPermissions(actor, body, auditContext = {}) {
     );
   }
 
+  // A save that changes nothing has no diff to name its role, so the subject is stored separately.
+  const roles = MATRIX_ROLES.includes(body.role)
+    ? [body.role]
+    : Object.keys(body.grants).filter((role) => MATRIX_ROLES.includes(role));
+
   await auditRbacChange(actor, 'board_permissions.update', {
+    roles,
     changeCount: changes.length,
     changes,
     previous: previousRecord,
@@ -329,18 +337,61 @@ function serialiseAuditRow(doc) {
     initiator: json.initiator ?? null,
     targetUser: json.targetUser ?? null,
     assignment: json.assignment ?? null,
+    ticketId: json.ticketId ?? null,
+    project: json.project ?? null,
     details: json.details ?? {},
     createdAt: json.createdAt,
   };
 }
 
+const OBJECT_ID_PATTERN = /^[a-f0-9]{24}$/i;
+
+/** Audit details store company and project ids only, so names are read for the page being shown. */
+async function withAuditSubjectNames(rows) {
+  const idsOf = (key) => [...new Set(
+    rows.map((row) => row.details?.[key]).filter((id) => OBJECT_ID_PATTERN.test(String(id ?? ''))).map(String),
+  )];
+  const clientIds = idsOf('clientId');
+  const projectIds = idsOf('projectId');
+  const [clients, projects] = await Promise.all([
+    clientIds.length ? Client.find({ _id: { $in: clientIds } }, 'name').lean() : [],
+    projectIds.length ? Project.find({ _id: { $in: projectIds } }, 'name').lean() : [],
+  ]);
+  const clientNames = new Map(clients.map((doc) => [String(doc._id), doc.name]));
+  const projectNames = new Map(projects.map((doc) => [String(doc._id), doc.name]));
+
+  return rows.map((row) => {
+    const subjectNames = {};
+    const clientName = clientNames.get(String(row.details?.clientId));
+    const projectName = projectNames.get(String(row.details?.projectId));
+    if (clientName) subjectNames.client = clientName;
+    if (projectName) subjectNames.project = projectName;
+    return { ...row, subjectNames };
+  });
+}
+
+function escapeRegex(term) {
+  return term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function buildAuditLogFilter(query = {}) {
   const filter = {};
   if (query.category) filter.category = query.category;
-  if (query.action) filter.action = query.action;
+  const action = String(query.action ?? '').trim();
+  if (action) {
+    // A ticket key typed into the action box (WEB-12) finds that ticket's rows.
+    filter.$or = [
+      { action: { $regex: escapeRegex(action), $options: 'i' } },
+      { ticketId: action.toUpperCase() },
+    ];
+  }
   if (query.targetUserId) filter.targetUser = query.targetUserId;
   if (query.actorId) filter.actor = query.actorId;
   return filter;
+}
+
+function auditSortDirection(query = {}) {
+  return query.sortBy === 'createdAt:asc' ? 'asc' : 'desc';
 }
 
 function escapeCsvCell(value) {
@@ -352,7 +403,7 @@ function escapeCsvCell(value) {
 function auditRowToCsv(row) {
   const actorLabel = row.actor?.email || row.actor?.name || row.actor?.id || '';
   const initiatorLabel = row.initiator?.email || row.initiator?.name || row.initiator?.id || '';
-  const targetLabel = row.targetUser?.email || row.targetUser?.name || row.targetUser?.id || '';
+  const targetLabel = row.targetUser?.email || row.targetUser?.name || row.targetUser?.id || row.ticketId || '';
   return [
     row.createdAt,
     row.category,
@@ -607,11 +658,13 @@ export async function listAuditLog(actor, query = {}, { permissionContext, imper
   await assertEffectivePermission(actor, 'audit.view', permissionContext, impersonation);
 
   const filter = buildAuditLogFilter(query);
+  const direction = auditSortDirection(query);
 
   const page = await paginate(RbacAuditLog, filter, {
     page: query.page,
     limit: query.limit,
-    sortBy: query.sortBy || 'createdAt:desc',
+    // Rows written in the same millisecond need a tiebreaker or skip/limit pages overlap.
+    sortBy: `createdAt:${direction},_id:${direction}`,
     populate: [
       { path: 'actor', select: 'name email' },
       { path: 'initiator', select: 'name email' },
@@ -620,7 +673,7 @@ export async function listAuditLog(actor, query = {}, { permissionContext, imper
   });
 
   return {
-    results: page.results.map(serialiseAuditRow),
+    results: await withAuditSubjectNames(page.results.map(serialiseAuditRow)),
     page: page.page,
     limit: page.limit,
     totalPages: page.totalPages,
@@ -632,9 +685,8 @@ export async function exportAuditLog(actor, query = {}, { permissionContext, imp
   await assertEffectivePermission(actor, 'audit.view', permissionContext, impersonation);
 
   const filter = buildAuditLogFilter(query);
-  const sortBy = query.sortBy || 'createdAt:desc';
-  const [sortField, sortDir] = sortBy.split(':');
-  const sort = { [sortField || 'createdAt']: sortDir === 'asc' ? 1 : -1 };
+  const dir = auditSortDirection(query) === 'asc' ? 1 : -1;
+  const sort = { createdAt: dir, _id: dir };
   const limit = Math.min(Number(query.limit) || 5000, 5000);
 
   const rows = await RbacAuditLog.find(filter)

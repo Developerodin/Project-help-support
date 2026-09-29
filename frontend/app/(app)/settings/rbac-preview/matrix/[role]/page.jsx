@@ -160,7 +160,7 @@ export default function RbacRoleDetailPage() {
     try {
       const [matrixResult, boardResult] = await Promise.all([
         updateRoleMatrix({ grants: snapshotToGrantsRecord(matrixDraft) }),
-        updateBoardPermissions({ grants: snapshotToBoardGrantsRecord(boardDraft) }),
+        updateBoardPermissions({ grants: snapshotToBoardGrantsRecord(boardDraft), role }),
       ]);
       const nextMatrixSaved = recordToMatrixSnapshot(matrixResult.effective);
       const nextBoardSaved = recordToBoardSnapshot(boardResult.effective);

@@ -33,6 +33,7 @@ export const updateRoleMatrixSchema = {
 export const updateBoardPermissionsSchema = {
   body: Joi.object({
     grants: boardGrantsShape.required(),
+    role: Joi.string().valid(...MATRIX_ROLES),
     ifMatch: Joi.date().iso(),
   }),
 };
@@ -93,9 +94,9 @@ export const listAuditLogSchema = {
   query: Joi.object({
     page: Joi.number().integer().min(1).default(1),
     limit: Joi.number().integer().min(1).max(100).default(20),
-    sortBy: Joi.string().trim(),
-    category: Joi.string().valid('policy', 'access', 'security', 'whatsapp'),
-    action: Joi.string().trim(),
+    sortBy: Joi.string().trim().valid('createdAt:desc', 'createdAt:asc'),
+    category: Joi.string().valid('policy', 'access', 'security', 'whatsapp', 'ticket'),
+    action: Joi.string().trim().max(120).allow(''),
     targetUserId: objectId,
     actorId: objectId,
   }),
