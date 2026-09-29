@@ -57,6 +57,19 @@ export const AUDIT_CATEGORY_LABELS = Object.freeze({
   ticket: 'Tickets',
 });
 
+/** Same prefix rules as the backend's auditCategory, so a row's chip and its filter group agree. */
+export function auditActionCategory(action) {
+  if (action.startsWith('whatsapp.')) return 'whatsapp';
+  if (action.startsWith('ticket.')) return 'ticket';
+  if (action.startsWith('security.') || action.startsWith('user.')) return 'security';
+  if (
+    action.startsWith('role_matrix')
+    || action.startsWith('user_overrides')
+    || action.startsWith('board_permissions')
+  ) return 'policy';
+  return 'access';
+}
+
 /** Unknown enums still read as prose rather than as a raw identifier. */
 export function formatAuditAction(action) {
   if (!action) return 'Unknown action';

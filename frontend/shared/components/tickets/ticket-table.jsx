@@ -50,110 +50,162 @@ function SortHeader({ column, sort, onSort }) {
   );
 }
 
+function RowFlags({ ticket, late, unread }) {
+  if (!(ticket.blocked || late || ticket.reopenCount > 0 || unread > 0)) return null;
+  return (
+    <span className="rowflags">
+      {unread > 0 && (
+        <span
+          className="chip chip-new-reply"
+          aria-label={`${unread} new ${unread === 1 ? 'reply' : 'replies'} in discussion`}
+        >
+          New reply{unread > 1 ? ` (${unread})` : ''}
+        </span>
+      )}
+      {ticket.blocked && <span className="chip chip-blocked">Blocked</span>}
+      {late && <span className="chip chip-late">Overdue</span>}
+      {ticket.reopenCount > 0 && <span className="chip chip-reopen">Reopened</span>}
+    </span>
+  );
+}
+
+/** Below the touch breakpoint the table is hidden and this list shows instead. */
+function TicketStack({ tickets, onOpen, busy }) {
+  return (
+    <ul className="ticket-stack" aria-label="Tickets" data-busy={busy ? 'true' : undefined} aria-busy={busy || undefined}>
+      {tickets.map((ticket) => {
+        const late = isTicketOverdue(ticket);
+        const unread = Number(ticket.discussionUnreadCount) || 0;
+        const ownerName = ticket.assignedTo?.name;
+        return (
+          <li key={ticket.id || ticket.ticketId}>
+            <button type="button" className="ticket-stack__row" onClick={() => onOpen(ticket.ticketId)}>
+              <span className="ticket-stack__top">
+                <span className="ticket-stack__id">{ticket.ticketId}</span>
+                <span className="ticket-stack__stage">
+                  <span>{stageLabel(ticket.status)}</span>
+                  <Rail ticket={ticket} />
+                </span>
+              </span>
+              <span className="ticket-stack__title">
+                <RowFlags ticket={ticket} late={late} unread={unread} />
+                {ticket.title}
+              </span>
+              <span className="ticket-stack__meta">
+                <span className="ticket-stack__owner">
+                  <span className={`avatar sm${ownerName ? '' : ' none'}`} aria-hidden="true">
+                    {ownerName ? initials(ownerName) : '—'}
+                  </span>
+                  {ownerName || 'Unassigned'}
+                </span>
+                <span>{ticketStageAgeDays(ticket)}d in stage</span>
+                {ticket.estimatedResolutionAt ? (
+                  <span className={late ? 'late' : undefined}>
+                    Est. {formatTicketDisplayDate(ticket.estimatedResolutionAt)}
+                  </span>
+                ) : null}
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 export default function TicketTable({ tickets, onOpen, sort, onSort, busy = false }) {
   const showRepliesColumn = sort?.column === 'discussionUnread'
     || tickets.some((ticket) => (Number(ticket.discussionUnreadCount) || 0) > 0);
 
   return (
-    <div className="tablewrap" data-busy={busy ? 'true' : undefined} aria-busy={busy || undefined}>
-      <table>
-        <thead>
-          <tr>
-            <SortHeader column={SORTABLE_COLUMNS[0]} sort={sort} onSort={onSort} />
-            <SortHeader column={SORTABLE_COLUMNS[1]} sort={sort} onSort={onSort} />
-            <th scope="col">Pipeline</th>
-            <SortHeader column={SORTABLE_COLUMNS[2]} sort={sort} onSort={onSort} />
-            <SortHeader column={SORTABLE_COLUMNS[3]} sort={sort} onSort={onSort} />
-            <SortHeader column={SORTABLE_COLUMNS[4]} sort={sort} onSort={onSort} />
-            <SortHeader column={SORTABLE_COLUMNS[5]} sort={sort} onSort={onSort} />
-            {showRepliesColumn ? (
-              <SortHeader column={SORTABLE_COLUMNS[6]} sort={sort} onSort={onSort} />
-            ) : null}
-          </tr>
-        </thead>
-        <tbody>
-          {tickets.map((ticket) => {
-            const late = isTicketOverdue(ticket);
-            const unread = Number(ticket.discussionUnreadCount) || 0;
-            const newReplyLabel = unread > 0
-              ? `, ${unread} new ${unread === 1 ? 'reply' : 'replies'} in discussion`
-              : '';
-            const rowLabel = `Open ticket ${ticket.ticketId}: ${ticket.title}${newReplyLabel}`;
-            const ownerName = ticket.assignedTo?.name;
-            return (
-              <tr
-                key={ticket.id || ticket.ticketId}
-                data-click
-                tabIndex={0}
-                aria-label={rowLabel}
-                onClick={() => onOpen(ticket.ticketId)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    onOpen(ticket.ticketId);
-                  }
-                }}
-              >
-                <td className="t-id">{ticket.ticketId}</td>
-                <td className="t-title">
-                  <span className="titleflex">
-                    {(ticket.blocked || late || ticket.reopenCount > 0 || unread > 0) && (
-                      <span className="rowflags">
-                        {unread > 0 && (
-                          <span
-                            className="chip chip-new-reply"
-                            aria-label={`${unread} new ${unread === 1 ? 'reply' : 'replies'} in discussion`}
-                          >
-                            New reply{unread > 1 ? ` (${unread})` : ''}
-                          </span>
-                        )}
-                        {ticket.blocked && <span className="chip chip-blocked">Blocked</span>}
-                        {late && <span className="chip chip-late">Overdue</span>}
-                        {ticket.reopenCount > 0 && <span className="chip chip-reopen">Reopened</span>}
-                      </span>
-                    )}
-                    <span className="tt">{ticket.title}</span>
-                  </span>
-                </td>
-                <td><Rail ticket={ticket} /></td>
-                <td className="t-stage">{stageLabel(ticket.status)}</td>
-                <td>
-                  <span
-                    className={`avatar sm${ownerName ? '' : ' none'}`}
-                    aria-label={ownerName ? `Owner: ${ownerName}` : 'Unassigned'}
-                  >
-                    {ownerName ? initials(ownerName) : '—'}
-                  </span>
-                </td>
-                <td className="t-num">{ticketStageAgeDays(ticket)}d</td>
-                <td className={`t-num${late ? ' late' : ''}`}>
-                  {ticket.estimatedResolutionAt
-                    ? (
-                      <span title={`Estimated resolution: ${formatTicketDisplayDate(ticket.estimatedResolutionAt)}`}>
-                        {formatTicketDisplayDate(ticket.estimatedResolutionAt)}
-                      </span>
-                    )
-                    : <span className="dash">—</span>}
-                </td>
-                {showRepliesColumn ? (
-                  <td className="t-num t-replies">
-                    {unread > 0 ? (
-                      <span
-                        className="chip chip-new-reply chip-compact"
-                        aria-label={`${unread} unread ${unread === 1 ? 'reply' : 'replies'}`}
-                      >
-                        {unread}
-                      </span>
-                    ) : (
-                      <span className="dash" aria-hidden="true">—</span>
-                    )}
+    <>
+      <TicketStack tickets={tickets} onOpen={onOpen} busy={busy} />
+      <div className="tablewrap ticket-table" data-busy={busy ? 'true' : undefined} aria-busy={busy || undefined}>
+        <table>
+          <thead>
+            <tr>
+              <SortHeader column={SORTABLE_COLUMNS[0]} sort={sort} onSort={onSort} />
+              <SortHeader column={SORTABLE_COLUMNS[1]} sort={sort} onSort={onSort} />
+              <th scope="col">Pipeline</th>
+              <SortHeader column={SORTABLE_COLUMNS[2]} sort={sort} onSort={onSort} />
+              <SortHeader column={SORTABLE_COLUMNS[3]} sort={sort} onSort={onSort} />
+              <SortHeader column={SORTABLE_COLUMNS[4]} sort={sort} onSort={onSort} />
+              <SortHeader column={SORTABLE_COLUMNS[5]} sort={sort} onSort={onSort} />
+              {showRepliesColumn ? (
+                <SortHeader column={SORTABLE_COLUMNS[6]} sort={sort} onSort={onSort} />
+              ) : null}
+            </tr>
+          </thead>
+          <tbody>
+            {tickets.map((ticket) => {
+              const late = isTicketOverdue(ticket);
+              const unread = Number(ticket.discussionUnreadCount) || 0;
+              const newReplyLabel = unread > 0
+                ? `, ${unread} new ${unread === 1 ? 'reply' : 'replies'} in discussion`
+                : '';
+              const rowLabel = `Open ticket ${ticket.ticketId}: ${ticket.title}${newReplyLabel}`;
+              const ownerName = ticket.assignedTo?.name;
+              return (
+                <tr
+                  key={ticket.id || ticket.ticketId}
+                  data-click
+                  tabIndex={0}
+                  aria-label={rowLabel}
+                  onClick={() => onOpen(ticket.ticketId)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onOpen(ticket.ticketId);
+                    }
+                  }}
+                >
+                  <td className="t-id">{ticket.ticketId}</td>
+                  <td className="t-title">
+                    <span className="titleflex">
+                      <RowFlags ticket={ticket} late={late} unread={unread} />
+                      <span className="tt">{ticket.title}</span>
+                    </span>
                   </td>
-                ) : null}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+                  <td><Rail ticket={ticket} /></td>
+                  <td className="t-stage">{stageLabel(ticket.status)}</td>
+                  <td>
+                    <span
+                      className={`avatar sm${ownerName ? '' : ' none'}`}
+                      aria-label={ownerName ? `Owner: ${ownerName}` : 'Unassigned'}
+                    >
+                      {ownerName ? initials(ownerName) : '—'}
+                    </span>
+                  </td>
+                  <td className="t-num">{ticketStageAgeDays(ticket)}d</td>
+                  <td className={`t-num${late ? ' late' : ''}`}>
+                    {ticket.estimatedResolutionAt
+                      ? (
+                        <span title={`Estimated resolution: ${formatTicketDisplayDate(ticket.estimatedResolutionAt)}`}>
+                          {formatTicketDisplayDate(ticket.estimatedResolutionAt)}
+                        </span>
+                      )
+                      : <span className="dash">—</span>}
+                  </td>
+                  {showRepliesColumn ? (
+                    <td className="t-num t-replies">
+                      {unread > 0 ? (
+                        <span
+                          className="chip chip-new-reply chip-compact"
+                          aria-label={`${unread} unread ${unread === 1 ? 'reply' : 'replies'}`}
+                        >
+                          {unread}
+                        </span>
+                      ) : (
+                        <span className="dash" aria-hidden="true">—</span>
+                      )}
+                    </td>
+                  ) : null}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }

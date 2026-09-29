@@ -12,9 +12,12 @@ import {
 } from '@/shared/api/rbac.js';
 import { normalizeApiError } from '@/shared/lib/api-error.js';
 import { useHistorySearch } from '@/shared/lib/use-history-search.js';
+import { useDebouncedValue } from '@/shared/lib/use-debounced-value.js';
 import { windowedPageNumbers } from '@/shared/lib/ticket-list-query.js';
 import {
+  AUDIT_ACTION_LABELS,
   AUDIT_CATEGORY_LABELS,
+  auditActionCategory,
   formatAuditAction,
   formatAuditActorWithInitiator,
   formatAuditTarget,
@@ -45,6 +48,17 @@ const SORT_FILTERS = [
   { value: 'createdAt:asc', label: 'Oldest first' },
 ];
 
+/** Every action the backend writes, grouped like the category tabs and sorted by id within a group. */
+const ACTION_GROUPS = CATEGORY_FILTERS.filter((c) => c.value).map((c) => ({
+  label: c.label,
+  options: Object.keys(AUDIT_ACTION_LABELS)
+    .filter((id) => auditActionCategory(id) === c.value)
+    .sort()
+    .map((id) => ({ value: id, label: formatAuditAction(id) })),
+}));
+
+const TICKET_DEBOUNCE_MS = 300;
+
 const EMPTY_RESULT = {
   rows: [], category: '', page: 1, limit: 0, totalPages: 1, totalResults: 0,
 };
@@ -63,9 +77,9 @@ function AuditActorCells({ row }) {
   );
 }
 
-function AuditRowCards({ rows, now }) {
+function AuditRowCards({ rows, now, busy }) {
   return (
-    <ul className="rbac-audit-cards" aria-label="RBAC audit log">
+    <ul className="rbac-audit-cards" aria-label="RBAC audit log" aria-busy={busy || undefined}>
       {rows.map((row) => {
         const when = formatAuditTimestamp(row.createdAt, now);
         const { actor, actorDetail, initiator } = formatAuditActorWithInitiator(row);
@@ -103,8 +117,11 @@ function AuditRowCards({ rows, now }) {
                 <dt>Target</dt>
                 <dd>{formatAuditTarget(row)}</dd>
               </div>
+              <div className="rbac-audit-card__wide">
+                <dt>What changed</dt>
+                <dd className="rbac-audit-summary">{summariseAuditDetails(row)}</dd>
+              </div>
             </dl>
-            <p className="rbac-audit-summary">{summariseAuditDetails(row)}</p>
           </li>
         );
       })}
@@ -113,7 +130,7 @@ function AuditRowCards({ rows, now }) {
 }
 
 /**
- * The URL is the view: category, action, actor, target, sort, page and page size all
+ * The URL is the view: category, action, ticket, actor, target, sort, page and page size all
  * live in it, so a refresh or the back button lands on the same filtered page.
  */
 function AuditLogViewInner({ showOutboxBanner }) {
@@ -133,16 +150,26 @@ function AuditLogViewInner({ showOutboxBanner }) {
   const hasLoadedOnce = useRef(false);
   // A slow response for the previous filter must not overwrite the rows for the current one.
   const latestRequest = useRef(0);
-  const [actionInput, setActionInput] = useState(query.action);
+  const [ticketInput, setTicketInput] = useState(query.ticketId);
 
   useEffect(() => {
-    setActionInput(query.action);
-  }, [query.action]);
+    setTicketInput(query.ticketId);
+  }, [query.ticketId]);
 
   /** Same mechanism as the other list pages, so Next keeps useSearchParams in sync. */
   const onQueryChange = useCallback((patch) => {
     window.history.replaceState(null, '', `${pathname}${withAuditQuery(window.location.search, patch)}`);
   }, [pathname]);
+
+  const debouncedTicketInput = useDebouncedValue(ticketInput, TICKET_DEBOUNCE_MS);
+
+  // Keyed on the debounced text only: a back/forward URL change must not be overwritten
+  // by the still-trailing value from before it.
+  useEffect(() => {
+    const next = debouncedTicketInput.trim();
+    if (next === auditQueryFromSearch(window.location.search).ticketId) return;
+    onQueryChange({ ticketId: next });
+  }, [debouncedTicketInput, onQueryChange]);
 
   useEffect(() => {
     if (!showOutboxBanner) return undefined;
@@ -225,7 +252,8 @@ function AuditLogViewInner({ showOutboxBanner }) {
   // Rows fetched for another category never paint under this tab, even while its request is in flight.
   const rowsMatchView = result.category === query.category;
   const filtersActive = hasActiveAuditFilters(query);
-  const onlyCategory = query.category && !query.action && !query.actorId && !query.targetUserId;
+  const onlyCategory = query.category && !query.action && !query.ticketId
+    && !query.actorId && !query.targetUserId;
   const categoryLabel = AUDIT_CATEGORY_LABELS[query.category] || query.category;
   const showingFrom = result.totalResults ? (result.page - 1) * result.limit + 1 : 0;
   const showingTo = Math.min(result.page * result.limit, result.totalResults);
@@ -250,61 +278,84 @@ function AuditLogViewInner({ showOutboxBanner }) {
           ))}
         </div>
       </div>
-      <label className="rbac-audit-field rbac-audit-field--action">
-        <span className="rbac-audit-field__label">Action</span>
-        <input
-          type="search"
-          className="rbac-audit-control"
-          placeholder="e.g. role_matrix.update or WEB-12"
-          value={actionInput}
-          onChange={(e) => setActionInput(e.target.value)}
-          onBlur={() => {
-            if (actionInput.trim() !== query.action) onQueryChange({ action: actionInput.trim() });
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') onQueryChange({ action: actionInput.trim() });
-          }}
+      <div className="rbac-audit-toolbar__filters">
+        <label className="rbac-audit-field rbac-audit-field--action">
+          <span className="rbac-audit-field__label">Action</span>
+          <select
+            className="rbac-audit-control"
+            value={query.action}
+            onChange={(e) => onQueryChange({ action: e.target.value })}
+          >
+            <option value="">All actions</option>
+            {/* An older link can carry free text here; keep it visible rather than showing a wrong selection. */}
+            {query.action && !AUDIT_ACTION_LABELS[query.action] && (
+              <option value={query.action}>{query.action}</option>
+            )}
+            {ACTION_GROUPS.map((group) => (
+              <optgroup key={group.label} label={group.label}>
+                {group.options.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </label>
+        <label className="rbac-audit-field rbac-audit-field--ticket">
+          <span className="rbac-audit-field__label">Ticket</span>
+          <input
+            type="search"
+            className="rbac-audit-control"
+            placeholder="e.g. WEB-12"
+            value={ticketInput}
+            onChange={(e) => setTicketInput(e.target.value.toUpperCase())}
+            onBlur={() => {
+              if (ticketInput.trim() !== query.ticketId) onQueryChange({ ticketId: ticketInput.trim() });
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onQueryChange({ ticketId: ticketInput.trim() });
+            }}
+          />
+        </label>
+        <AuditUserFilter
+          label="Actor"
+          value={query.actorId}
+          onChange={(actorId) => onQueryChange({ actorId })}
         />
-      </label>
-      <AuditUserFilter
-        label="Actor"
-        value={query.actorId}
-        onChange={(actorId) => onQueryChange({ actorId })}
-      />
-      <AuditUserFilter
-        label="Target"
-        value={query.targetUserId}
-        onChange={(targetUserId) => onQueryChange({ targetUserId })}
-      />
-      <label className="rbac-audit-field rbac-audit-field--sort">
-        <span className="rbac-audit-field__label">Sort</span>
-        <select
-          className="rbac-audit-control"
-          value={query.sortBy}
-          onChange={(e) => onQueryChange({ sortBy: e.target.value })}
-        >
-          {SORT_FILTERS.map((opt) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-      </label>
-      <div className="rbac-audit-toolbar__actions">
-        <button
-          type="button"
-          className="btn btn-sm"
-          onClick={handleExport}
-          disabled={exportBusy || initialLoading}
-        >
-          {exportBusy ? 'Exporting…' : 'Export CSV'}
-        </button>
-        <button
-          type="button"
-          className="btn btn-sm"
-          onClick={reload}
-          disabled={initialLoading}
-        >
-          Refresh
-        </button>
+        <AuditUserFilter
+          label="Target"
+          value={query.targetUserId}
+          onChange={(targetUserId) => onQueryChange({ targetUserId })}
+        />
+        <label className="rbac-audit-field rbac-audit-field--sort">
+          <span className="rbac-audit-field__label">Sort</span>
+          <select
+            className="rbac-audit-control"
+            value={query.sortBy}
+            onChange={(e) => onQueryChange({ sortBy: e.target.value })}
+          >
+            {SORT_FILTERS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </label>
+        <div className="rbac-audit-toolbar__actions">
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={handleExport}
+            disabled={exportBusy || initialLoading}
+          >
+            {exportBusy ? 'Exporting…' : 'Export CSV'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={reload}
+            disabled={initialLoading}
+          >
+            Refresh
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -330,7 +381,7 @@ function AuditLogViewInner({ showOutboxBanner }) {
       heading = `No ${categoryLabel} entries yet`;
     } else if (filtersActive) {
       heading = 'No entries match these filters';
-      hint = 'Try a different category, action, actor or target.';
+      hint = 'Try a different category, action, ticket, actor or target.';
     }
     body = (
       <div className="empty-state">
@@ -394,7 +445,7 @@ function AuditLogViewInner({ showOutboxBanner }) {
             </tbody>
           </table>
         </div>
-        <AuditRowCards rows={result.rows} now={now} />
+        <AuditRowCards rows={result.rows} now={now} busy={isRefreshing} />
         <nav className="pager" aria-label="Audit log pagination">
           <div className="pager__meta" aria-live="polite" aria-atomic="true">
             {isRefreshing ? <span className="of">Updating results…</span> : null}

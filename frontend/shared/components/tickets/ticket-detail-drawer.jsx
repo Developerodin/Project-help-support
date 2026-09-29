@@ -249,6 +249,7 @@ function TicketDrawerContent({
 
   return (
     <>
+      <div className="drawer-scroll">
       {permissionsLoadFailed ? (
         <div className="drawer-permissions-banner" role="alert">
           Permissions could not load — actions may be unavailable.
@@ -485,6 +486,7 @@ function TicketDrawerContent({
             </div>
           </main>
         </div>
+      </div>
       </div>
 
       <TicketDrawerFooter

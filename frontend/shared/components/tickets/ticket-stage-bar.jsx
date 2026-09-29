@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import {
   STAGES, LANES, stageIndex, stageLabel, laneOf, legalDestinations, canTransition,
 } from '@pms/shared';
@@ -50,6 +50,19 @@ export default function TicketStageBar({
   const [pending, setPending] = useState(null);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
+  const railRef = useRef(null);
+
+  // On a phone the rail scrolls sideways inside itself; open it on the
+  // current stage rather than on Pending.
+  useLayoutEffect(() => {
+    const rail = railRef.current;
+    if (!rail || rail.scrollWidth <= rail.clientWidth) return;
+    const now = rail.querySelector('[aria-current="step"]');
+    if (!now) return;
+    const railBox = rail.getBoundingClientRect();
+    const nowBox = now.getBoundingClientRect();
+    rail.scrollLeft += nowBox.left - railBox.left - (railBox.width - nowBox.width) / 2;
+  }, [ticket.status]);
 
   const currentIndex = stageIndex(ticket.status);
   const rels = ticketRelationships(actor, ticket);
@@ -87,7 +100,7 @@ export default function TicketStageBar({
   return (
     <>
       <div className="stageline">
-        <ul className="railboard" aria-label="Stage pipeline">
+        <ul className="railboard" aria-label="Stage pipeline" ref={railRef}>
           {STAGES.map((stage, i) => {
             const isCurrent = stage.key === ticket.status;
             const canSet = !isCurrent && destinations.includes(stage.key);

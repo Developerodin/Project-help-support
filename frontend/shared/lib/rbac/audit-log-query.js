@@ -10,17 +10,18 @@ export const DEFAULT_AUDIT_QUERY = Object.freeze({
   limit: DEFAULT_AUDIT_LIMIT,
   category: '',
   action: '',
+  ticketId: '',
   actorId: '',
   targetUserId: '',
   sortBy: DEFAULT_AUDIT_SORT,
 });
 
 export const CLEARED_AUDIT_FILTERS = Object.freeze({
-  category: '', action: '', actorId: '', targetUserId: '',
+  category: '', action: '', ticketId: '', actorId: '', targetUserId: '',
 });
 
 /** Any of these changing means the current page number no longer points at the same rows. */
-const PAGE_RESET_KEYS = ['category', 'action', 'actorId', 'targetUserId', 'sortBy', 'limit'];
+const PAGE_RESET_KEYS = ['category', 'action', 'ticketId', 'actorId', 'targetUserId', 'sortBy', 'limit'];
 
 const OBJECT_ID = /^[a-f0-9]{24}$/i;
 
@@ -37,6 +38,7 @@ export function auditQueryFromSearch(search) {
     limit: AUDIT_PAGE_SIZES.includes(rawLimit) ? rawLimit : DEFAULT_AUDIT_LIMIT,
     category: AUDIT_CATEGORIES.includes(category) ? category : '',
     action: (params.get('action') || '').trim(),
+    ticketId: (params.get('ticketId') || '').trim().toUpperCase(),
     actorId: OBJECT_ID.test(actorId) ? actorId : '',
     targetUserId: OBJECT_ID.test(targetUserId) ? targetUserId : '',
     sortBy: AUDIT_SORTS.includes(sortBy) ? sortBy : DEFAULT_AUDIT_SORT,
@@ -57,6 +59,7 @@ export function withAuditQuery(search, patch) {
   };
   put('category', next.category, !next.category);
   put('action', next.action, !next.action);
+  put('ticketId', next.ticketId, !next.ticketId);
   put('actorId', next.actorId, !next.actorId);
   put('targetUserId', next.targetUserId, !next.targetUserId);
   put('sortBy', next.sortBy, !next.sortBy || next.sortBy === DEFAULT_AUDIT_SORT);
@@ -71,11 +74,12 @@ export function auditListParams(query) {
   const params = { page: query.page, limit: query.limit, sortBy: query.sortBy };
   if (query.category) params.category = query.category;
   if (query.action) params.action = query.action;
+  if (query.ticketId) params.ticketId = query.ticketId;
   if (query.actorId) params.actorId = query.actorId;
   if (query.targetUserId) params.targetUserId = query.targetUserId;
   return params;
 }
 
 export function hasActiveAuditFilters(query) {
-  return Boolean(query.category || query.action || query.actorId || query.targetUserId);
+  return Boolean(query.category || query.action || query.ticketId || query.actorId || query.targetUserId);
 }

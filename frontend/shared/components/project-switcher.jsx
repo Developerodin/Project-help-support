@@ -158,7 +158,7 @@ export default function ProjectSwitcher() {
   if (!canSwitch) return null;
 
   return (
-    <div className="menuwrap" ref={wrapRef}>
+    <div className="menuwrap projsel-wrap" ref={wrapRef}>
       <button
         type="button"
         className="projsel"

@@ -207,15 +207,20 @@ code.mono{ font-size:0.9em; }
 
 main{ min-width:0; display:flex; flex-direction:column; }
 
+/* Only the search and the project switcher give up width; every other control
+   keeps its size. */
 .topbar{
-  height:var(--bar-h); flex:none; display:flex; align-items:center; gap:10px;
-  padding:0 14px; border-bottom:1px solid var(--rule);
+  min-height:var(--bar-h); flex:none; display:flex; align-items:center; gap:6px 10px;
+  padding:1px 14px; border-bottom:1px solid var(--rule);
   background:var(--paper); position:sticky; top:0; z-index:20;
 }
+.topbar > *{ flex:none; }
+.topbar > .projsel, .topbar > .projsel-wrap{ flex:0 1 auto; min-width:0; }
+.projsel-wrap > .projsel{ min-width:0; }
 .projsel{
   display:flex; align-items:center; gap:7px; padding:0 9px; border-radius:var(--r);
   border:1px solid var(--rule); background:var(--panel); font-weight:600; font-size:0.8125rem;
-  height:var(--ctl-h); max-width:min(280px, 42vw);
+  height:var(--ctl-h); max-width:min(280px, 42vw); overflow:hidden;
 }
 .projsel-name{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
 .projsel-error{ gap:8px; max-width:none; }
@@ -227,13 +232,25 @@ main{ min-width:0; display:flex; flex-direction:column; }
 .projsel-readonly{ cursor:default; }
 .projsel-readonly:hover{ border-color:var(--rule); }
 .projsel .tag{ font-family:var(--mono); font-size:0.6875rem; color:var(--sig); }
+/* A flex item's minimum defaults to its content, and the nowrap hint made that
+   the whole placeholder, so the field overflowed instead of shrinking. */
+.topbar > .search{ flex:1 1 6rem; min-width:0; }
 .search{
-  flex:1; max-width:420px; display:flex; align-items:center; gap:7px;
+  max-width:420px; display:flex; align-items:center; gap:7px; overflow:hidden;
+  container-type:inline-size;
   padding:0 9px; height:var(--ctl-h); border:1px solid var(--rule); border-radius:var(--r);
   background:var(--panel); color:var(--ink-3); font-size:0.8125rem; text-align:left;
 }
 .search:hover{ border-color:var(--ink-3); }
+.search > svg{ flex:none; }
 .search .q{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.search .q-short{ display:none; }
+@container (width < 15.5rem){
+  .search .q-long{ display:none; }
+  .search .q-short{ display:block; }
+}
+@container (width < 8.5rem){ .search kbd{ display:none; } }
+@container (width < 3.5rem){ .search .q-short{ display:none; } }
 .search kbd{
   font-family:var(--mono); font-size:0.625rem; border:1px solid var(--rule);
   border-radius:3px; padding:1px 4px; color:var(--ink-3); background:var(--paper); flex:none;
@@ -937,6 +954,32 @@ td.t-check{ width:34px; padding-right:0; }
 td.t-title > span.titleflex{ display:flex; align-items:center; gap:7px; min-width:0; }
 .titleflex .rowflags{ margin-left:0; flex:none; }
 .titleflex .tt{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* Ticket list below the touch breakpoint: one stacked entry per ticket, so the
+   940px table never scrolls sideways and titles wrap instead of truncating. */
+.ticket-stack{ display:none; margin:0; padding:0; list-style:none;
+  border:1px solid var(--rule); border-radius:var(--r-lg); background:var(--paper); }
+.ticket-stack[data-busy="true"]{ opacity:0.62; pointer-events:none; }
+@media (prefers-reduced-motion: no-preference){
+  .ticket-stack[data-busy="true"]{ transition:opacity 150ms ease; }
+}
+.ticket-stack > li + li{ border-top:1px solid var(--rule-soft); }
+.ticket-stack__row{ display:flex; flex-direction:column; gap:6px; width:100%; min-height:44px;
+  padding:10px 12px; text-align:left; color:var(--ink); overflow-wrap:anywhere; }
+.ticket-stack__row:hover{ background:var(--panel); }
+.ticket-stack__row:focus-visible{ outline-offset:-2px; border-radius:var(--r); }
+.ticket-stack__top{ display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; }
+.ticket-stack__id{ font-family:var(--mono); font-size:0.75rem; font-weight:600; color:var(--sig); white-space:nowrap; }
+.ticket-stack__stage{ display:flex; align-items:center; gap:8px; margin-left:auto; font-size:0.75rem; color:var(--ink-2); }
+.ticket-stack__title{ font-weight:500; line-height:1.4; }
+.ticket-stack__title .rowflags{ flex-wrap:wrap; margin:0 7px 0 0; }
+.ticket-stack__meta{ display:flex; flex-wrap:wrap; align-items:center; gap:4px 12px; font-size:0.75rem; color:var(--ink-2); }
+.ticket-stack__owner{ display:inline-flex; align-items:center; gap:6px; min-width:0; }
+.ticket-stack__meta .late{ color:var(--alarm); font-weight:600; }
+@media (max-width:820px){
+  .tablewrap.ticket-table{ display:none; }
+  .ticket-stack{ display:block; }
+}
 .dash{ color:var(--ink-3); }
 input[type="checkbox"]{ accent-color:var(--sig); width:14px; height:14px; cursor:pointer; }
 
@@ -2986,13 +3029,18 @@ a.button3{ display:block; text-align:center; text-decoration:none; cursor:pointe
 }
 @media (max-width:820px){
   .page{ padding:16px 14px 24px; }
-  .topbar{ gap:6px; padding:0 10px; }
+  /* Every control is icon-sized here, so only an extra one (the install
+     prompt) can outgrow a phone; it takes a second row instead of clipping. */
+  .topbar{ flex-wrap:wrap; gap:6px; padding:1px 10px; }
   /* Both topbar controls grow together here rather than the switcher shrinking:
      this is the touch breakpoint, so 44px is the target size, not the bloat. */
   :root{ --ctl-h:44px; }
-  .search .q, .search kbd, .roleswitch .lbl, .projsel span:not(.tag),
+  .search kbd, .roleswitch .lbl, .projsel span:not(.tag),
   .topbar .btn-primary .t{ display:none; }
-  .search{ flex:none; width:var(--ctl-h); justify-content:center; padding:0; }
+  /* 13px side padding centres the icon when the field is at its 44px floor. */
+  .topbar > .search{ flex:1 1 var(--ctl-h); min-width:var(--ctl-h); }
+  .search{ padding:0 13px; font-size:16px; }
+  .search > svg{ width:16px; height:16px; }
   .topbar .btn-primary{ padding:0 12px; }
   .roleswitch select{ max-width:104px; }
   .drawer-foot > .btn-primary, .drawer-foot > .nomove{ flex:1 1 100%; justify-content:center; }
@@ -3170,6 +3218,65 @@ a.button3{ display:block; text-align:center; text-decoration:none; cursor:pointe
   .message.comment-highlight{ animation:none; }
 }
 .tab-unread{ margin-left:4px; font-size:12px; font-weight:600; color:var(--sig); }
+
+/* Ticket drawer on phones and small tablets. Desktop pins the header over a
+   scrolling tab panel; below 820px that header alone is over half a phone, so
+   header and panel scroll as one and only the stage actions stay pinned. */
+.drawer-scroll{ display:contents; }
+@media (max-width:820px){
+  /* The page behind can be wider than the screen. The browser then widens the
+     layout viewport to match, and a right:0, 100vw drawer slid off the left
+     edge with the list showing beside and under it. */
+  html:has(.ticket-drawer.on), html:has(.ticket-drawer.on) body{ overflow:hidden; }
+  .ticket-drawer{ inset:0; width:auto; height:auto; }
+  .ticket-drawer .drawer-scroll{
+    display:flex; flex-direction:column; flex:1; min-height:0;
+    overflow-x:hidden; overflow-y:auto; overscroll-behavior:contain;
+  }
+  /* Nothing between the composer and .drawer-scroll may scroll or clip, or
+     the composer's sticky bottom latches onto that box instead. */
+  .ticket-drawer .drawer-scroll .drawer-body{ flex:1 0 auto; overflow:visible; padding:14px 14px 0; }
+  .ticket-drawer .drawer-scroll :is(.ticket-workspace, .ticket-main, .drawer-main-panels){
+    flex:1 0 auto; min-height:auto; overflow:visible;
+  }
+  .ticket-drawer .drawer-scroll .drawer-main-panels [role="tabpanel"]:not([hidden]){ flex:1 0 auto; overflow:visible; }
+  .ticket-drawer .drawer-scroll .discussion-tab{ flex:1 0 auto; min-height:0; }
+  .ticket-drawer .composer{ padding-bottom:8px; }
+
+  .ticket-drawer .drawer-head{ padding:12px 14px 0; }
+  .ticket-drawer h2{ overflow-wrap:anywhere; }
+  .ticket-drawer .drawer-id{ position:relative; row-gap:8px; }
+  .ticket-drawer .drawer-id .spacer{ display:none; }
+  .ticket-drawer .drawer-id .acts{ flex:1 1 100%; flex-wrap:wrap; gap:8px; margin-left:0; }
+  .ticket-drawer .drawer-id .acts .btn{ height:44px; padding:0 14px; font-size:0.875rem; white-space:nowrap; }
+  .ticket-drawer .drawer-id .acts .btn-ico{ width:44px; padding:0; margin-left:auto; }
+  /* Under its own button the 290px menu ran off the left edge; span the row. */
+  .ticket-drawer .drawer-id .menuwrap{ position:static; }
+  .ticket-drawer .drawer-id .menu{ left:0; right:0; min-width:0; }
+
+  /* Ten stages never fit a phone at a readable size. The rail scrolls inside
+     itself and opens on the current stage; the stage name leads in text. */
+  .ticket-drawer .stageline{ flex-direction:column; align-items:stretch; gap:4px; }
+  .ticket-drawer .stagenow{ order:-1; }
+  .ticket-drawer .railboard{
+    overflow-x:auto; overflow-y:hidden; overscroll-behavior-x:contain;
+    scrollbar-width:thin; padding:3px 3px 6px;
+  }
+  .ticket-drawer .railseg{ flex:1 0 4.625rem; }
+  .ticket-drawer .railhit{ min-height:44px; justify-content:center; }
+  .ticket-drawer .railseg .nm{ font-size:0.75rem; }
+  .ticket-drawer .railkey .k-you{ margin-left:0; }
+
+  .ticket-drawer .drawer-head .tabs{ flex-wrap:wrap; overflow:visible; padding-bottom:0; }
+  .ticket-drawer .drawer-head .tab{ min-height:44px; padding:0 12px; }
+
+  .ticket-drawer .drawer-foot{ padding:10px 14px max(10px, env(safe-area-inset-bottom)); }
+  .ticket-drawer .drawer-foot > .btn{ height:44px; font-size:0.875rem; }
+  .ticket-drawer .drawer-foot > .btn:not(.btn-primary){ flex:1 1 0; justify-content:center; }
+
+  /* 16px or iOS zooms the whole drawer in on focus. */
+  .ticket-drawer :is(input:not([type="checkbox"], [type="radio"], [type="file"]), select, textarea){ font-size:16px; }
+}
 .card-reply-chip{ flex-shrink:0; max-width:min(100%, 9rem); }
 .chip-compact{ min-width:2.75rem; min-height:2.75rem; display:inline-flex; align-items:center; justify-content:center; padding:4px 10px; }
 .history-tab{ padding-bottom:24px; }

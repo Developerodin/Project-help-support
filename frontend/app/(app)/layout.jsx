@@ -99,13 +99,15 @@ function TopBar() {
       <SidebarTrigger className="size-11 shrink-0 rounded-(--r) text-[var(--ink-3)] hover:bg-[var(--panel-2)] hover:text-[var(--ink)]" />
       {hasWorkspace ? <ProjectSwitcher /> : null}
       <button type="button" className="search" onClick={openSearch} aria-label="Search tickets">
-        <span className="q">{searchHint}</span>
+        <Icon name="search" size={14} />
+        <span className="q q-long">{searchHint}</span>
+        <span className="q q-short">Search tickets</span>
         <kbd>/</kbd>
       </button>
       <span className="spacer" />
       {hasWorkspace && canCreateTicket ? (
-        <Link href="/tickets/new" className="btn btn-primary">
-          <Icon name="plus" size={12} /> New ticket
+        <Link href="/tickets/new" className="btn btn-primary" aria-label="New ticket" title="New ticket">
+          <Icon name="plus" size={12} /> <span className="t">New ticket</span>
         </Link>
       ) : null}
       <NotificationBell />

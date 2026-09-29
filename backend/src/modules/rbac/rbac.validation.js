@@ -97,6 +97,7 @@ export const listAuditLogSchema = {
     sortBy: Joi.string().trim().valid('createdAt:desc', 'createdAt:asc'),
     category: Joi.string().valid('policy', 'access', 'security', 'whatsapp', 'ticket'),
     action: Joi.string().trim().max(120).allow(''),
+    ticketId: Joi.string().trim().uppercase().max(40).allow(''),
     targetUserId: objectId,
     actorId: objectId,
   }),

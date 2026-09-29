@@ -385,6 +385,8 @@ function buildAuditLogFilter(query = {}) {
       { ticketId: action.toUpperCase() },
     ];
   }
+  const ticketId = String(query.ticketId ?? '').trim().toUpperCase();
+  if (ticketId) filter.ticketId = ticketId;
   if (query.targetUserId) filter.targetUser = query.targetUserId;
   if (query.actorId) filter.actor = query.actorId;
   return filter;

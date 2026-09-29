@@ -178,32 +178,89 @@
   gap: 0.35rem;
 }
 
+/*
+ * Toolbar layout by the audit view's own width, not the viewport: the app sidebar
+ * takes a fixed bite out of every window size, so a 1440px window can still be too narrow.
+ *   >= 1360px   one row: category tabs, then the filter grid
+ *   980-1359px  two rows: category tabs, then all filters and actions on one grid row
+ *   720-979px   filters and actions in a 3-column grid
+ *   600-719px   tabs wrap as separate buttons; filters in a 2-column grid
+ *   < 600px     one column, every control full width
+ * Every field is label + 44px control, so bottom-aligning keeps labels on one line.
+ */
+.rbac-audit {
+  container: rbac-audit / inline-size;
+}
+
 .rbac-audit-toolbar {
   display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
   margin-bottom: 16px;
 }
 
+.rbac-audit-toolbar__filters {
+  display: grid;
+  grid-template-columns:
+    minmax(9rem, 1.2fr)
+    minmax(6.5rem, 0.8fr)
+    minmax(8.5rem, 1fr)
+    minmax(8.5rem, 1fr)
+    minmax(8.5rem, 0.9fr)
+    auto;
+  align-items: end;
+  gap: 12px;
+  min-width: 0;
+}
+
 .rbac-audit-filters {
-  flex: none;
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-self: flex-start;
   height: 44px;
 }
 
-.rbac-audit-filters button {
+.rbac-audit-toolbar .rbac-audit-filters button {
   height: 100%;
-  padding: 0 14px;
+  padding: 0 12px;
   font-size: 0.8125rem;
 }
 
+/* .seg clips overflow, so the default outset ring would be cut off. */
+.rbac-audit-filters button:focus-visible {
+  outline: 2px solid var(--sig);
+  outline-offset: -2px;
+}
+
+/* Buttons never shrink below their label; if the cell is too narrow they wrap onto a second line. */
 .rbac-audit-toolbar__actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  flex: none;
-  margin-left: auto;
   min-height: 44px;
+}
+
+.rbac-audit-toolbar__actions .btn {
+  flex: 1 0 auto;
+  height: 44px;
+  padding: 0 14px;
+  font-size: 0.8125rem;
+  white-space: nowrap;
+  justify-content: center;
+}
+
+@container rbac-audit (min-width: 1360px) {
+  .rbac-audit-toolbar {
+    flex-direction: row;
+    align-items: flex-end;
+    gap: 16px;
+  }
+
+  .rbac-audit-toolbar__filters {
+    flex: 1 1 auto;
+  }
 }
 
 /* Long trails scroll inside the wrap — the header has to stay readable. */
@@ -254,7 +311,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  min-width: 8rem;
+  min-width: 0;
 }
 
 .rbac-audit-field__label {
@@ -269,19 +326,7 @@
 }
 
 .rbac-audit-field--category {
-  flex: 0 0 auto;
-  min-width: 0;
-}
-
-.rbac-audit-field--action {
-  flex: 1 1 10rem;
-  max-width: 14rem;
-  min-width: 9rem;
-}
-
-.rbac-audit-field--sort {
-  flex: 0 0 auto;
-  min-width: 10.5rem;
+  flex: none;
 }
 
 .rbac-audit-control {
@@ -310,12 +355,6 @@
   padding-right: 28px;
 }
 
-.rbac-audit-toolbar .audit-user-filter {
-  flex: 1 1 11rem;
-  max-width: 16rem;
-  min-width: 10rem;
-}
-
 .audit-user-filter {
   position: relative;
 }
@@ -323,6 +362,7 @@
 .audit-user-filter__search {
   display: flex;
   align-items: center;
+  height: 44px;
   border: 1px solid var(--rule);
   border-radius: var(--r);
   background: var(--paper);
@@ -348,7 +388,8 @@
   width: auto;
   height: 44px;
   min-height: 44px;
-  margin: 0;
+  /* Overlaps the wrapper border so the box matches the other 44px controls and the input keeps a 44px hit area. */
+  margin: -1px 0;
   padding: 0 12px 0 0;
   border: 0;
   border-radius: 0;
@@ -537,7 +578,9 @@
 }
 
 .rbac-audit-card {
+  min-width: 0;
   padding: 0.75rem 0.85rem;
+  overflow-wrap: anywhere;
 }
 
 .rbac-audit-card__head {
@@ -554,10 +597,22 @@
 
 .rbac-audit-card__meta {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.35rem 0.75rem;
-  margin: 0 0 0.5rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem 0.75rem;
+  margin: 0;
   font-size: 0.8125rem;
+}
+
+.rbac-audit-card__meta > div {
+  min-width: 0;
+}
+
+.rbac-audit-card__wide {
+  grid-column: 1 / -1;
+}
+
+.rbac-audit-card__meta .rbac-audit-summary {
+  color: var(--ink-2);
 }
 
 .rbac-audit-card__meta dt {
@@ -568,11 +623,14 @@
   letter-spacing: 0.04em;
 }
 
-.rbac-audit-card__meta dd {
+.rbac-audit-card__meta dd,
+.rbac-audit-card .rbac-audit-summary {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
-@media (max-width: 720px) {
+/* Same breakpoint as the page padding and 16px controls: below it the table would scroll sideways. */
+@media (max-width: 820px) {
   .rbac-audit-table {
     display: none;
   }
@@ -582,30 +640,82 @@
     flex-direction: column;
     gap: 0.65rem;
   }
+}
 
-  .rbac-audit-toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .rbac-audit-field {
-    width: 100%;
-    max-width: none;
-  }
-
-  .rbac-audit-toolbar .audit-user-filter {
-    max-width: none;
-    flex: 1 1 auto;
-  }
-
-  .rbac-audit-toolbar__actions {
-    margin-left: 0;
-    flex-wrap: wrap;
-    justify-content: flex-start;
+@media (max-width: 480px) {
+  .rbac-audit-card__meta {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
-@media (min-width: 721px) {
+@container rbac-audit (max-width: 979px) {
+  .rbac-audit-toolbar__filters {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container rbac-audit (max-width: 719px) {
+  .rbac-audit-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-self: stretch;
+    gap: 8px;
+    height: auto;
+    border: 0;
+    background: transparent;
+    overflow: visible;
+  }
+
+  .rbac-audit-toolbar .rbac-audit-filters button,
+  .rbac-audit-toolbar .rbac-audit-filters button:last-child {
+    height: 44px;
+    border: 1px solid var(--rule);
+    border-radius: var(--r);
+    background: var(--panel);
+  }
+
+  .rbac-audit-toolbar .rbac-audit-filters button:hover {
+    background: var(--panel-2);
+  }
+
+  .rbac-audit-toolbar .rbac-audit-filters button[aria-pressed="true"] {
+    border-color: var(--sig-line);
+    background: var(--sig-wash);
+  }
+
+  .rbac-audit-toolbar .rbac-audit-filters button:focus-visible {
+    outline-offset: 2px;
+  }
+
+  .rbac-audit-toolbar__filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* 16px keeps iOS from zooming the page when a control takes focus. */
+@media (max-width: 820px) {
+  .rbac-audit-control,
+  .audit-user-filter .audit-user-filter__input {
+    font-size: 16px;
+  }
+}
+
+@container rbac-audit (max-width: 599px) {
+  .rbac-audit-filters {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .rbac-audit-toolbar .rbac-audit-filters button {
+    padding: 0 8px;
+  }
+
+  .rbac-audit-toolbar__filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (min-width: 821px) {
   .rbac-audit-table .rbac-audit-action { min-width: 14rem; }
   .rbac-audit-table .rbac-audit-summary { max-width: 22rem; }
 }
