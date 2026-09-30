@@ -41,6 +41,13 @@ const MAX_FILES = 10;
 const MAX_AUDIO_BYTES = 5 * MB;
 /** Meta shows "typing…" for up to 25 seconds; sent again before then while the answer is still coming. */
 const TYPING_REFRESH_MS = 20_000;
+/**
+ * How long a message waits for the one before it to be answered. People on WhatsApp
+ * write in bubbles and nobody is watching a spinner, so it is longer than in the app.
+ */
+const LOCK_WAIT_MS = 2 * MINUTE;
+/** Bytes read to check a file's type when it arrives; the whole file is read and checked at yes. */
+const HEAD_BYTES = 64 * 1024;
 const GRAPH = 'https://graph.facebook.com/v26.0';
 
 const LINK_MESSAGE = /^\s*link\s+(\d{8})\s*$/i;
@@ -176,7 +183,7 @@ async function open(config, link, storage) {
  * Stores one exchange. In `change`, undefined keeps a field, null drops it and
  * a value replaces it (draft, attach).
  */
-function saveTurn(key, history, said, reply, note = null, change = {}) {
+function saveTurn(key, said, reply, note = null, change = {}) {
   const set = {};
   const unset = {};
   for (const [field, value] of Object.entries(change)) {
@@ -184,14 +191,15 @@ function saveTurn(key, history, said, reply, note = null, change = {}) {
     else if (value !== undefined) set[field] = value;
   }
   const messages = [
-    ...(history ?? []),
     { role: 'user', content: said.slice(0, 4000) },
     { role: 'assistant', content: note ? `${reply}\n\n${note}` : reply },
   ];
+  // Appended, not rewritten: a file noted while the model was answering is kept.
   return WhatsappState.updateOne(
     { _id: key },
     {
-      $set: { messages: messages.slice(-HISTORY_MESSAGES), expiresAt: later(HISTORY_TTL_MS), ...set },
+      $push: { messages: { $each: messages, $slice: -HISTORY_MESSAGES } },
+      $set: { expiresAt: later(HISTORY_TTL_MS), ...set },
       ...(Object.keys(unset).length ? { $unset: unset } : {}),
     },
     { upsert: true },
@@ -255,7 +263,26 @@ function choiceIn(text) {
   return null;
 }
 
+/** The model's own "reply yes…" line, dropped where the question that follows is ours. */
+const withoutYesLine = (reply) => reply.replace(/^.*\breply\b.*\byes\b.*$/gim, '').trim();
+
+/**
+ * One typed (or heard) message. The whole turn holds the user's chat lock and reads the
+ * chat inside it, so bubbles sent in a row are answered one at a time, each seeing the last.
+ * ponytail: the lock is polled, not a queue, so two bubbles waiting at once may be answered
+ * out of order; queue per user by Meta's timestamp if that shows up.
+ */
 async function ask(config, session, text, messageId, sentAt) {
+  try {
+    return await withChatLock(session.user, () => askLocked(config, session, text, messageId, sentAt), { waitMs: LOCK_WAIT_MS });
+  } catch (err) {
+    // Budget spent, or still answering after the wait: ApiError messages are written for the user.
+    if (err?.isOperational) return err.message;
+    throw err;
+  }
+}
+
+async function askLocked(config, session, text, messageId, sentAt) {
   const { user, permissionContext, key } = session;
   const state = await WhatsappState.findById(key).lean();
   const history = state?.messages ?? [];
@@ -265,68 +292,61 @@ async function ask(config, session, text, messageId, sentAt) {
   if (choice && (state?.draft || state?.attach)) {
     const decided = await decide(config, session, state, choice, messageId, sentAt);
     if (decided) {
-      await saveTurn(key, history, text, decided.reply, null, decided.change);
+      await saveTurn(key, text, decided.reply, decided.note ?? null, decided.change);
       return decided.reply;
     }
   } else if (choice === 'cancel' && files.length) {
     // Files held with nothing asked about yet ("What is it for?"): dropped, never fetched again.
     await WhatsappState.updateOne({ _id: key }, { $pull: { files: { messageId: { $in: idsOf(files) } } }, $unset: { asked: 1, askedAt: 1 } });
     const reply = `Dropped ${fileNames(files)}. Nothing was attached.`;
-    await saveTurn(key, history, text, reply);
+    await saveTurn(key, text, reply);
     return reply;
   }
 
   // The same note the app adds for files staged with the paperclip.
   const staged = files.length ? `\n[Files ready to attach: ${namesOf(files).join(', ')}]` : '';
   const messages = [...history, { role: 'user', content: `${text.slice(0, 4000)}${staged}` }];
-  try {
-    const turn = await withChatLock(user, async () => {
-      await checkAllowance(config, user);
-      const result = await chat(config, user, permissionContext, messages, { mode: 'whatsapp' });
-      await recordUsage(config, user, result.usage);
-      return result;
-    });
-    const drafted = turn.actions.filter((action) => action.type === 'create_ticket' || action.type === 'attach_files').at(-1);
-    if (drafted?.type === 'attach_files') {
-      // The confirmation is ours, not the model's: it names exactly the files and ticket a yes will use.
-      const attach = { ticketId: drafted.ticketId, projectKey: drafted.projectKey, title: drafted.title };
-      const reply = attachPrompt(attach, files);
-      const note = `[Draft "Attach files to ${attach.ticketId}". Status: waiting for the user to `
-        + `${files.length ? 'reply yes, no or cancel' : 'send the file'}]`;
-      await saveTurn(key, history, text, reply, note, { attach, draft: null, ...asking(files) });
+  await checkAllowance(config, user);
+  const turn = await chat(config, user, permissionContext, messages, { mode: 'whatsapp' });
+  await recordUsage(config, user, turn.usage);
+  const drafted = turn.actions.filter((action) => action.type === 'create_ticket' || action.type === 'attach_files').at(-1);
+  if (drafted?.type === 'attach_files') {
+    // The confirmation is ours, not the model's: it names exactly the files and ticket a yes will use.
+    const attach = { ticketId: drafted.ticketId, projectKey: drafted.projectKey, title: drafted.title };
+    const reply = attachPrompt(attach, files);
+    const note = `[Draft "Attach files to ${attach.ticketId}". Status: waiting for the user to `
+      + `${files.length ? 'reply yes, no or cancel' : 'send the file'}]`;
+    await saveTurn(key, text, reply, note, { attach, draft: null, ...asking(files) });
+    return reply;
+  }
+  if (!drafted) {
+    // A draft, or files, still wait on a yes: the reply ends with that question, so a yes
+    // ("ok" to something else the model asked, say) answers only what the user can see.
+    const now = await WhatsappState.findById(key).lean();
+    if (now?.draft || (now?.attach && now.files?.length)) {
+      const modelText = withoutYesLine(turn.reply);
+      const reply = modelText ? `${modelText}\n\n${promptFor(now)}` : promptFor(now);
+      await saveTurn(key, text, reply, null, asking(now.files ?? []));
       return reply;
     }
-    if (!drafted) {
-      // Files still wait on a yes: the reply ends with that question, so a yes answers it, not the model's.
-      const now = await WhatsappState.findById(key).lean();
-      if ((now?.draft || now?.attach) && now.files?.length) {
-        const reply = `${turn.reply}\n\n${promptFor(now)}`;
-        await saveTurn(key, history, text, reply, null, asking(now.files));
-        return reply;
-      }
-      await saveTurn(key, history, text, turn.reply);
-      return turn.reply;
-    }
-    let reply = turn.reply;
-    if (files.length) {
-      // With files, the question is ours too, so it names every file a yes would attach.
-      const modelText = turn.reply.replace(/^.*\breply\b.*\byes\b.*$/gim, '').trim();
-      const question = `${draftPrompt(drafted.body, files)} Or tell me what to change.`;
-      reply = modelText ? `${modelText}\n\n${question}` : question;
-    }
-    // The model sees its draft on later turns the same way the app shows it one ([Draft …] notes).
-    const details = [draftSummary(drafted.body)];
-    if (drafted.guessed?.length) details.push(`Guessed: ${drafted.guessed.join(', ')}`);
-    if (files.length) details.push(`Files: ${namesOf(files).join(', ')}`);
-    details.push(`Status: waiting for the user to reply ${files.length ? 'yes, no or cancel' : 'yes or no'}`);
-    const note = `[Draft "New ticket in ${drafted.projectKey}": ${details.join('. ')}]`;
-    await saveTurn(key, history, text, reply, note, { draft: drafted.body, attach: null, ...asking(files) });
-    return reply;
-  } catch (err) {
-    // Budget spent, or still answering the last one: ApiError messages are written for the user.
-    if (err?.isOperational) return err.message;
-    throw err;
+    await saveTurn(key, text, turn.reply);
+    return turn.reply;
   }
+  let reply = turn.reply;
+  if (files.length) {
+    // With files, the question is ours too, so it names every file a yes would attach.
+    const modelText = withoutYesLine(turn.reply);
+    const question = `${draftPrompt(drafted.body, files)} Or tell me what to change.`;
+    reply = modelText ? `${modelText}\n\n${question}` : question;
+  }
+  // The model sees its draft on later turns the same way the app shows it one ([Draft …] notes).
+  const details = [draftSummary(drafted.body)];
+  if (drafted.guessed?.length) details.push(`Guessed: ${drafted.guessed.join(', ')}`);
+  if (files.length) details.push(`Files: ${namesOf(files).join(', ')}`);
+  details.push(`Status: waiting for the user to reply ${files.length ? 'yes, no or cancel' : 'yes or no'}`);
+  const note = `[Draft "New ticket in ${drafted.projectKey}": ${details.join('. ')}]`;
+  await saveTurn(key, text, reply, note, { draft: drafted.body, attach: null, ...asking(files) });
+  return reply;
 }
 
 function draftSummary(body) {
@@ -340,8 +360,9 @@ function draftSummary(body) {
  * A file from WhatsApp, fetched with the business token: Meta first gives a
  * short-lived URL for the media id, then the bytes. Limits are checked before
  * and after the download, since the size Meta reports is not the bytes it sends.
+ * With `headBytes`, only that much is read (enough to check the type) and the size is Meta's.
  */
-async function fetchMedia(config, mediaId, maxBytes, label = 'It') {
+async function fetchMedia(config, mediaId, maxBytes, { label = 'It', headBytes } = {}) {
   const unavailable = () => new ApiError(502, 'WHATSAPP_MEDIA_UNAVAILABLE', `${label} couldn't be fetched from WhatsApp. Send it again.`);
   const tooBig = () => new ApiError(413, 'FILE_TOO_LARGE', `${label} is over ${maxBytes / MB} MB, the limit here.`);
   const headers = { Authorization: `Bearer ${config.whatsapp.token}` };
@@ -354,14 +375,40 @@ async function fetchMedia(config, mediaId, maxBytes, label = 'It') {
     const res = await fetch(info.url, { headers, signal: AbortSignal.timeout(60_000) });
     if (!res.ok) throw unavailable();
     if (Number(res.headers.get('content-length')) > maxBytes) throw tooBig();
+    const mimeType = String(info.mime_type ?? '').split(';')[0].trim().toLowerCase();
+    if (headBytes) return { buffer: await readHead(res, headBytes), mimeType, size: Number(info.file_size) || 0 };
     const buffer = Buffer.from(await res.arrayBuffer());
     if (buffer.length > maxBytes) throw tooBig();
-    return { buffer, mimeType: String(info.mime_type ?? '').split(';')[0].trim().toLowerCase() };
+    return { buffer, mimeType, size: buffer.length };
   } catch (err) {
     if (err instanceof ApiError) throw err;
     logger.warn('whatsapp media fetch failed', { error: err.message });
     throw unavailable();
   }
+}
+
+/**
+ * The first `bytes` of a download, then the rest is dropped unread. A cut can split a
+ * UTF-8 character, so a cut head ends at its last ASCII byte and a text file still reads as text.
+ */
+async function readHead(res, bytes) {
+  const reader = res.body.getReader();
+  const chunks = [];
+  let got = 0;
+  let done = false;
+  while (got < bytes && !done) {
+    const next = await reader.read();
+    done = next.done;
+    if (next.value) {
+      chunks.push(next.value);
+      got += next.value.length;
+    }
+  }
+  if (!done) await reader.cancel();
+  const head = Buffer.concat(chunks);
+  if (head.length <= bytes && done) return head;
+  const cut = head.subarray(0, bytes);
+  return cut.subarray(0, cut.findLastIndex((b) => b < 0x80) + 1);
 }
 
 /** Documents keep their own name; photos and videos get one, as WhatsApp sends none. */
@@ -400,7 +447,7 @@ async function downloadFiles(config, files) {
   const uploads = [];
   // Sequential: up to 10 files of up to 25MB each, held in memory.
   for (const file of files) {
-    const { buffer } = await fetchMedia(config, file.mediaId, MAX_FILE_BYTES, file.name);
+    const { buffer } = await fetchMedia(config, file.mediaId, MAX_FILE_BYTES, { label: file.name });
     checkType(buffer, file.name);
     uploads.push({ buffer, originalname: file.name, size: buffer.length });
   }
@@ -418,9 +465,9 @@ function storeFiles(config, session, ticketId, files, uploads) {
 }
 
 /**
- * A photo, video or document. Checked now (type and size, as the upload route
- * would) so a bad file is refused at once, then only its media id is kept:
- * the bytes are fetched again, and stored, only after the user replies yes.
+ * A photo, video or document. Checked now (type from its first bytes, size as Meta
+ * reports it) so a bad file is refused at once, then only its media id is kept: the
+ * whole file is fetched, checked again, and stored only after the user replies yes.
  */
 async function receiveFile(config, session, message) {
   const media = message[message.type] ?? {};
@@ -430,11 +477,11 @@ async function receiveFile(config, session, message) {
   let file;
   try {
     assertStorageEnabled(config);
-    const { buffer, mimeType } = await fetchMedia(config, media.id, MAX_FILE_BYTES);
+    const { buffer, mimeType, size } = await fetchMedia(config, media.id, MAX_FILE_BYTES, { headBytes: HEAD_BYTES });
     const name = mediaName(message, media, mimeType);
     checkType(buffer, name);
     file = {
-      messageId: message.id, mediaId: String(media.id), name, size: buffer.length,
+      messageId: message.id, mediaId: String(media.id), name, size,
     };
   } catch (err) {
     if (err?.isOperational) return `I can't attach that file. ${err.message}`;
@@ -453,12 +500,12 @@ async function receiveFile(config, session, message) {
   // Waiting on a question already: asked again, naming this file with the others, so a yes covers what it says.
   if (now.draft || now.attach) {
     const reply = `Got *${file.name}*. ${promptFor(now)}`;
-    await saveTurn(key, now.messages, sent, reply, null, asking(now.files));
+    await saveTurn(key, sent, reply, null, asking(now.files));
     return reply;
   }
   const reply = `Got *${file.name}*. What is it for? Describe the problem to file a new ticket with it, `
     + 'or tell me the ticket to add it to, like "add this to WEB-12". Reply *cancel* to drop it.';
-  await saveTurn(key, now.messages, sent, reply);
+  await saveTurn(key, sent, reply);
   return reply;
 }
 
@@ -470,7 +517,7 @@ async function listen(config, session, message) {
   const { user, permissionContext } = session;
   let text;
   try {
-    const { buffer, mimeType } = await fetchMedia(config, message.audio?.id, MAX_AUDIO_BYTES, 'That voice note');
+    const { buffer, mimeType } = await fetchMedia(config, message.audio?.id, MAX_AUDIO_BYTES, { label: 'That voice note' });
     if (!isAudio(buffer)) return 'That doesn\'t sound like a voice note. Send it again, or type your message.';
     await checkAllowance(config, user);
     // The user's project keys and names help the transcriber spell them right.
@@ -525,15 +572,19 @@ async function decide(config, session, state, said, messageId, sentAt) {
   }
 
   const files = namedIn(claimed);
+  // How the draft ended, in the history as the app notes it, so the model doesn't take the
+  // "waiting" note from when it drafted as still true.
+  const heading = pending === 'draft' ? 'New ticket' : `Attach files to ${claimed.attach.ticketId}`;
+  const settled = (status) => `[Draft "${heading}". Status: ${status}]`;
   const audit = auditor(session, messageId, pending === 'draft' ? { title: claimed.draft.title } : { ticketId: claimed.attach.ticketId });
   if (choice === 'cancel') {
     const dropped = namesOf(claimed.files ?? []);
     if (pending === 'draft') {
       await audit('ticket_cancelled', dropped.length ? { files: dropped } : {});
-      return { reply: 'Cancelled. Nothing was created.' };
+      return { reply: 'Cancelled. Nothing was created.', note: settled('cancelled by the user, nothing was created') };
     }
     await audit('attach_cancelled', { files: dropped });
-    return { reply: 'Cancelled. Nothing was attached.' };
+    return { reply: 'Cancelled. Nothing was attached.', note: settled('cancelled by the user, nothing was attached') };
   }
   if (choice === 'no') {
     await audit('attach_skipped', { files: namesOf(files) });
@@ -546,12 +597,14 @@ async function decide(config, session, state, said, messageId, sentAt) {
   const done = pending === 'draft'
     ? await fileTicket(config, session, claimed.draft, files, audit)
     : await attachFiles(config, session, claimed.attach, files, audit);
-  if (!done.attach) return { reply: done.reply };
+  const note = settled(done.status);
+  if (!done.attach) return { reply: done.reply, note };
   // Files that came in after the question stay held, and are asked about now, for the same ticket.
   const now = await WhatsappState.findById(key).lean();
-  if (!now?.files?.length || now.draft || now.attach) return { reply: done.reply };
+  if (!now?.files?.length || now.draft || now.attach) return { reply: done.reply, note };
   return {
     reply: `${done.reply}\n\n${attachPrompt(done.attach, now.files)}`,
+    note,
     change: { attach: done.attach, ...asking(now.files) },
   };
 }
@@ -565,7 +618,7 @@ async function fileTicket(config, session, draft, files, audit) {
   const { user, permissionContext } = session;
   const failed = async (detail) => {
     await audit('ticket_failed', { reason: detail });
-    return { reply: `I couldn't create it: ${detail}` };
+    return { reply: `I couldn't create it: ${detail}`, status: `failed (${detail}), nothing was created` };
   };
   const { value, error } = createTicketSchema.body.validate(draft);
   if (error) return failed(error.message);
@@ -604,9 +657,16 @@ async function fileTicket(config, session, draft, files, audit) {
     logger.error('whatsapp ticket notify failed', { ticketId: ticket.ticketId, error: err.message });
   }
   const created = `Created *${ticket.ticketId}*: ${ticket.title}`;
-  if (attachError) return { reply: `${created}. I couldn't attach ${fileNames(files)} (${attachError}); add them in the app.` };
+  const status = `confirmed and applied, created ${ticket.ticketId}`;
+  if (attachError) {
+    return {
+      reply: `${created}. I couldn't attach ${fileNames(files)} (${attachError}); add them in the app.`,
+      status: `${status}; ${namesOf(files).join(', ')} not attached (${attachError})`,
+    };
+  }
   return {
     reply: attached.length ? `${created}, with ${fileNames(files)} attached.` : created,
+    status: attached.length ? `${status} with ${attached.join(', ')} attached` : status,
     attach: { ticketId: ticket.ticketId, title: ticket.title },
   };
 }
@@ -620,7 +680,7 @@ async function attachFiles(config, session, attach, files, baseAudit) {
   const audit = (action, details = {}) => baseAudit(action, { files: namesOf(files), ...details });
   const failed = async (detail) => {
     await audit('attach_failed', { reason: detail });
-    return { reply: `I couldn't attach it: ${detail}` };
+    return { reply: `I couldn't attach it: ${detail}`, status: `failed (${detail}), nothing was attached` };
   };
   if (!isExternalUser(user) && !can(user, 'tickets.view', permissionContext)) {
     return failed('You do not have access to this ticket');
@@ -635,7 +695,11 @@ async function attachFiles(config, session, attach, files, baseAudit) {
   }
   await audit('attach_added');
   logger.info('whatsapp files attached', { userId: String(user._id), ticketId: attach.ticketId, files: files.length });
-  return { reply: `Added ${fileNames(files)} to *${attach.ticketId}*.`, attach };
+  return {
+    reply: `Added ${fileNames(files)} to *${attach.ticketId}*.`,
+    status: `confirmed and applied, ${namesOf(files).join(', ')} attached`,
+    attach,
+  };
 }
 
 /**
@@ -652,12 +716,14 @@ export function toWhatsapp(text) {
 }
 
 /**
- * What to reply to one incoming message, or null when it was already answered.
+ * What to reply to one incoming message, or null when it was already answered or needs no answer.
  * `storage` stands in for S3 in tests, as in attachment.service.js. `receipt`, if
  * given, is filled in: `accepted` once the message is taken up for a linked user
  * (the same gate as "typing"), and `read` once Meta has taken its read receipt.
  */
 export async function answer(config, sender, message, { storage, receipt = {} } = {}) {
+  // A 👍 on one of our replies is not a question.
+  if (message.type === 'reaction') return null;
   try {
     await WhatsappState.create({ _id: `seen:${message.id}`, expiresAt: later(SEEN_TTL_MS) });
   } catch (err) {

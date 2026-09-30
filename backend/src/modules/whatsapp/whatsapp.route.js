@@ -27,6 +27,11 @@ function senderOf(value, message) {
  * Blue ticks mean the message was taken up: set with "typing…", or once the reply is out if that call never landed.
  */
 export async function handle(config, value, message) {
+  // One Meta app can hold several numbers; only messages to ours are answered, and from ours.
+  if (String(value.metadata?.phone_number_id) !== String(config.whatsapp.phoneNumberId)) {
+    logger.warn('whatsapp message for another number', { id: message.id, phoneNumberId: value.metadata?.phone_number_id });
+    return;
+  }
   const sender = senderOf(value, message);
   if (!sender.waId) return;
   const receipt = {};
