@@ -203,7 +203,8 @@ export default function TicketMetadataRail({
               onOpenChange={setAssigneePickerOpen}
               assigning={assigningField === 'assignee'}
               searchPlaceholder="Search people…"
-              onSelect={(assignedTo) => submitAssignment('assignee', { assignedTo }, 'Assignee updated')}
+              // The failure is already toasted, and the picker stays open to retry.
+              onSelect={(assignedTo) => submitAssignment('assignee', { assignedTo }, 'Assignee updated').catch(() => {})}
             />
           ) : (
             <PersonLine name={ticket.assignedTo?.name} />
@@ -225,7 +226,7 @@ export default function TicketMetadataRail({
               onOpenChange={setTeamPickerOpen}
               assigning={assigningField === 'team'}
               searchPlaceholder="Search teams…"
-              onSelect={(team) => submitAssignment('team', { team }, 'Team assigned')}
+              onSelect={(team) => submitAssignment('team', { team }, 'Team assigned').catch(() => {})}
             />
           ) : (
             <>
