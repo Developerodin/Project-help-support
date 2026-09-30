@@ -1,0 +1,263 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-30T12:20:00+05:30",
+  "title": "Design System: Project Management",
+  "extensions": {
+    "colorMeta": {
+      "paper": {
+        "role": "neutral",
+        "displayName": "Warm Paper",
+        "canonical": "oklch(0.988 0.003 85)",
+        "tonalRamp": [
+          "oklch(0.18 0.003 85)",
+          "oklch(0.29 0.003 85)",
+          "oklch(0.40 0.003 85)",
+          "oklch(0.51 0.003 85)",
+          "oklch(0.62 0.003 85)",
+          "oklch(0.73 0.003 85)",
+          "oklch(0.84 0.003 85)",
+          "oklch(0.95 0.003 85)"
+        ]
+      },
+      "panel": {
+        "role": "neutral",
+        "displayName": "Desk Panel",
+        "canonical": "oklch(0.963 0.004 85)",
+        "tonalRamp": [
+          "oklch(0.18 0.004 85)",
+          "oklch(0.29 0.004 85)",
+          "oklch(0.40 0.004 85)",
+          "oklch(0.51 0.004 85)",
+          "oklch(0.62 0.004 85)",
+          "oklch(0.73 0.004 85)",
+          "oklch(0.84 0.004 85)",
+          "oklch(0.95 0.004 85)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ledger Ink",
+        "canonical": "oklch(0.245 0.014 262)",
+        "tonalRamp": [
+          "oklch(0.18 0.014 262)",
+          "oklch(0.29 0.014 262)",
+          "oklch(0.40 0.014 262)",
+          "oklch(0.51 0.014 262)",
+          "oklch(0.62 0.014 262)",
+          "oklch(0.73 0.014 262)",
+          "oklch(0.84 0.014 262)",
+          "oklch(0.95 0.014 262)"
+        ]
+      },
+      "signal": {
+        "role": "primary",
+        "displayName": "Signal Blue",
+        "canonical": "oklch(0.455 0.135 262)",
+        "tonalRamp": [
+          "oklch(0.18 0.135 262)",
+          "oklch(0.29 0.135 262)",
+          "oklch(0.40 0.135 262)",
+          "oklch(0.51 0.135 262)",
+          "oklch(0.62 0.135 262)",
+          "oklch(0.73 0.135 262)",
+          "oklch(0.84 0.135 262)",
+          "oklch(0.95 0.135 262)"
+        ]
+      },
+      "alarm": {
+        "role": "semantic",
+        "displayName": "Alarm",
+        "canonical": "oklch(0.530 0.185 27)",
+        "tonalRamp": [
+          "oklch(0.18 0.185 27)",
+          "oklch(0.29 0.185 27)",
+          "oklch(0.40 0.185 27)",
+          "oklch(0.51 0.185 27)",
+          "oklch(0.62 0.185 27)",
+          "oklch(0.73 0.185 27)",
+          "oklch(0.84 0.185 27)",
+          "oklch(0.95 0.185 27)"
+        ]
+      },
+      "warn": {
+        "role": "semantic",
+        "displayName": "Amber",
+        "canonical": "oklch(0.58 0.13 68)",
+        "tonalRamp": [
+          "oklch(0.18 0.13 68)",
+          "oklch(0.29 0.13 68)",
+          "oklch(0.40 0.13 68)",
+          "oklch(0.51 0.13 68)",
+          "oklch(0.62 0.13 68)",
+          "oklch(0.73 0.13 68)",
+          "oklch(0.84 0.13 68)",
+          "oklch(0.95 0.13 68)"
+        ]
+      },
+      "ok": {
+        "role": "semantic",
+        "displayName": "Quiet Green",
+        "canonical": "oklch(0.50 0.06 155)",
+        "tonalRamp": [
+          "oklch(0.18 0.06 155)",
+          "oklch(0.29 0.06 155)",
+          "oklch(0.40 0.06 155)",
+          "oklch(0.51 0.06 155)",
+          "oklch(0.62 0.06 155)",
+          "oklch(0.73 0.06 155)",
+          "oklch(0.84 0.06 155)",
+          "oklch(0.95 0.06 155)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Page titles only. Fixed 1.5rem, not fluid." },
+      "headline": { "displayName": "Headline", "purpose": "Drawer titles and h2." },
+      "title": { "displayName": "Title", "purpose": "Section titles and h3." },
+      "body": { "displayName": "Body", "purpose": "UI copy at 13.5px. Becomes 14px below 820px." },
+      "label": { "displayName": "Label", "purpose": "Uppercase field names and table headers." },
+      "mono": { "displayName": "Mono", "purpose": "Ticket ids, counts, and keyboard hints." }
+    },
+    "shadows": [
+      {
+        "name": "drawer",
+        "value": "0 0 0 1px oklch(0.245 0.014 262 / 0.08), -18px 0 48px -12px oklch(0.245 0.014 262 / 0.18)",
+        "purpose": "Right-edge sheets such as the ticket drawer."
+      },
+      {
+        "name": "popover",
+        "value": "0 0 0 1px oklch(0.245 0.014 262 / 0.09), 0 10px 28px -10px oklch(0.245 0.014 262 / 0.30)",
+        "purpose": "Menus, dialogs, and toasts. Token name is --shadow-pop."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out-desk",
+        "value": "120ms ease-out",
+        "purpose": "Hover and color state on buttons, cards, and fields."
+      },
+      {
+        "name": "ease-out-drawer",
+        "value": "180ms cubic-bezier(0.22, 1, 0.36, 1)",
+        "purpose": "Drawer entrance. No bounce, no elastic."
+      }
+    ],
+    "breakpoints": [
+      { "name": "phone", "value": "560px" },
+      { "name": "sidebar-sheet", "value": "768px" },
+      { "name": "touch", "value": "820px" },
+      { "name": "form-stack", "value": "1160px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single filled action: new ticket, save, confirm.",
+      "html": "<button class=\"ds-btn-primary\">New ticket</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border-radius: 4px; border: 1px solid var(--sig, oklch(0.455 0.135 262)); background: var(--sig, oklch(0.455 0.135 262)); color: var(--sig-ink, oklch(0.988 0.003 85)); font: 500 0.8125rem/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: -0.011em; cursor: pointer; } .ds-btn-primary:hover { background: var(--sig-hi, oklch(0.395 0.145 262)); border-color: var(--sig-hi, oklch(0.395 0.145 262)); } .ds-btn-primary:focus-visible { outline: 2px solid var(--sig, oklch(0.455 0.135 262)); outline-offset: 2px; }"
+    },
+    {
+      "name": "Default Button",
+      "kind": "button",
+      "refersTo": "button-default",
+      "description": "Secondary actions on the desk: cancel, filter, toolbar.",
+      "html": "<button class=\"ds-btn\">Cancel</button>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; height: 30px; padding: 0 11px; border-radius: 4px; border: 1px solid var(--rule, oklch(0.892 0.006 85)); background: var(--panel, oklch(0.963 0.004 85)); color: var(--ink, oklch(0.245 0.014 262)); font: 500 0.8125rem/1 ui-sans-serif, system-ui, sans-serif; cursor: pointer; } .ds-btn:hover { background: var(--panel-2, oklch(0.938 0.005 85)); border-color: var(--ink-3, oklch(0.515 0.012 262)); } .ds-btn:focus-visible { outline: 2px solid var(--sig, oklch(0.455 0.135 262)); outline-offset: 2px; }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Toolbar and form fields. 16px type below the touch breakpoint.",
+      "html": "<label class=\"ds-field\"><span>Title</span><input class=\"ds-input\" placeholder=\"Short summary\" /></label>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 4px; font: 600 0.6875rem/1.25 ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.055em; text-transform: uppercase; color: var(--ink-3, oklch(0.515 0.012 262)); } .ds-input { height: 30px; padding: 0 9px; border: 1px solid var(--rule, oklch(0.892 0.006 85)); border-radius: 4px; background: var(--panel, oklch(0.963 0.004 85)); color: var(--ink, oklch(0.245 0.014 262)); font: 400 0.8125rem/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: -0.011em; text-transform: none; } .ds-input:focus { outline: none; border-color: var(--sig, oklch(0.455 0.135 262)); box-shadow: 0 0 0 3px var(--sig-wash, oklch(0.455 0.135 262 / 0.09)); }"
+    },
+    {
+      "name": "Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Priority and state stamps on cards and rows.",
+      "html": "<span class=\"ds-chip\">P2</span><span class=\"ds-chip ds-chip-late\">Late</span>",
+      "css": ".ds-chip { display: inline-flex; align-items: center; height: 18px; padding: 0 6px; margin-right: 4px; border-radius: 3px; border: 1px solid var(--rule, oklch(0.892 0.006 85)); background: var(--panel, oklch(0.963 0.004 85)); color: var(--ink-2, oklch(0.480 0.011 262)); font: 600 0.6875rem/1 ui-sans-serif, system-ui, sans-serif; } .ds-chip-late { color: var(--warn-hi, oklch(0.46 0.14 62)); border-color: var(--warn-line, oklch(0.58 0.13 68 / 0.42)); background: var(--warn-wash, oklch(0.58 0.13 68 / 0.12)); }"
+    },
+    {
+      "name": "Ticket Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Board card. Flat paper, hairline, mono id in Signal Blue.",
+      "html": "<button class=\"ds-card\"><span class=\"ds-card-id\">WEB-142</span><span class=\"ds-card-title\">Stage rail clips on a narrow drawer</span></button>",
+      "css": ".ds-card { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; width: 220px; text-align: left; padding: 10px 11px 9px; border: 1px solid var(--rule, oklch(0.892 0.006 85)); border-radius: 6px; background: var(--paper, oklch(0.988 0.003 85)); color: var(--ink, oklch(0.245 0.014 262)); cursor: pointer; } .ds-card:hover { background: var(--panel, oklch(0.963 0.004 85)); border-color: var(--ink-3, oklch(0.515 0.012 262)); } .ds-card:focus-visible { outline: 2px solid var(--sig, oklch(0.455 0.135 262)); outline-offset: 2px; } .ds-card-id { font: 600 0.75rem/1 ui-monospace, monospace; color: var(--sig, oklch(0.455 0.135 262)); letter-spacing: -0.02em; } .ds-card-title { font: 500 0.8125rem/1.35 ui-sans-serif, system-ui, sans-serif; }"
+    },
+    {
+      "name": "Pipeline Rail",
+      "kind": "custom",
+      "refersTo": "card",
+      "description": "Signature stage geometry. Current segment is Signal Blue. Lanes are gaps, not colors.",
+      "html": "<div class=\"ds-rail\" aria-hidden=\"true\"><i class=\"is-done\"></i><i class=\"is-done\"></i><i class=\"is-now\"></i><i></i><i></i></div>",
+      "css": ".ds-rail { display: flex; gap: 1px; width: 220px; height: 8px; } .ds-rail i { display: block; flex: 1; border-radius: 1px; background: var(--rule, oklch(0.892 0.006 85)); } .ds-rail .is-done { background: var(--sig-line, oklch(0.455 0.135 262 / 0.35)); } .ds-rail .is-now { background: var(--sig, oklch(0.455 0.135 262)); }"
+    },
+    {
+      "name": "Top Search",
+      "kind": "nav",
+      "refersTo": "input",
+      "description": "Top bar search. Shrinks with the bar; height follows the control token.",
+      "html": "<button class=\"ds-search\"><svg viewBox=\"0 0 16 16\" width=\"14\" height=\"14\" aria-hidden=\"true\"><circle cx=\"7\" cy=\"7\" r=\"4.25\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"></circle><path d=\"M10.2 10.2 L13 13\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\"></path></svg><span>Search tickets</span><kbd>/</kbd></button>",
+      "css": ".ds-search { display: inline-flex; align-items: center; gap: 7px; height: 30px; max-width: 280px; padding: 0 9px; border: 1px solid var(--rule, oklch(0.892 0.006 85)); border-radius: 4px; background: var(--panel, oklch(0.963 0.004 85)); color: var(--ink-3, oklch(0.515 0.012 262)); font: 400 0.8125rem/1 ui-sans-serif, system-ui, sans-serif; cursor: pointer; } .ds-search:hover { border-color: var(--ink-3, oklch(0.515 0.012 262)); } .ds-search:focus-visible { outline: 2px solid var(--sig, oklch(0.455 0.135 262)); outline-offset: 2px; } .ds-search kbd { font: 400 0.625rem/1 ui-monospace, monospace; border: 1px solid var(--rule, oklch(0.892 0.006 85)); border-radius: 3px; padding: 1px 4px; background: var(--paper, oklch(0.988 0.003 85)); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Desk Ledger",
+    "overview": "This is the interface of a delivery desk, not a campaign page. A lead scans ticket stage, ownership, and access on a laptop in ordinary daylight. The same desk stays usable after hours, so dark mode is the night shift of the same tokens, not a second product. Density is high because the work is a list, a board, and a drawer. Personality comes from the pipeline rail and from mono ticket ids, not from decoration.\n\nThe system rejects the generic tool look: big metric heroes, identical icon cards, gradient headlines, glass panels, and a second accent \"to add energy.\" Light paper is the ground. Signal blue is scarce. Rules are hairlines. Shadows appear only when a surface lifts off the desk (drawer, popover, toast).",
+    "keyCharacteristics": [
+      "Warm paper surfaces, ink text, one blue signal",
+      "Pipeline rail as the signature: filled segments, gaps between lanes, no extra hues",
+      "System sans at 13.5px; mono only for ids, counts, and keys",
+      "4px control corners, 6px cards and drawers",
+      "Flat at rest; `--shadow-pop` and `--shadow-drawer` only when a layer actually floats",
+      "Touch density starts at 820px: control height becomes 44px, inputs become 16px"
+    ],
+    "rules": [
+      {
+        "name": "The One Signal Rule",
+        "body": "Signal blue marks the current stage, the primary button, links, and the keyboard focus ring. It is not a background for sections, not a sidebar wash, and not a gradient.",
+        "section": "colors"
+      },
+      {
+        "name": "The Paper Ground Rule",
+        "body": "Light is the default scene. Dark mode is the same ledger after hours: every color is a redefinition of an existing token. A hardcoded hex that ignores data-theme is a defect.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Family Rule",
+        "body": "Headings, buttons, labels, and body share the system sans. Mono is for identifiers and numbers. A display serif or a second sans is prohibited in the product UI.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Desk Rule",
+        "body": "Resting surfaces have no drop shadow. If a shadow shows on a card, a list row, or a form section, it is wrong. Motion that lifts a control (translate, scale, elastic) is also wrong; state changes use color and border in 120 to 180ms ease-out.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do theme through the tokens in frontend/app/design-system.css (--paper, --ink, --sig, --alarm, --warn, --ok, and their washes). Dark mode only redefines those variables.",
+      "Do keep Signal Blue on the current stage, the primary button, links, and the focus ring.",
+      "Do use the pipeline rail (filled segments, 1px gaps) when showing stage. Do not replace it with a row of colored dots.",
+      "Do use --ctl-h for side-by-side controls, 44px at the 820px breakpoint, and 16px input text there so mobile Safari does not zoom.",
+      "Do use --shadow-pop or --shadow-drawer when a layer floats. Resting cards stay flat.",
+      "Do give data tables a stacked or wrapping layout under 820px. The ticket list already does this. People, notification settings, analytics, and RBAC tables must follow."
+    ],
+    "donts": [
+      "Don't add a second brand accent, a purple gradient, or a neon dark theme. Night is the same ledger.",
+      "Don't use border-left or border-right thicker than 1px as a colored status stripe on toasts, QA items, list rows, or callouts.",
+      "Don't use gradient text (background-clip: text) for titles, metrics, or loading labels.",
+      "Don't use glass blur, hero metric blocks, or identical icon-card grids.",
+      "Don't introduce another button shape beside .btn. The shadcn Button must match .btn (30px, 4px radius, Signal Blue) or it should not ship on product screens.",
+      "Don't hardcode hex, #000, or #fff in components. UI QA status chips that use #fff4e5 / #e8f1ff / #e8f7ee break dark mode.",
+      "Don't reference var(--shadow). That token does not exist.",
+      "Don't use bounce or elastic easing. The assistant fab's cubic-bezier(0.34, 1.56, 0.64, 1) is the counterexample.",
+      "Don't put Ink Quiet on Panel Shade, or Amber (--warn) on Warm Paper as text. Both fail 4.5:1."
+    ]
+  }
+}

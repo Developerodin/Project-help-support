@@ -66,7 +66,9 @@ function TopBar() {
 
   const openSearch = useCallback(() => {
     if (pathname === '/tickets' || pathname.startsWith('/tickets?')) {
-      focusTicketSearch();
+      if (focusTicketSearch()) return;
+      // The filters are still loading; they consume this flag on mount.
+      try { sessionStorage.setItem(FOCUS_TICKET_SEARCH_KEY, '1'); } catch { /* ignore */ }
       return;
     }
     try { sessionStorage.setItem(FOCUS_TICKET_SEARCH_KEY, '1'); } catch { /* ignore */ }
@@ -101,7 +103,7 @@ function TopBar() {
       <button type="button" className="search" onClick={openSearch} aria-label="Search tickets">
         <Icon name="search" size={14} />
         <span className="q q-long">{searchHint}</span>
-        <span className="q q-short">Search tickets</span>
+        <span className="q q-short">Search<span className="q-tail"> tickets</span></span>
         <kbd>/</kbd>
       </button>
       <span className="spacer" />

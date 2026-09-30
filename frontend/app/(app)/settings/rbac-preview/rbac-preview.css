@@ -124,7 +124,6 @@
   min-height: 2.75rem;
   padding: 0.55rem 0.55rem 0.55rem 0.65rem;
   border-radius: var(--r);
-  border-left: 3px solid color-mix(in oklch, oklch(0.55 0.12 var(--domain-hue, 262deg)) 55%, var(--rule));
   font-size: 0.8125rem;
   font-weight: 500;
   color: var(--ink-2);
@@ -231,7 +230,7 @@
 }
 
 .rbac-matrix__family--internal {
-  border-right: 2px solid color-mix(in oklch, var(--sig) 35%, var(--rule));
+  border-right: 1px solid var(--sig-line);
 }
 
 .rbac-matrix__family--external {
@@ -784,17 +783,16 @@
   border: 1px solid var(--rule);
   border-radius: var(--r-md);
   background: var(--panel);
-  border-left: 3px solid var(--ink-3);
   box-shadow: inset 0 1px 0 color-mix(in oklch, var(--panel-2) 65%, transparent);
 }
 
 .rbac-override-row.is-allow {
-  border-left-color: var(--sig);
+  border-color: var(--sig-line);
   background: color-mix(in oklch, var(--sig) 5%, var(--panel));
 }
 
 .rbac-override-row.is-deny {
-  border-left-color: color-mix(in oklch, var(--alarm) 70%, var(--ink));
+  border-color: color-mix(in oklch, var(--alarm) 35%, var(--rule));
   background: color-mix(in oklch, var(--alarm) 5%, var(--panel));
 }
 

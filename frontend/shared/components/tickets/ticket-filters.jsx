@@ -5,6 +5,7 @@ import { STAGES, PRIORITIES, CATEGORIES, SEVERITIES, TICKET_SEARCH_MAX_LENGTH } 
 import {
   FOCUS_TICKET_SEARCH_KEY,
   TICKET_SEARCH_INPUT_ID,
+  TICKET_SEARCH_MOBILE_INPUT_ID,
   focusTicketSearch,
 } from '@/shared/lib/ticket-search-focus.js';
 
@@ -41,28 +42,30 @@ export default function TicketFilters({
   const ownerSelectValue = filters.assignedTo || '';
   const ownerInList = !ownerSelectValue || ownerOptions.some((p) => p.id === ownerSelectValue);
 
+  const searchField = (
+    <div className="ticket-filters__search-wrap">
+      <input
+        ref={searchRef}
+        id={TICKET_SEARCH_INPUT_ID}
+        className="filterin"
+        type="search"
+        aria-label="Filter tickets"
+        aria-describedby={searchNoOpHint ? 'ticket-search-hint' : undefined}
+        placeholder="Filter by number, title or module"
+        maxLength={TICKET_SEARCH_MAX_LENGTH}
+        value={searchValue ?? filters.q ?? ''}
+        onChange={(event) => onSearchChange(event.target.value)}
+      />
+      {searchNoOpHint ? (
+        <p id="ticket-search-hint" className="ticket-filters__hint" role="status">
+          Add at least two letters or a ticket number — punctuation alone is ignored.
+        </p>
+      ) : null}
+    </div>
+  );
+
   const controls = (
     <>
-      <div className="ticket-filters__search-wrap">
-        <input
-          ref={searchRef}
-          id={TICKET_SEARCH_INPUT_ID}
-          className="filterin"
-          type="search"
-          aria-label="Filter tickets"
-          aria-describedby={searchNoOpHint ? 'ticket-search-hint' : undefined}
-          placeholder="Filter by number, title or module"
-          maxLength={TICKET_SEARCH_MAX_LENGTH}
-          value={searchValue ?? filters.q ?? ''}
-          onChange={(event) => onSearchChange(event.target.value)}
-        />
-        {searchNoOpHint ? (
-          <p id="ticket-search-hint" className="ticket-filters__hint" role="status">
-            Add at least two letters or a ticket number — punctuation alone is ignored.
-          </p>
-        ) : null}
-      </div>
-
       <select aria-label="Stage" value={filters.status || ''} onChange={set('status')}>
         <option value="">Any stage</option>
         {STAGES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
@@ -155,6 +158,7 @@ export default function TicketFilters({
   return (
     <div className="ticket-filters">
       <div className="toolbar ticket-filters__bar ticket-filters__bar--desktop">
+        {searchField}
         {controls}
       </div>
 
@@ -162,6 +166,7 @@ export default function TicketFilters({
         <div className="toolbar ticket-filters__bar ticket-filters__bar--mobile-head">
           <div className="ticket-filters__search-wrap ticket-filters__search-wrap--grow">
             <input
+              id={TICKET_SEARCH_MOBILE_INPUT_ID}
               className="filterin"
               type="search"
               aria-label="Filter tickets on mobile"

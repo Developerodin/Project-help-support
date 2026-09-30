@@ -86,7 +86,7 @@ Backend tests use `mongodb-memory-server` — no external database needed. See
 - A constant, enum, or status value used by both apps belongs in `shared/`, imported via
   `@pms/shared`.
 - Check [`docs/UI_COMPONENTS.md`](./docs/UI_COMPONENTS.md) and
-  [`docs/DESIGN.md`](./docs/DESIGN.md) before adding new UI — reuse an existing component or
+  [`DESIGN.md`](./DESIGN.md) before adding new UI — reuse an existing component or
   token before introducing one.
 - Read [`docs/PRODUCT_PRINCIPLES.md`](./docs/PRODUCT_PRINCIPLES.md) before modeling a new
   entity or access rule — the target shape (Organization → Client → Project → Team →
