@@ -439,7 +439,25 @@ export default function TeamsPage() {
           ) : null}
 
           <div aria-busy={listRefreshing || undefined}>
-            {teams.length === 0 && !listRefreshing ? (
+            {teams.length === 0 && !listRefreshing && (urlSearch || scope !== 'all') ? (
+              // Filters matched nothing: "No teams yet" would be wrong when teams exist.
+              <div className="empty-state">
+                <h3>No teams match</h3>
+                <p>Nothing here fits that search and scope.</p>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    setSearchInput('');
+                    writeTeamsSearch({
+                      search: '', page: 1, limit, scope: 'all', status,
+                    });
+                  }}
+                >
+                  Clear filters
+                </button>
+              </div>
+            ) : teams.length === 0 && !listRefreshing ? (
               <div className="empty-state">
                 <h3>{status === 'archived' ? 'No archived teams' : 'No teams yet'}</h3>
                 <p>
