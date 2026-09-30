@@ -142,7 +142,8 @@ export function getValidationDialogForTransitionError(error, ticket) {
   const items = Object.keys(fieldErrors).map((key) => FIELD_LABELS[key] || key);
   if (!items.length) return null;
 
-  const firstFieldId = fieldErrors.estimatedResolutionAt
+  // Presence, not truthiness: ESTIMATES_REQUIRED marks missing fields with ''.
+  const firstFieldId = 'estimatedResolutionAt' in fieldErrors
     ? 'estimatedResolutionAt'
     : 'expectedReleaseDate';
 
@@ -160,7 +161,7 @@ export function getValidationDialogForTransitionError(error, ticket) {
       title: 'Invalid dates',
       message: 'Expected release cannot be before resolution estimate.',
       items,
-      firstFieldId: fieldErrors.expectedReleaseDate ? 'expectedReleaseDate' : firstFieldId,
+      firstFieldId: 'expectedReleaseDate' in fieldErrors ? 'expectedReleaseDate' : firstFieldId,
     };
   }
 
