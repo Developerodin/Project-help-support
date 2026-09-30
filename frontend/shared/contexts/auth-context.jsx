@@ -2,7 +2,9 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiFetch, isTransientApiError, setAccessToken, setSessionLostHandler } from '../api/client.js';
+import {
+  apiFetch, isSessionInvalidError, isTransientApiError, setAccessToken, setSessionLostHandler,
+} from '../api/client.js';
 import { clearAssistantChats } from '../lib/assistant-chat-storage.js';
 import { disablePushQuietly, syncPush, unsubscribePushInBrowser } from '../lib/push.js';
 import {
@@ -24,6 +26,15 @@ const nameOf = (person) => person?.name || person?.email || null;
 const BOOT_RETRY_DELAYS_MS = [400, 1000, 2500, 5000];
 
 /**
+ * When this page last signed in. Module-level, so it outlives the login page's
+ * provider into the app's, whose boot refresh then leans on the cookie that
+ * login just set: refused within this window, the browser didn't keep it
+ * (Safari's "Block all cookies", say), and signing in again would only loop.
+ */
+let signedInAt = 0;
+const COOKIE_CHECK_MS = 60_000;
+
+/**
  * Carries `user.role` and nothing else. No permissions array, no route
  * permission map. Role is used ONLY to hide or disable navigation — server
  * enforcement is what actually protects every route.
@@ -34,6 +45,7 @@ const BOOT_RETRY_DELAYS_MS = [400, 1000, 2500, 5000];
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [status, setStatus] = useState(AUTH_BOOTING);
+  const [cookiesBlocked, setCookiesBlocked] = useState(false);
   const [impersonation, setImpersonation] = useState(null);
   // What the app is in the middle of doing to the session, so a guard that
   // blocks on the way through can say "Impersonating Dev Chhugani…" instead of
@@ -111,6 +123,7 @@ export function AuthProvider({ children }) {
           setUser(null);
           setImpersonation(null);
           resetBrandingToNeutral();
+          setCookiesBlocked(isSessionInvalidError(error) && Date.now() - signedInAt < COOKIE_CHECK_MS);
           setStatus(AUTH_REQUIRED);
           return;
         }
@@ -127,6 +140,7 @@ export function AuthProvider({ children }) {
     const session = await apiFetch('/auth/login', { method: 'POST', body: { email, password } });
     setAccessToken(session.accessToken);
     applySession(session);
+    signedInAt = Date.now();
     setStatus(AUTHENTICATED);
     return session.user;
   }, [applySession]);
@@ -199,11 +213,11 @@ export function AuthProvider({ children }) {
 
   const value = useMemo(
     () => ({
-      user, loading, status, impersonation, effectiveBranding, login, logout, refreshUser,
+      user, loading, status, cookiesBlocked, impersonation, effectiveBranding, login, logout, refreshUser,
       startImpersonation, stopImpersonation, sessionNotice, clearSessionNotice,
     }),
     [
-      user, loading, status, impersonation, effectiveBranding, login, logout, refreshUser,
+      user, loading, status, cookiesBlocked, impersonation, effectiveBranding, login, logout, refreshUser,
       startImpersonation, stopImpersonation, sessionNotice, clearSessionNotice,
     ],
   );
