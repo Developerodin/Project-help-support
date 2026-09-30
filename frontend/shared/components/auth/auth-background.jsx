@@ -811,46 +811,75 @@ export default function AuthBackground() {
   useEffect(() => {
     if (typeof window.matchMedia !== 'function') return undefined;
 
+    // Must match the design-system.css breakpoint that hides .auth-panel--viz.
+    const wide = window.matchMedia('(min-width: 768px)');
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
-    if (reduced.matches) return undefined;
 
-    let cancelled = false;
-    let teardown = () => {};
+    let teardown = null;
+    let pending = false;
+    // Bumped on every stop, so an import that resolves after the gate closed is dropped.
+    let generation = 0;
     let idleId = 0;
     let timeoutId = 0;
 
-    const boot = () => {
-      if (cancelled || !hostRef.current) return;
+    const clearScheduled = () => {
+      if (idleId) window.cancelIdleCallback(idleId);
+      if (timeoutId) window.clearTimeout(timeoutId);
+      idleId = 0;
+      timeoutId = 0;
+    };
+
+    const boot = (gen) => {
+      idleId = 0;
+      timeoutId = 0;
+      if (gen !== generation || !hostRef.current) return;
       Promise.all([import('three'), import('animejs')])
         .then(([THREE, animeMod]) => {
-          if (cancelled || !hostRef.current) return;
+          if (gen !== generation || !hostRef.current) return;
+          pending = false;
           const createTimeline = animeMod.createTimeline ?? animeMod.default?.createTimeline;
           if (typeof createTimeline !== 'function') return;
           teardown = initProjectFlow(hostRef.current, THREE, createTimeline);
         })
-        .catch(() => {});
+        .catch(() => {
+          if (gen === generation) pending = false;
+        });
     };
 
-    if (typeof window.requestIdleCallback === 'function') {
-      idleId = window.requestIdleCallback(boot, { timeout: 2200 });
-    } else {
-      timeoutId = window.setTimeout(boot, 120);
-    }
-
-    const onReduced = (event) => {
-      if (event.matches) {
-        cancelled = true;
-        teardown();
+    const start = () => {
+      if (teardown || pending) return;
+      pending = true;
+      const gen = generation;
+      if (typeof window.requestIdleCallback === 'function') {
+        idleId = window.requestIdleCallback(() => boot(gen), { timeout: 2200 });
+      } else {
+        timeoutId = window.setTimeout(() => boot(gen), 120);
       }
     };
-    reduced.addEventListener('change', onReduced);
+
+    const stop = () => {
+      generation += 1;
+      pending = false;
+      clearScheduled();
+      if (teardown) {
+        teardown();
+        teardown = null;
+      }
+    };
+
+    const sync = () => {
+      if (wide.matches && !reduced.matches) start();
+      else stop();
+    };
+
+    sync();
+    wide.addEventListener('change', sync);
+    reduced.addEventListener('change', sync);
 
     return () => {
-      cancelled = true;
-      if (idleId) window.cancelIdleCallback(idleId);
-      if (timeoutId) window.clearTimeout(timeoutId);
-      reduced.removeEventListener('change', onReduced);
-      teardown();
+      wide.removeEventListener('change', sync);
+      reduced.removeEventListener('change', sync);
+      stop();
     };
   }, []);
 
