@@ -7,6 +7,24 @@ import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import { formatBrandDisplayName } from '@/shared/lib/branding.js';
 import { loginHref, locationFromRoute } from '@/shared/lib/login-redirect.js';
 
+/**
+ * Where this browser keeps the switch, from its user agent. Order matters: Edge
+ * and Chrome both say "Safari", Edge also says "Chrome", and every iPhone
+ * browser is WebKit, so only a plain Safari UA gets the Safari steps.
+ * ponytail: UA sniffing, fine for a hint; a wrong guess still reads as advice.
+ */
+export function cookieHint(ua = '') {
+  if (/Edg\//.test(ua)) return 'In Edge: Settings → Cookies and site permissions → Manage and delete cookies and site data, then allow this site.';
+  if (/Firefox\//.test(ua)) return 'In Firefox: Settings → Privacy & Security → Cookies and Site Data → Manage Exceptions, then allow this site.';
+  if (/Chrome\//.test(ua)) return 'In Chrome: Settings → Privacy and security → Site settings → On-device site data, then allow this site (remove it from “Not allowed”).';
+  if (/Safari\//.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua)) {
+    return /iPhone|iPad|iPod/.test(ua)
+      ? 'On iPhone or iPad: Settings app → Safari → turn off “Block All Cookies”.'
+      : 'In Safari: Settings → Privacy → turn off “Block all cookies”.';
+  }
+  return 'Check this browser’s privacy settings and allow cookies for this site.';
+}
+
 export default function AuthRequiredScreen() {
   const { effectiveBranding, cookiesBlocked } = useAuth();
   const pathname = usePathname();
@@ -26,7 +44,7 @@ export default function AuthRequiredScreen() {
               Allow cookies, then sign in again.
             </p>
             <p className="auth-gate-copy">
-              In Safari: Settings → Privacy → turn off “Block all cookies”.
+              {cookieHint(typeof navigator === 'undefined' ? '' : navigator.userAgent)}
             </p>
           </>
         ) : (
