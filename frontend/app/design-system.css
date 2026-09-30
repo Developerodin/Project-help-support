@@ -2994,10 +2994,27 @@ a.button3{ display:block; text-align:center; text-decoration:none; cursor:pointe
    themes: white on --alarm is about 3.9:1 in light and worse in dark. The red
    marks the error without being the thing you have to read. */
 .toast--error{ border-left:3px solid var(--alarm); padding-left:9px; }
-.toast-msg{ flex:1; min-width:0; overflow-wrap:anywhere; }
-.toast-action,
-.toast button{ color:var(--paper); font-weight:600; text-decoration:underline; text-underline-offset:2px; white-space:nowrap; }
-.toast-action{ padding:0 6px; }
+.toast-msg{ flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; overflow-wrap:anywhere; }
+.toast-lead{ font-weight:600; }
+/* The quieter second line: ticket stamp, then its title cut to one line.
+   Paper at 0.72 on --ink stays above 7:1 in both themes. */
+.toast-sub{ display:flex; align-items:baseline; gap:7px; min-width:0; color:oklch(from var(--paper) l c h / 0.72); font-weight:400; }
+.toast-tag{ flex:none; font-family:var(--mono); font-size:0.75rem; font-weight:600; letter-spacing:-0.02em; color:var(--paper); }
+.toast-detail{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.toast button{ color:var(--paper); font-weight:600; white-space:nowrap; cursor:pointer; }
+/* A real control on the ink surface, not an underlined word: a paper-tinted
+   fill that firms up on hover, the same 4px corner as every .btn. */
+.toast .toast-action{
+  flex:none; height:26px; padding:0 10px; border-radius:var(--r);
+  background:oklch(from var(--paper) l c h / 0.12);
+  box-shadow:inset 0 0 0 1px oklch(from var(--paper) l c h / 0.22);
+  transition:background 120ms ease-out;
+}
+.toast .toast-action:hover{ background:oklch(from var(--paper) l c h / 0.22); }
+.toast button:focus-visible{ outline:2px solid var(--paper); outline-offset:2px; }
+@media (max-width:820px){
+  .toast .toast-action{ height:var(--ctl-h); padding:0 14px; }
+}
 /* --ctl-h is the app's control size: 30px here, 44px at the touch breakpoint. */
 .toast .toast-close{
   flex:none; display:flex; align-items:center; justify-content:center;

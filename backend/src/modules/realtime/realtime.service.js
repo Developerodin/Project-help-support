@@ -52,6 +52,7 @@ export function publishTicketCommentRealtime(ticket, actor) {
   const payload = {
     type: 'ticket.comment',
     ticketId: ticket.ticketId,
+    title: ticket.title ?? null,
     projectId,
     actorName: actor?.name ?? null,
   };
