@@ -1,5 +1,5 @@
 import { ADMIN_ROLES, ROLE_IDS, ROLE_LABELS } from './enums.js';
-import { can, isExternalUser, hasAnyRole } from './permissions.js';
+import { isExternalUser, hasAnyRole } from './permissions.js';
 import {
   canExternalCloseReopen,
   isPureExternalActor,

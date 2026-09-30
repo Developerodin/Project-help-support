@@ -18,11 +18,14 @@ export function generateAccessToken(user, config, opts = {}) {
     roles,
   };
   if (opts.impersonatedBy) payload.impersonatedBy = opts.impersonatedBy.toString();
-  return jwt.sign(payload, config.jwt.secret, { expiresIn: `${config.jwt.accessExpirationMinutes}m` });
+  return jwt.sign(payload, config.jwt.secret, {
+    algorithm: 'HS256', expiresIn: `${config.jwt.accessExpirationMinutes}m`,
+  });
 }
 
 export function verifyAccessToken(token, config) {
-  return jwt.verify(token, config.jwt.secret);
+  // Pinned to what sign uses, so a token can't pick its own algorithm.
+  return jwt.verify(token, config.jwt.secret, { algorithms: ['HS256'] });
 }
 
 export async function issueRefreshToken(user, config, meta = {}) {
@@ -52,6 +55,13 @@ export async function issueRefreshToken(user, config, meta = {}) {
   return { raw, expiresAt };
 }
 
+const CONCURRENT_REFRESH_GRACE_MS = 10_000;
+// Another tab rotated this token a moment ago; the browser already holds the
+// new cookie, so this is the one 401 worth retrying.
+const rotatedElsewhere = () => new ApiError(
+  401, 'REFRESH_TOKEN_ROTATED', 'Refresh token was just rotated; retry',
+);
+
 const invalid = () => new ApiError(
   401, 'INVALID_REFRESH_TOKEN', 'Refresh token is invalid or expired',
 );
@@ -69,6 +79,12 @@ export async function rotateRefreshToken(presentedRaw, config, meta = {}) {
   const replayed = await User.findOne({ 'consumedRefreshTokens.tokenHash': tokenHash })
     .select('+consumedRefreshTokens');
   if (replayed) {
+    // Two tabs share one cookie and can refresh together; the one that lost by
+    // a few seconds is not a thief. It gets a 401 and retries with the new cookie.
+    const spent = replayed.consumedRefreshTokens.find((t) => t.tokenHash === tokenHash);
+    if (Date.now() - new Date(spent?.consumedAt ?? 0).getTime() <= CONCURRENT_REFRESH_GRACE_MS) {
+      throw rotatedElsewhere();
+    }
     await revokeAllRefreshTokens(replayed._id);
     throw invalid();
   }
@@ -85,8 +101,11 @@ export async function rotateRefreshToken(presentedRaw, config, meta = {}) {
 
   if (user.status !== 'active') throw invalid();
 
-  await User.updateOne(
-    { _id: user._id },
+  // Conditional on the token still being there: two concurrent refreshes with
+  // the same token both pass the reads above, but only one can consume it. The
+  // loser is a replay and gets the same treatment as one.
+  const consumed = await User.updateOne(
+    { _id: user._id, 'refreshTokens.tokenHash': tokenHash },
     {
       $pull: { refreshTokens: { tokenHash } },
       $push: {
@@ -97,6 +116,8 @@ export async function rotateRefreshToken(presentedRaw, config, meta = {}) {
       },
     },
   );
+  // Lost the race to a concurrent refresh of the same token (see the grace above).
+  if (consumed.modifiedCount !== 1) throw rotatedElsewhere();
 
   const issued = await issueRefreshToken(user, config, {
     ...meta,

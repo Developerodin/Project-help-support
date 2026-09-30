@@ -1,4 +1,5 @@
 import catchAsync from '../../platform/catchAsync.js';
+import logger from '../../platform/logger.js';
 import { ApiError } from '../../platform/errors.js';
 import { resolveEffectiveBrandingForUser } from '../../platform/branding.js';
 import User from '../users/user.model.js';
@@ -99,7 +100,11 @@ export const acceptInvite = catchAsync(async (req, res) => {
 export const forgotPassword = (deliver) => catchAsync(async (req, res) => {
   const result = await authService.requestPasswordReset(req.body.email);
   if (result && deliver) {
-    await deliver(result, { throwOnError: false, requestId: req.id });
+    // Not awaited: waiting on SMTP only when the account exists would make the
+    // response time the oracle instead.
+    Promise.resolve()
+      .then(() => deliver(result, { throwOnError: false, requestId: req.id }))
+      .catch((err) => logger.error('Password reset delivery failed', { requestId: req.id, error: err.message }));
   }
   res.status(200).json({ message: 'If that email is registered, a reset link has been sent.' });
 });

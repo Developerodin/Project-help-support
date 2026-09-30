@@ -248,6 +248,11 @@ export async function createProject(actor, body, permissionContext = null, audit
   return attachTeamContext(populated.toJSON());
 }
 
+const PROJECT_SORTABLE = Object.freeze(['key', 'name', 'brand', 'status', 'createdAt', 'updatedAt']);
+const PROJECT_LIST_EXCLUDE = ['modules', 'modules.pages', 'modules.pages.screens']
+  .flatMap((path) => ['comments', 'attachments', 'qaStatusHistory'].map((field) => `-${path}.${field}`))
+  .join(' ');
+
 export async function listProjects(query = {}, actor = null, permissionContext = null) {
   if (actor) await assertCanViewProjects(actor, permissionContext);
 
@@ -298,6 +303,10 @@ export async function listProjects(query = {}, actor = null, permissionContext =
     page: query.page,
     limit: query.limit,
     sortBy: query.sortBy || 'key:asc',
+    sortable: PROJECT_SORTABLE,
+    // The ticket form and module view read module/page/screen names off the
+    // list; the UI-QA threads under them come from the UI-QA endpoint only.
+    select: PROJECT_LIST_EXCLUDE,
     populate: ['team', 'client'],
   });
   const results = await attachTeamContextBatch(page.results.map((p) => p.toJSON()));
@@ -392,7 +401,7 @@ export async function getProjectTeamMembers(id, actor = null, permissionContext 
 }
 
 export async function replaceModules(id, modules, actor = null, permissionContext = null) {
-  const existing = await Project.findById(id).select('client modules');
+  const existing = await Project.findById(id).select('client modules __v');
   if (!existing) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
   if (actor) {
     await assertScopedPermissionWhenConstrained(
@@ -405,10 +414,17 @@ export async function replaceModules(id, modules, actor = null, permissionContex
 
   const mergedModules = mergeModuleQaData(existing.modules || [], modules);
 
-  const project = await Project.findByIdAndUpdate(
-    id, { $set: { modules: mergedModules } }, { new: true, runValidators: true },
+  // Conditional on the version the merge read: a UI-QA comment or attachment
+  // saved in between would otherwise be overwritten by this stale tree.
+  const project = await Project.findOneAndUpdate(
+    { _id: id, __v: existing.__v ?? { $exists: false } },
+    { $set: { modules: mergedModules }, $inc: { __v: 1 } },
+    { new: true, runValidators: true },
   );
-  if (!project) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
+  if (!project) {
+    if (!(await Project.exists({ _id: id }))) throw new ApiError(404, 'PROJECT_NOT_FOUND', 'Project not found');
+    throw new ApiError(409, 'CONFLICT', 'This record was changed by someone else. Reload and try again');
+  }
   return project.toJSON();
 }
 

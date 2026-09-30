@@ -177,6 +177,14 @@ ticketSchema.index({ team: 1, status: 1 });
 ticketSchema.index({ createdBy: 1 });
 ticketSchema.index({ createdAt: -1 });
 ticketSchema.index({ module: 1 });
+// Non-admin list visibility $or (ticket.service.js ticketVisibilityOr) — each
+// branch needs its own index or the whole $or falls back to a collection scan.
+ticketSchema.index({ testedBy: 1 });
+ticketSchema.index({ watchers: 1 });
+// deleteTicket $pulls links to the deleted ticket from the rest.
+ticketSchema.index({ 'links.ticket': 1 });
+// Unused since search moved to regex (no $text query remains). Dropping it from
+// the schema would not drop it in prod; remove both together by hand.
 ticketSchema.index({ title: 'text', description: 'text' });
 
 ticketSchema.plugin(toJSON);

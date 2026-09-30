@@ -18,9 +18,42 @@ export class ApiError extends Error {
   }
 }
 
-/** Anything that is not an ApiError becomes a non-operational 500. */
+/**
+ * Known library errors that are the client's doing (or a lost race) map to a
+ * 4xx. Matched by name/code rather than instanceof so this module needs neither
+ * mongoose nor multer. Messages are fixed: raw ones can name collections/paths.
+ */
+function convertKnown(err) {
+  if (err.code === 11000 || err.code === 11001) {
+    return new ApiError(409, 'CONFLICT', 'That record already exists');
+  }
+  if (err.name === 'VersionError') {
+    return new ApiError(409, 'CONFLICT', 'This record was changed by someone else. Reload and try again');
+  }
+  if (err.name === 'ValidationError' && err.errors && typeof err.errors === 'object') {
+    const fields = Object.fromEntries(
+      Object.entries(err.errors).map(([path, e]) => [path, e?.kind === 'required' ? `${path} is required` : 'Invalid value']),
+    );
+    return new ApiError(400, 'VALIDATION_ERROR', 'Validation failed', fields);
+  }
+  if (err.name === 'CastError') {
+    return new ApiError(400, 'VALIDATION_ERROR', err.path ? `Invalid ${err.path}` : 'Invalid value');
+  }
+  if (err.name === 'MulterError') {
+    if (err.code === 'LIMIT_FILE_SIZE') return new ApiError(413, 'FILE_TOO_LARGE', 'File is too large');
+    return new ApiError(400, 'UPLOAD_ERROR', err.message || 'Upload rejected');
+  }
+  return null;
+}
+
+/** Anything that is not an ApiError or a known client error becomes a non-operational 500. */
 export function errorConverter(err, req, res, next) {
   if (err instanceof ApiError) return next(err);
+  const known = convertKnown(err);
+  if (known) {
+    known.stack = err.stack;
+    return next(known);
+  }
   const converted = new ApiError(500, 'INTERNAL_ERROR', err.message || 'Internal server error');
   converted.isOperational = false;
   converted.stack = err.stack;

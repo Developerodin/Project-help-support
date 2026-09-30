@@ -1,8 +1,8 @@
 import './platform/loadEnv.js';
 import { readFileSync } from 'node:fs';
 import https from 'node:https';
-import { loadConfig } from './platform/config.js';
-import { connectDb } from './platform/db.js';
+import { assertNodeEnvSet, loadConfig } from './platform/config.js';
+import { connectDb, disconnectDb } from './platform/db.js';
 import { createApp } from './app.js';
 import { seedAdmin, seedProjects, runLegacyMigrations } from './seed.js';
 import User from './modules/users/user.model.js';
@@ -18,6 +18,7 @@ import {
   scheduleEmailBatchFlush,
   scheduleNotificationOutboxReplay,
 } from './modules/notifications/retry.runtime.js';
+import { closeAll as closeRealtimeStreams } from './modules/realtime/realtime-hub.js';
 
 const AUDIT_REPLAY_INTERVAL_MS = 5 * 60 * 1000;
 const AUDIT_REPLAY_LIMIT = 50;
@@ -74,7 +75,9 @@ function scheduleAuditOutboxReplay() {
   return () => clearInterval(handle);
 }
 
-function registerShutdown(stopFns) {
+const SHUTDOWN_TIMEOUT_MS = 10_000;
+
+function registerShutdown(stopFns, server) {
   const runStop = () => {
     for (const stop of stopFns) {
       try {
@@ -84,12 +87,82 @@ function registerShutdown(stopFns) {
       }
     }
   };
-  process.once('SIGINT', runStop);
-  process.once('SIGTERM', runStop);
+
+  let shuttingDown = false;
+  const shutdown = async (signal) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logger.info('runtime.shutdown_started', { signal });
+    // Past this, something is holding the process open; exit anyway.
+    setTimeout(() => {
+      logger.error('runtime.shutdown_timed_out', { timeoutMs: SHUTDOWN_TIMEOUT_MS });
+      process.exit(1);
+    }, SHUTDOWN_TIMEOUT_MS).unref();
+
+    runStop();
+    try {
+      // server.close() waits for open connections, and SSE streams never end on
+      // their own, so end them first.
+      const closed = server ? new Promise((resolve) => server.close(() => resolve())) : Promise.resolve();
+      closeRealtimeStreams();
+      await closed;
+      await disconnectDb();
+      logger.info('runtime.shutdown_complete', { signal });
+      process.exit(0);
+    } catch (err) {
+      logger.error('runtime.shutdown_failed', { error: err.message, stack: err.stack });
+      process.exit(1);
+    }
+  };
+
+  process.once('SIGINT', () => shutdown('SIGINT'));
+  process.once('SIGTERM', () => shutdown('SIGTERM'));
   process.once('beforeExit', runStop);
 }
 
+// A promise nobody awaited, or a throw outside any handler, leaves the process
+// in an unknown state; log it and exit so the supervisor restarts a clean one.
+process.on('unhandledRejection', (reason) => {
+  logger.error('runtime.unhandled_rejection', {
+    error: reason instanceof Error ? reason.message : String(reason),
+    stack: reason instanceof Error ? reason.stack : undefined,
+  });
+  process.exit(1);
+});
+process.on('uncaughtException', (err) => {
+  logger.error('runtime.uncaught_exception', { error: err.message, stack: err.stack });
+  process.exit(1);
+});
+
+/**
+ * Seeds, legacy migrations, backfills and outbox replays all write to the
+ * database, so they run only where RUN_BACKGROUND_JOBS is on (production by
+ * default). A dev box pointed at a shared database leaves them to the server.
+ */
+async function runBootJobs(config) {
+  await backfillNotificationProjectsOnBoot();
+  await backfillNotificationActivityOnBoot();
+  await replayAuditOutboxOnBoot();
+  await replayNotificationOutboxOnBoot(config);
+  await seedAdmin(config);
+  // The oldest admin owns the seeded projects; createdBy is required on Project.
+  const seedActor = await User.findOne({ role: 'admin' }).sort({ createdAt: 1 });
+  if (seedActor) {
+    await seedProjects(seedActor);
+    await runLegacyMigrations(seedActor);
+  }
+}
+
+function scheduleBackgroundJobs(config) {
+  return [
+    scheduleAuditOutboxReplay(),
+    scheduleNotificationOutboxReplay(config),
+    scheduleEmailBatchFlush(config),
+  ];
+}
+
 async function start() {
+  assertNodeEnvSet(process.env);
   const config = loadConfig(process.env);
 
   if (!config.features.email) logger.warn('Email capability disabled — SMTP group not configured');
@@ -98,20 +171,15 @@ async function start() {
   if (!config.features.push) logger.warn('Push notifications disabled — VAPID keys not set');
 
   await connectDb(config.mongoUrl);
-  await backfillNotificationProjectsOnBoot();
-  await backfillNotificationActivityOnBoot();
-  await replayAuditOutboxOnBoot();
-  await replayNotificationOutboxOnBoot(config);
-  const stopAuditReplay = scheduleAuditOutboxReplay();
-  const stopNotificationReplay = scheduleNotificationOutboxReplay(config);
-  const stopEmailBatchFlush = scheduleEmailBatchFlush(config);
-  registerShutdown([stopAuditReplay, stopNotificationReplay, stopEmailBatchFlush]);
-  await seedAdmin(config);
-  // The oldest admin owns the seeded projects; createdBy is required on Project.
-  const seedActor = await User.findOne({ role: 'admin' }).sort({ createdAt: 1 });
-  if (seedActor) {
-    await seedProjects(seedActor);
-    await runLegacyMigrations(seedActor);
+  let stopFns = [];
+  if (config.runBackgroundJobs) {
+    await runBootJobs(config);
+    stopFns = scheduleBackgroundJobs(config);
+  } else {
+    logger.warn(
+      'Background jobs skipped (RUN_BACKGROUND_JOBS is off): no seeding, legacy migrations, '
+      + 'backfills, outbox replays, retry sweeps or email batch flush in this process',
+    );
   }
 
   const app = createApp(config, {
@@ -122,9 +190,11 @@ async function start() {
   const server = config.https
     ? https.createServer({ key: readFileSync(config.https.keyFile), cert: readFileSync(config.https.certFile) }, app)
     : app;
-  server.listen(config.port, () => {
+  // app.listen returns the http.Server; https.Server.listen returns itself.
+  const listener = server.listen(config.port, () => {
     logger.info(`API listening on ${config.https ? 'https' : 'http'} :${config.port} (${config.nodeEnv})`);
   });
+  registerShutdown(stopFns, listener);
 }
 
 start().catch((err) => {

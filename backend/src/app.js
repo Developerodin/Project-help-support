@@ -34,7 +34,8 @@ export function createApp(config, { deliverReset, deliverInvite } = {}) {
   // which is only true if this precedes auth, validation and routing.
   app.use(requestId);
 
-  app.set('trust proxy', true);
+  // One hop (nginx): req.ip is the address nginx saw, not a client-supplied X-Forwarded-For.
+  app.set('trust proxy', 1);
   app.use(helmet());
   app.use(cors({
     origin(origin, callback) {

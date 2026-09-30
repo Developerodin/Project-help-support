@@ -8,7 +8,8 @@ export default [
       sourceType: 'module',
     },
     rules: {
-      'no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      // Rest destructuring is how we drop a field from a copy, so its siblings are intentional.
+      'no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', ignoreRestSiblings: true }],
     },
   },
   // A missing import is a runtime ReferenceError, so no-undef is worth gating on

@@ -20,7 +20,7 @@ import {
 export { ticketSearchClause };
 import { canExternalViewTicket, buildExternalTicketFilter, sanitizeExternalTicket, assertExternalCanCreateTicket } from '../access/external-auth.service.js';
 import { ApiError } from '../../platform/errors.js';
-import { paginate } from '../../platform/paginate.js';
+import { paginate, parseSortBy } from '../../platform/paginate.js';
 import Project from '../projects/project.model.js';
 import { assertModuleAndPage } from '../projects/project.service.js';
 import {
@@ -29,6 +29,10 @@ import {
   findProjectMemberByRole,
 } from '../projects/project-team-member.service.js';
 import Notification from '../notifications/notification.model.js';
+import EmailLog from '../notifications/emailLog.model.js';
+import TicketMute from '../notifications/ticketMute.model.js';
+import TicketReadState from './ticket-read-state.model.js';
+import DeletedTicket from './deleted-ticket.model.js';
 import Team from '../teams/team.model.js';
 import { assertTeamUsable, assertActiveUsers } from '../teams/team.service.js';
 import {
@@ -49,6 +53,12 @@ import {
 } from './discussion-read.service.js';
 
 const EXTERNAL_ACCESS_ASSIGNMENT_PERMISSIONS = new Set(['tickets.view', 'tickets.create']);
+/** sortBy fields the list honours: the list columns (shared SORT_FIELD_MAP) plus the assistant's updatedAt. */
+const TICKET_SORTABLE = Object.freeze([
+  'ticketId', 'title', 'status', 'assignedTo', 'currentStageEnteredAt', 'estimatedResolutionAt',
+  'discussionUnreadCount', 'createdAt', 'updatedAt', 'priority', 'severity', 'category',
+  'expectedReleaseDate',
+]);
 const STAGE_SORT_BRANCHES = STAGE_KEYS.map((key, index) => ({
   case: { $eq: ['$status', key] },
   then: index,
@@ -442,7 +452,7 @@ function aggregateSortStages(sortBy, actor) {
           },
         },
       },
-      { $sort: { ticketSeq: direction, createdAt: -1 } },
+      { $sort: { ticketSeq: direction, createdAt: -1, _id: -1 } },
     ];
   }
   if (sortBy.startsWith('assignedTo:')) {
@@ -460,7 +470,7 @@ function aggregateSortStages(sortBy, actor) {
           _ownerName: { $ifNull: [{ $arrayElemAt: ['$_ownerDoc.name', 0] }, ''] },
         },
       },
-      { $sort: { _ownerName: direction, createdAt: -1 } },
+      { $sort: { _ownerName: direction, createdAt: -1, _id: -1 } },
     ];
   }
   if (sortBy.startsWith('currentStageEnteredAt:')) {
@@ -472,7 +482,7 @@ function aggregateSortStages(sortBy, actor) {
           },
         },
       },
-      { $sort: { effectiveStageEnteredAt: direction, createdAt: -1 } },
+      { $sort: { effectiveStageEnteredAt: direction, createdAt: -1, _id: -1 } },
     ];
   }
   if (sortBy.startsWith('status:')) {
@@ -487,7 +497,7 @@ function aggregateSortStages(sortBy, actor) {
           },
         },
       },
-      { $sort: { stageOrder: direction, createdAt: -1 } },
+      { $sort: { stageOrder: direction, createdAt: -1, _id: -1 } },
     ];
   }
   return null;
@@ -499,13 +509,7 @@ function aggregateSortStages(sortBy, actor) {
  * estimatedResolutionAt, ...) combined with the newReply filter spreads null.
  */
 function defaultAggregateSortStages(sortBy) {
-  const sort = {};
-  for (const part of String(sortBy || '').split(',')) {
-    const [field, direction] = part.split(':');
-    if (field?.trim()) sort[field.trim()] = direction?.trim() === 'desc' ? -1 : 1;
-  }
-  if (Object.keys(sort).length === 0) sort.createdAt = -1;
-  return [{ $sort: sort }];
+  return [{ $sort: parseSortBy(sortBy, TICKET_SORTABLE) }];
 }
 
 async function paginateTickets(model, filter, options = {}) {
@@ -515,7 +519,7 @@ async function paginateTickets(model, filter, options = {}) {
   const actor = options.actor;
 
   if (!sortStages && !newReplyOnly) {
-    return paginate(model, filter, options);
+    return paginate(model, filter, { ...options, sortable: TICKET_SORTABLE });
   }
 
   const page = Math.max(1, Number(options.page) || 1);
@@ -1029,7 +1033,17 @@ export async function deleteTicket(idOrKey, actor = null, permissionContext = nu
       permissionContext,
     );
   }
+  // Archive first: if this write fails, nothing is deleted and nothing is lost.
+  const archived = await DeletedTicket.create({
+    ticket: ticket._id,
+    ticketId: ticket.ticketId,
+    project: ticket.project?._id ?? ticket.project,
+    deletedBy: actor._id,
+    snapshot: ticket.toObject({ depopulate: true }),
+  });
   const { deletedCount } = await Ticket.deleteOne({ _id: ticket._id });
+  // Lost the race to a concurrent delete: that one archived it already.
+  if (!deletedCount) await DeletedTicket.deleteOne({ _id: archived._id });
   // Only the delete that actually removed the document records it, from the in-memory
   // snapshot: a failed or lost-race delete must not leave a permanent "deleted" row.
   if (deletedCount) {
@@ -1037,7 +1051,19 @@ export async function deleteTicket(idOrKey, actor = null, permissionContext = nu
   }
   // Bulk delete comes through here too. Rows would otherwise dangle, linking to
   // a ticket that no longer opens.
-  await Notification.deleteMany({ ticket: ticket._id });
+  await Promise.all([
+    Notification.deleteMany({ ticket: ticket._id }),
+    TicketReadState.deleteMany({ ticket: ticket._id }),
+    TicketMute.deleteMany({ ticket: ticket._id }),
+    // A batch still collecting events would otherwise mail about a ticket that
+    // is gone. Rows already pending/sending/sent are left to the sender, which
+    // skips a missing ticket.
+    EmailLog.updateMany(
+      { ticket: ticket._id, status: 'queued' },
+      { $set: { status: 'skipped', skippedAt: new Date(), error: 'Ticket deleted' } },
+    ),
+    Ticket.updateMany({ 'links.ticket': ticket._id }, { $pull: { links: { ticket: ticket._id } } }),
+  ]);
   return { id: String(ticket._id), ticketId: ticket.ticketId };
 }
 

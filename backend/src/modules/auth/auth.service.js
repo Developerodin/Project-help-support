@@ -272,6 +272,9 @@ export async function resetPassword(rawToken, newPassword) {
     .select('+inviteTokenHash +inviteTokenExpiresAt +password');
 
   if (!user) throw badInvite();
+  // Invited users activate through acceptInvite only; a deactivated or deleted
+  // account must not reactivate itself with a leftover token.
+  if (user.status !== 'active' || isAccountDeleted(user)) throw badInvite();
   if (!user.inviteTokenExpiresAt || user.inviteTokenExpiresAt.getTime() <= Date.now()) {
     throw badInvite();
   }

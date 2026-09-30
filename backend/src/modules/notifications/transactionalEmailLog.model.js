@@ -29,7 +29,8 @@ const transactionalEmailLogSchema = new mongoose.Schema(
 
 transactionalEmailLogSchema.index({ status: 1, lastAttemptAt: 1 });
 // Same retention as ticket mail: delivered rows go after 90 days; pending and
-// failed rows stay until someone looks at them.
+// failed rows stay until someone looks at them. text/html carry a live token
+// link, so email.service.js redacts them once a row is sent or out of attempts.
 transactionalEmailLogSchema.index(
   { sentAt: 1 },
   { expireAfterSeconds: 90 * 24 * 60 * 60, partialFilterExpression: { status: 'sent' } },

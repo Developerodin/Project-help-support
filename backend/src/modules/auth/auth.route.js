@@ -3,7 +3,7 @@ import { validate } from '../../platform/validate.js';
 import { auth, requireRole } from '../../platform/auth.js';
 import { sameOrigin } from '../../platform/sameOrigin.js';
 import {
-  loginLimiter, passwordResetLimiter, inviteAcceptLimiter, refreshLimiter,
+  loginLimiter, loginIpLimiter, passwordResetLimiter, inviteAcceptLimiter, refreshLimiter,
 } from '../../platform/rateLimit.js';
 import * as controller from './auth.controller.js';
 import {
@@ -21,7 +21,7 @@ export default function authRoutes(config, deliverReset) {
   const router = express.Router();
   const origin = sameOrigin(config);
 
-  router.post('/login', loginLimiter, validate(loginSchema), controller.login(config));
+  router.post('/login', loginIpLimiter, loginLimiter, validate(loginSchema), controller.login(config));
   router.post('/refresh', refreshLimiter, origin, controller.refresh(config));
   router.post('/logout', origin, controller.logout(config));
   router.get('/me', auth(config), controller.me(config));

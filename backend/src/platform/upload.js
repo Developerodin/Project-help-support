@@ -107,12 +107,57 @@ export function safeKey(userId, ext, { prefix = 'tickets' } = {}) {
  * mirrored in the S3 bucket policy — a limit that exists in one place is a
  * limit that gets bypassed.
  */
-export const uploadMiddleware = multer({
+export const MAX_CONCURRENT_UPLOADS = 4;
+let activeUploads = 0;
+
+/** Test-only: the live count of uploads being buffered. */
+export function activeUploadCount() {
+  return activeUploads;
+}
+
+/**
+ * Memory storage buffers a whole request in RAM, so two caps sit in front of
+ * multer: the declared request size (Content-Length) against MAX_REQUEST_BYTES,
+ * and how many uploads may buffer at once.
+ * ponytail: both caps are per process. Worst case in RAM is
+ * MAX_CONCURRENT_UPLOADS x MAX_REQUEST_BYTES (~400MB) per Node process; a
+ * chunked request with no Content-Length skips the size check and is bounded
+ * only by multer's per-file limits (10 x 25MB). Move to disk or direct-to-S3
+ * uploads if that ceiling is too high.
+ */
+export function limitUpload(inner, { maxRequestBytes = MAX_REQUEST_BYTES, maxConcurrent = MAX_CONCURRENT_UPLOADS } = {}) {
+  return function guardedUpload(req, res, next) {
+    const declared = Number(req.headers['content-length']);
+    if (Number.isFinite(declared) && declared > maxRequestBytes) {
+      return next(new ApiError(
+        413, 'REQUEST_TOO_LARGE',
+        `Uploads are limited to ${Math.round(maxRequestBytes / (1024 * 1024))} MB per request`,
+      ));
+    }
+    if (activeUploads >= maxConcurrent) {
+      res.setHeader('Retry-After', '5');
+      return next(new ApiError(503, 'UPLOADS_BUSY', 'Too many uploads right now. Try again in a moment'));
+    }
+    activeUploads += 1;
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      activeUploads -= 1;
+    };
+    // The buffers live until the handler responds, so hold the slot until then.
+    res.once('finish', release);
+    res.once('close', release);
+    return inner(req, res, next);
+  };
+}
+
+export const uploadMiddleware = limitUpload(multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_FILE_BYTES, files: 10, fieldSize: 1024 * 1024 },
-}).array('files', 10);
+}).array('files', 10));
 
-export const logoUploadMiddleware = multer({
+export const logoUploadMiddleware = limitUpload(multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_LOGO_BYTES, files: 1 },
-}).single('logo');
+}).single('logo'));

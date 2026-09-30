@@ -29,6 +29,12 @@ rbacAuditLogSchema.index({ createdAt: -1 });
 rbacAuditLogSchema.index({ category: 1, createdAt: -1 });
 rbacAuditLogSchema.index({ ticketId: 1, createdAt: -1 }, { partialFilterExpression: { ticketId: { $type: 'string' } } });
 rbacAuditLogSchema.index({ project: 1, createdAt: -1 }, { partialFilterExpression: { project: { $type: 'objectId' } } });
+// One log row per outbox row, so two replayers (or a replay after a crash) cannot
+// write the same event twice; the loser's E11000 is treated as already done.
+rbacAuditLogSchema.index(
+  { 'details.outboxId': 1 },
+  { unique: true, partialFilterExpression: { 'details.outboxId': { $type: 'string' } } },
+);
 
 rbacAuditLogSchema.plugin(toJSON);
 

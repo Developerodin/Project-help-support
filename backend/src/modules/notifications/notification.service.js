@@ -146,9 +146,10 @@ function isForYou(event, ticket, recipient) {
  * gets its own row. Returns every row touched, inserted or folded; a folded row
  * keeps its id, so push and the email batch still point at a real row.
  *
- * Two events for the same person and ticket landing at the same instant can
- * both miss and both insert, leaving two unread rows; the next update folds
- * into the newer one. Harmless, so there is no unique index to prevent it.
+ * Two upserts for the same person and ticket landing at the same instant can
+ * both miss and both insert (no unique index backs the fold key), leaving two
+ * unread rows; the next update folds into the newer one. Harmless, so there is
+ * no unique index to prevent it.
  */
 export async function createInAppNotifications(event, ticket, recipients, config, context = {}) {
   const link = buildNotificationLink(ticket, config, {
@@ -172,6 +173,8 @@ export async function createInAppNotifications(event, ticket, recipients, config
       };
       if (isForYou(event, ticket, r.user)) return { insert: { ...row, forYou: true } };
 
+      // One upsert, not find-then-insert: folds into the unread row, or creates
+      // it (user/ticket/readAt come from the filter, count starts at 1 via $inc).
       const folded = await Notification.findOneAndUpdate(
         // $ne, not false: rows written before the field existed have none.
         { user: row.user, ticket: row.ticket, readAt: null, forYou: { $ne: true } },
@@ -179,11 +182,12 @@ export async function createInAppNotifications(event, ticket, recipients, config
           $set: {
             event, title: row.title, body: row.body, link, project, activityAt,
           },
+          $setOnInsert: { forYou: false },
           $inc: { count: 1 },
         },
-        { new: true, sort: { activityAt: -1 } },
+        { new: true, sort: { activityAt: -1 }, upsert: true },
       );
-      return folded ? { folded } : { insert: row };
+      return { folded };
     }));
 
   const inserts = outcomes.filter((o) => o.insert).map((o) => o.insert);
@@ -269,6 +273,9 @@ async function notificationFilter(actor, {
 }
 
 const PROJECT_CHIP = { path: 'project', select: 'key name' };
+// The inbox reads the ticket's id, key and title (frontend notification-utils);
+// the full ticket would carry every comment and history entry on every row.
+const TICKET_CHIP = { path: 'ticket', select: 'ticketId title status project' };
 
 export async function listNotifications(actor, query = {}) {
   const filter = await notificationFilter(actor, {
@@ -281,7 +288,7 @@ export async function listNotifications(actor, query = {}) {
     page: query.page,
     limit: query.limit,
     sortBy: 'activityAt:desc,_id:desc',
-    populate: ['ticket', PROJECT_CHIP],
+    populate: [TICKET_CHIP, PROJECT_CHIP],
   });
   return {
     ...page,
@@ -291,7 +298,7 @@ export async function listNotifications(actor, query = {}) {
 
 export async function markRead(actor, id) {
   const notification = await Notification.findOne({ _id: id, user: actor._id })
-    .populate('ticket')
+    .populate(TICKET_CHIP)
     .populate(PROJECT_CHIP);
   if (!notification) {
     throw new ApiError(404, 'NOTIFICATION_NOT_FOUND', 'Notification not found');

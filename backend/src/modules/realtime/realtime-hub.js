@@ -19,6 +19,27 @@ export function clientCount() {
   return clients.size;
 }
 
+export function userClientCount(userId) {
+  const key = String(userId);
+  let count = 0;
+  for (const client of clients) {
+    if (client.userId === key) count += 1;
+  }
+  return count;
+}
+
+/** Shutdown: end every open stream so server.close() is not held open by them. */
+export function closeAll() {
+  for (const client of clients) {
+    try {
+      client.res.end();
+    } catch {
+      // Already torn down; nothing to end.
+    }
+  }
+  clients.clear();
+}
+
 /** Test-only: drop all subscribers between cases. */
 export function resetForTests() {
   clients.clear();

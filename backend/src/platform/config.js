@@ -234,6 +234,19 @@ function readTicketNotificationSink(env, isProduction) {
   return { enabled: true, to };
 }
 
+/**
+ * Real boot only (index.js). loadConfig itself still defaults to development so
+ * tests can build a config without it; a server must say which mode it is in,
+ * since production turns on secret checks, secure cookies and background jobs.
+ */
+export function assertNodeEnvSet(env = process.env) {
+  if (!present(env.NODE_ENV)) {
+    throw new Error(
+      'Config error: NODE_ENV is not set. Use NODE_ENV=production on servers, development locally.',
+    );
+  }
+}
+
 export function loadConfig(env = process.env) {
   env = normalizeEnv(env);
   const missing = REQUIRED.filter((k) => !present(env[k]));
@@ -267,6 +280,10 @@ export function loadConfig(env = process.env) {
   return {
     nodeEnv,
     isProduction,
+    // Seeds, legacy migrations, backfills, outbox replays and the retry/flush
+    // sweeps. On by default only in production so a dev box pointed at a shared
+    // database does not run them on every restart.
+    runBackgroundJobs: readBoolean(env, 'RUN_BACKGROUND_JOBS', isProduction),
     port: present(env.PORT) ? Number(env.PORT) : 4000,
     // Local https (scripts/dev-https-certs.sh), so LAN devices get the mic. Both paths or neither.
     // ponytail: production terminates TLS at nginx and leaves these unset.

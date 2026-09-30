@@ -8,7 +8,8 @@ import { defaultTimeZone } from '../notifications/delivery-schedule.js';
 
 export const MAX_REFRESH_TOKENS = 10;
 const MAX_CONSUMED_TOKENS = 50;
-const BCRYPT_ROUNDS = 10;
+// Existing cost-10 hashes still verify: bcrypt reads the cost from the stored hash.
+const BCRYPT_ROUNDS = 12;
 
 const refreshTokenSchema = new mongoose.Schema(
   {
@@ -146,6 +147,10 @@ const userSchema = new mongoose.Schema(
 );
 
 userSchema.plugin(toJSON);
+
+// Refresh rotation and replay detection look users up by token hash.
+userSchema.index({ 'refreshTokens.tokenHash': 1 }, { sparse: true });
+userSchema.index({ 'consumedRefreshTokens.tokenHash': 1 }, { sparse: true });
 
 userSchema.pre('save', async function normaliseAndHash(next) {
   if (this.roles?.length) {

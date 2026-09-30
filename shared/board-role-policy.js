@@ -4,7 +4,6 @@ import { userHasEffectivePermission } from './permission-resolution.js';
 import { MATRIX_ROLES } from './permission-resolution.js';
 import {
   STAGE_BY_KEY,
-  stageIndex,
   stageLabel,
   laneOf,
   REOPEN_TARGET,

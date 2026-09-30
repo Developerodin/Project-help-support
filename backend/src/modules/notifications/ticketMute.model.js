@@ -12,7 +12,7 @@ import toJSON from '../../platform/toJSON.plugin.js';
  * rows for its recipients in one indexed query. Following needs no row: it is
  * the ticket's existing `watchers` list.
  *
- * Rows for a deleted ticket are left behind; they match nothing and are tiny.
+ * Rows for a deleted ticket are removed when the ticket is deleted.
  */
 const ticketMuteSchema = new mongoose.Schema(
   {

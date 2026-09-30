@@ -162,7 +162,14 @@ export async function getUiQaProject(projectId, actor, permissionContext) {
   ensureModuleKeys(project.modules);
   if (JSON.stringify(project.modules) !== before) {
     project.markModified('modules');
-    await project.save();
+    try {
+      await project.save();
+    } catch (err) {
+      // A concurrent UI-QA write won the version; it saved keys too. A read
+      // must not 409, so return what is stored now.
+      if (!(err instanceof mongoose.Error.VersionError)) throw err;
+      return (await loadProjectForUiQa(projectId, actor, permissionContext)).toJSON();
+    }
   }
   return project.toJSON();
 }

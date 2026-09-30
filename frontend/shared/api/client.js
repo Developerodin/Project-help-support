@@ -158,13 +158,21 @@ async function rawFetch(path, { method = 'GET', body, formData, signal, redirect
 async function refreshSession() {
   if (!inFlightRefresh) {
     inFlightRefresh = (async () => {
-      const response = await rawFetch('/auth/refresh', { method: 'POST' });
-      if (response.ok) {
+      let response = await rawFetch('/auth/refresh', { method: 'POST' });
+      let error = response.ok ? null : await readError(response);
+      // Another tab rotated the shared cookie a moment before this request went
+      // out; the browser now holds the new one, so try once more. Any other 401
+      // (no cookie, signed out) is final.
+      if (error?.code === 'REFRESH_TOKEN_ROTATED') {
+        await new Promise((resolve) => { setTimeout(resolve, 300); });
+        response = await rawFetch('/auth/refresh', { method: 'POST' });
+        error = response.ok ? null : await readError(response);
+      }
+      if (!error) {
         const data = await response.json();
         setAccessToken(data.accessToken);
         return data;
       }
-      const error = await readError(response);
       if (isTransientApiError(error)) throw error;
       if (error.status === 401 || isSessionInvalidError(error)) return null;
       throw error;

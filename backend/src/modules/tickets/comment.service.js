@@ -1,7 +1,6 @@
 import { ADMIN_ROLES, hasAnyRole, isExternalUser } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import { assertActiveUsers } from '../teams/team.service.js';
-import { canExternalViewTicket } from '../access/external-auth.service.js';
 import Ticket from './ticket.model.js';
 import { resolveTicketDoc, assertCanViewTicket, assertCanEditTicket } from './ticket.service.js';
 import { recordTicketAudit } from './ticket-audit.js';
@@ -176,14 +175,14 @@ export async function deleteComment(actor, idOrKey, commentId, permissionContext
  * Two array filters keep it to single-document updates. A lost race here costs
  * one emoji, which is not worth a revision check.
  */
-export async function toggleReaction(actor, idOrKey, commentId, emoji) {
+export async function toggleReaction(actor, idOrKey, commentId, emoji, permissionContext = null) {
   const ticket = await resolveTicketDoc(idOrKey);
 
-  const external = isExternalUser(actor);
-  if (external && !(await canExternalViewTicket(actor, ticket))) {
-    throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this ticket');
-  }
+  // Same read-level guard as addComment, for every actor: reacting must not
+  // reach a ticket (or reveal a comment on it) the actor can't open.
+  await assertCanViewTicket(actor, ticket, permissionContext);
 
+  const external = isExternalUser(actor);
   const comment = findComment(ticket, commentId);
   if (external && comment.internal === true) {
     throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this ticket');

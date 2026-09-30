@@ -201,7 +201,7 @@ export function discussionUnreadSortStages(actor, direction = -1) {
   return [
     ...readStateLookupStages(actorId),
     unreadCountAddFields(actor),
-    { $sort: { discussionUnreadCount: direction, createdAt: -1 } },
+    { $sort: { discussionUnreadCount: direction, createdAt: -1, _id: -1 } },
   ];
 }
 

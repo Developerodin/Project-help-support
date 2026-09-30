@@ -1,4 +1,5 @@
 // backend/scripts/migrate-role-model-v2.js
+import mongoose from 'mongoose';
 import { ROLE_IDS } from '@pms/shared';
 import { connectDb, disconnectDb } from '../src/platform/db.js';
 import { loadConfig } from '../src/platform/config.js';
@@ -51,6 +52,7 @@ async function main() {
   const apply = process.argv.includes('--apply');
   const config = loadConfig();
   await connectDb(config.mongoUrl);
+  logger.info(`Target: ${mongoose.connection.host}/${mongoose.connection.name}`);
   try {
     const plan = await planRoleMigration();
     const total = Object.values(plan).reduce((a, b) => a + b, 0);

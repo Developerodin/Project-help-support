@@ -18,7 +18,9 @@ import { buildTicketFilter } from './ticket.service.js';
 export const ANALYTICS_TICKET_CEILING = 10000;
 
 const ANALYTICS_SELECT = [
-  'status', 'severity', 'labels', 'stageHistory', 'estimatedResolutionAt',
+  // Only the hop fields analytics walks: not notes or QA evidence attachments.
+  'status', 'severity', 'labels', 'stageHistory.from', 'stageHistory.to', 'stageHistory.at',
+  'estimatedResolutionAt',
   'createdAt', 'closedAt', 'blocked', 'priority', 'module', 'category',
   'environment', 'assignedTo', 'team',
 ].join(' ');
@@ -32,6 +34,12 @@ export async function loadAnalyticsTickets(actor, query = {}) {
     .select(ANALYTICS_SELECT)
     .populate('assignedTo', 'name')
     .populate('team', 'name')
+    // One past the ceiling is enough to know it was exceeded; loading the rest
+    // would only hold more of the collection in memory. Past it, the numbers
+    // cover the newest tickets (the UI already warns).
+    .sort({ createdAt: -1 })
+    .limit(ANALYTICS_TICKET_CEILING + 1)
+    .maxTimeMS(15000)
     .lean();
   const ticketCount = tickets.length;
   return {

@@ -122,12 +122,19 @@ function claimRow(Model, id, maxAttempts, cutoff) {
 }
 
 /** Never retried again: attemptCount is lifted to the cap. */
-function abandonRow(Model, id, maxAttempts, error) {
+function abandonRow(Model, id, maxAttempts, error, extraSet = {}) {
   return Model.updateOne(
     { _id: id },
-    { $set: { status: 'failed', error }, $max: { attemptCount: maxAttempts } },
+    { $set: { status: 'failed', error, ...extraSet }, $max: { attemptCount: maxAttempts } },
   );
 }
+
+/**
+ * Invite and reset bodies carry a live token link. Once a row can no longer be
+ * sent (delivered, or out of attempts) the body has no further use, so it is
+ * overwritten rather than kept for the 90-day (or, when failed, open-ended) log.
+ */
+const REDACTED_BODY = { text: '[redacted]', html: '[redacted]' };
 
 const INACTIVE_RECIPIENT = 'Recipient is no longer active';
 const EMAIL_PAUSED = 'Recipient paused ticket email';
@@ -236,7 +243,7 @@ async function attemptTransactional(row, transport, attachments, { counted = fal
       attachments,
     });
     await TransactionalEmailLog.updateOne({ _id: row._id }, {
-      $set: { status: 'sent', sentAt: now, lastAttemptAt: now, error: null },
+      $set: { status: 'sent', sentAt: now, lastAttemptAt: now, error: null, ...REDACTED_BODY },
       ...inc,
     });
     return { ok: true, error: null };
@@ -1000,7 +1007,10 @@ export async function retryPendingTransactionalEmails(config, deps = {}, options
   const limit = options.limit ?? DEFAULT_RETRY_LIMIT;
   const cutoff = new Date(Date.now() - graceMs);
 
-  await TransactionalEmailLog.updateMany(exhaustedFilter(maxAttempts, cutoff), { $set: { status: 'failed' } });
+  await TransactionalEmailLog.updateMany(
+    { ...exhaustedFilter(maxAttempts, cutoff), html: { $ne: REDACTED_BODY.html } },
+    { $set: { status: 'failed', ...REDACTED_BODY } },
+  );
 
   const candidates = await TransactionalEmailLog.find(retryableFilter(maxAttempts, cutoff))
     .sort({ createdAt: 1 }).limit(limit).select('_id').lean();
@@ -1018,7 +1028,7 @@ export async function retryPendingTransactionalEmails(config, deps = {}, options
       // email, so that is what is checked; an address with no account is sent.
       const gone = await User.exists({ email: row.to?.[0], status: { $in: ['inactive', 'deleted'] } });
       if (gone) {
-        await abandonRow(TransactionalEmailLog, row._id, maxAttempts, INACTIVE_RECIPIENT);
+        await abandonRow(TransactionalEmailLog, row._id, maxAttempts, INACTIVE_RECIPIENT, REDACTED_BODY);
         failed += 1;
         continue;
       }

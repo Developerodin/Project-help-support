@@ -4,7 +4,6 @@ import {
   ROLES,
   NOTIFICATION_EVENTS,
   DEFAULT_NOTIFICATION_PREFS,
-  DEFAULT_TICKET_PREFERENCES,
   mergeTicketPreferences,
   defaultTicketPreferencesForUser,
   normalizeTicketPreferencesForUser,
@@ -15,7 +14,6 @@ import {
 import { ApiError } from '../../platform/errors.js';
 import { paginate } from '../../platform/paginate.js';
 import { revokeAllRefreshTokens, hashToken } from '../auth/token.service.js';
-import PushSubscription from '../notifications/pushSubscription.model.js';
 import { defaultTimeZone } from '../notifications/delivery-schedule.js';
 import { recordRbacAudit } from '../rbac/rbac-audit.js';
 
@@ -179,10 +177,21 @@ export async function updateUser(actor, id, body, auditContext = {}) {
     roles: existing.roles ? [...existing.roles] : [],
   };
 
+  const lost = lastHolderRolesAtRisk(existing, { ...existing.toObject(), ...nextBody });
+  await assertOtherActiveHolders(existing._id, lost);
   const user = await User.findByIdAndUpdate(id, { $set: nextBody }, { new: true, runValidators: true });
-  // A deactivated person's devices must stop receiving ticket pushes.
-  if (previous.status === 'active' && user.status !== 'active') {
-    await PushSubscription.deleteMany({ user: user._id });
+  await recheckActiveHolders(lost, () => User.updateOne(
+    { _id: existing._id },
+    { $set: Object.fromEntries(Object.keys(nextBody).map((key) => [key, existing.get(key)])) },
+  ));
+  // Leaving 'active' ends every session (and push, via revokeAllRefreshTokens),
+  // and drops any pending invite/reset token so it can't be used later.
+  if (previous.status !== user.status && user.status !== 'active') {
+    await revokeAllRefreshTokens(user._id);
+    await User.updateOne(
+      { _id: user._id },
+      { $unset: { inviteTokenHash: '', inviteTokenExpiresAt: '' } },
+    );
   }
 
   await recordRbacAudit(actor, 'user.update', {
@@ -313,6 +322,49 @@ export async function resetTicketPreferences(actor) {
   return user.toJSON();
 }
 
+const PROTECTED_ROLES = Object.freeze([
+  { role: ROLE_IDS.ADMIN, code: 'LAST_ADMIN', label: 'the last admin' },
+  { role: ROLE_IDS.SUPER_ADMIN, code: 'LAST_SUPER_ADMIN', label: 'the last Super Admin' },
+]);
+
+const activeHolderCount = (role, excludeId = null) => User.countDocuments({
+  ...userHasRoleQuery(role),
+  status: 'active',
+  ...(excludeId ? { _id: { $ne: excludeId } } : {}),
+});
+
+/** Protected roles `before` holds as an active user and `after` no longer does. */
+function lastHolderRolesAtRisk(before, after) {
+  if (before.status !== 'active') return [];
+  const keeps = (role) => after.status === 'active' && hasAnyRole(after, role);
+  return PROTECTED_ROLES.filter(({ role }) => hasAnyRole(before, role) && !keeps(role));
+}
+
+async function assertOtherActiveHolders(userId, roles, verb = 'remove') {
+  for (const { role, code, label } of roles) {
+    if (await activeHolderCount(role, userId) === 0) {
+      throw new ApiError(400, code, `Cannot ${verb} ${label}`);
+    }
+  }
+}
+
+/**
+ * ponytail: count-then-write is racy — two admins demoting or deleting each
+ * other at once can both pass assertOtherActiveHolders. This re-counts after
+ * the write and, if a role was left with no active holder, runs `revert` and
+ * answers 409. Ceiling: both racers can revert (neither change lands; retry
+ * works), and the revert is itself a second unguarded write. Upgrade path: a
+ * transaction around count + write once the deployment is a replica set.
+ */
+async function recheckActiveHolders(roles, revert) {
+  for (const { role, label } of roles) {
+    if (await activeHolderCount(role) === 0) {
+      await revert();
+      throw new ApiError(409, 'CONFLICT', `That would leave no active ${label.replace('the last ', '')}. Reload and try again`);
+    }
+  }
+}
+
 export async function deleteUser(actor, id, auditContext = {}) {
   if (String(actor._id) === String(id)) {
     throw new ApiError(400, 'CANNOT_DELETE_SELF', 'You cannot delete your own account');
@@ -330,26 +382,14 @@ export async function deleteUser(actor, id, auditContext = {}) {
     return { status: 'deleted' };
   }
 
-  if (hasAnyRole(user, ROLE_IDS.ADMIN)) {
-    const otherAdmins = await User.countDocuments({
-      ...userHasRoleQuery(ROLE_IDS.ADMIN),
-      _id: { $ne: user._id },
-      status: 'active',
-    });
-    if (otherAdmins === 0) {
-      throw new ApiError(400, 'LAST_ADMIN', 'Cannot delete the last admin');
-    }
-  }
-  if (isSuperAdmin(user)) {
-    const otherSuperAdmins = await User.countDocuments({
-      ...userHasRoleQuery(ROLE_IDS.SUPER_ADMIN),
-      _id: { $ne: user._id },
-      status: 'active',
-    });
-    if (otherSuperAdmins === 0) {
-      throw new ApiError(400, 'LAST_SUPER_ADMIN', 'Cannot delete the last Super Admin');
-    }
-  }
+  // Held roles, whatever this user's status: deleting the last admin is refused
+  // even when that admin is currently inactive, as it always has been.
+  await assertOtherActiveHolders(
+    user._id,
+    PROTECTED_ROLES.filter(({ role }) => hasAnyRole(user, role)),
+    'delete',
+  );
+  const previousStatus = user.status;
 
   await revokeAllRefreshTokens(user._id);
 
@@ -359,9 +399,16 @@ export async function deleteUser(actor, id, auditContext = {}) {
   user.refreshTokens = [];
   user.consumedRefreshTokens = [];
   await user.save();
+  await recheckActiveHolders(
+    previousStatus === 'active' ? PROTECTED_ROLES.filter(({ role }) => hasAnyRole(user, role)) : [],
+    () => User.updateOne({ _id: user._id }, { $set: { status: previousStatus } }),
+  );
 
   await recordRbacAudit(actor, 'user.delete', {
     userId: String(id),
+    // Who it was, in the log itself: the row outlives any later scrub of the account.
+    name: user.name,
+    email: user.email,
     previous: { status: 'active' },
     next: { status: 'deleted' },
   }, auditContext);

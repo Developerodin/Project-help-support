@@ -76,17 +76,23 @@ async function persistRbacAudit(actor, action, details = {}) {
   const category = auditCategory(action);
   const ticketId = typeof details.ticketId === 'string' && details.ticketId ? details.ticketId : null;
 
-  await RbacAuditLog.create({
-    action,
-    category,
-    actor: actor?._id ?? null,
-    initiator: initiatorUserId || null,
-    targetUser: targetUserId,
-    assignment: assignmentId,
-    ticketId,
-    project: category === 'ticket' ? (details.projectId ?? null) : null,
-    details: storedDetails,
-  });
+  try {
+    await RbacAuditLog.create({
+      action,
+      category,
+      actor: actor?._id ?? null,
+      initiator: initiatorUserId || null,
+      targetUser: targetUserId,
+      assignment: assignmentId,
+      ticketId,
+      project: category === 'ticket' ? (details.projectId ?? null) : null,
+      details: storedDetails,
+    });
+  } catch (err) {
+    // Unique details.outboxId: another replayer already wrote this event.
+    if (outboxId && err?.code === 11000) return;
+    throw err;
+  }
 }
 
 async function enqueueAuditOutbox(actor, action, details, error) {
@@ -143,14 +149,41 @@ export async function recordRbacAudit(actor, action, details = {}, auditContext 
   }
 }
 
-/** Replay pending outbox rows into the audit log (used by tests and future workers). */
-export async function retryPendingAuditOutbox({ limit = 50 } = {}) {
-  const pending = await RbacAuditOutbox.find({ status: 'pending' })
-    .sort({ createdAt: 1 })
-    .limit(limit);
+export const MAX_AUDIT_OUTBOX_ATTEMPTS = 10;
+/** A claim older than this is from a replayer that died mid-row; take it over. */
+export const AUDIT_OUTBOX_CLAIM_STALE_MS = 5 * 60 * 1000;
 
+/**
+ * Atomically move one row pending -> processing (or take over a stale claim), so
+ * two processes replaying at once never work the same row. `skip` holds rows
+ * this run already tried, so a failing row is not reclaimed in a loop.
+ */
+function claimNextAuditOutboxRow(skip, now = Date.now()) {
+  return RbacAuditOutbox.findOneAndUpdate(
+    {
+      _id: { $nin: skip },
+      $or: [
+        { status: 'pending' },
+        { status: 'processing', claimedAt: { $lt: new Date(now - AUDIT_OUTBOX_CLAIM_STALE_MS) } },
+      ],
+    },
+    { $set: { status: 'processing', claimedAt: new Date(now) } },
+    { sort: { createdAt: 1 }, new: true },
+  );
+}
+
+/**
+ * Replay pending outbox rows into the audit log (boot + the scheduled sweep).
+ * A row that keeps failing moves to 'failed' after MAX_AUDIT_OUTBOX_ATTEMPTS
+ * and stays there for a person to look at (getAuditOutboxStats counts them).
+ */
+export async function retryPendingAuditOutbox({ limit = 50 } = {}) {
   let replayed = 0;
-  for (const row of pending) {
+  const tried = [];
+  for (let i = 0; i < limit; i += 1) {
+    const row = await claimNextAuditOutboxRow(tried);
+    if (!row) break;
+    tried.push(row._id);
     try {
       const outboxId = String(row._id);
       await persistRbacAudit(
@@ -161,12 +194,14 @@ export async function retryPendingAuditOutbox({ limit = 50 } = {}) {
       await RbacAuditOutbox.deleteOne({ _id: row._id });
       replayed += 1;
     } catch (err) {
+      const attempts = (row.attempts ?? 0) + 1;
+      const status = attempts >= MAX_AUDIT_OUTBOX_ATTEMPTS ? 'failed' : 'pending';
+      if (status === 'failed') {
+        logger.error('rbac.audit_outbox_row_failed', { outboxId: String(row._id), attempts, error: err.message });
+      }
       await RbacAuditOutbox.updateOne(
         { _id: row._id },
-        {
-          $inc: { attempts: 1 },
-          $set: { lastError: err.message, status: 'pending' },
-        },
+        { $set: { attempts, lastError: err.message, status, claimedAt: null } },
       );
     }
   }

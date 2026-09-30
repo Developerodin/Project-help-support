@@ -167,6 +167,28 @@ export async function migrateAllLegacyProjectTeams() {
   return { migrated, failed };
 }
 
+/**
+ * Make the project's rows exactly `rows` ({ user, team, role }) without ever
+ * emptying the roster: upsert each by (project, user), then delete only the
+ * users no longer listed. A crash mid-way leaves a superset, not nothing, and
+ * a concurrent writer's row for the same user is updated instead of E11000.
+ */
+async function syncProjectRoster(projectId, rows) {
+  if (rows.length) {
+    await ProjectTeamMember.bulkWrite(rows.map((row) => ({
+      updateOne: {
+        filter: { project: projectId, user: row.user },
+        update: { $set: { team: row.team, role: row.role } },
+        upsert: true,
+      },
+    })), { ordered: false });
+  }
+  await ProjectTeamMember.deleteMany({
+    project: projectId,
+    user: { $nin: rows.map((row) => row.user) },
+  });
+}
+
 export async function assignProjectTeam(projectId, teamId) {
   const project = await ensureProjectMigrated(projectId);
   if (!teamId) {
@@ -191,15 +213,13 @@ export async function assignProjectTeam(projectId, teamId) {
   const nextRows = userIds.map((userId) => {
     const prior = existingByUser.get(String(userId));
     return {
-      project: projectId,
       team: team._id,
       user: userId,
       role: prior?.role || inferLegacyRole(userId, team, project),
     };
   });
 
-  await ProjectTeamMember.deleteMany({ project: projectId });
-  if (nextRows.length) await ProjectTeamMember.insertMany(nextRows);
+  await syncProjectRoster(projectId, nextRows);
 
   const removedIds = existing
     .filter((row) => !userIds.some((id) => sameId(id, row.user)))
@@ -243,15 +263,11 @@ export async function replaceProjectTeamMemberRoles(projectId, members = []) {
     }
   }
 
-  await ProjectTeamMember.deleteMany({ project: projectId });
-  if (members.length) {
-    await ProjectTeamMember.insertMany(members.map((entry) => ({
-      project: projectId,
-      team: teamId,
-      user: entry.userId,
-      role: entry.role,
-    })));
-  }
+  await syncProjectRoster(projectId, members.map((entry) => ({
+    team: teamId,
+    user: entry.userId,
+    role: entry.role,
+  })));
 
   return listProjectTeamMembers(projectId);
 }

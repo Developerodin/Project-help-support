@@ -181,7 +181,7 @@ export const deleteComment = catchAsync(async (req, res) => {
 
 export const reactToComment = catchAsync(async (req, res) => {
   res.json(await commentService.toggleReaction(
-    req.user, req.params.id, req.params.commentId, req.body.emoji,
+    req.user, req.params.id, req.params.commentId, req.body.emoji, req.permissionContext,
   ));
 });
 
@@ -192,7 +192,7 @@ export const markDiscussionRead = catchAsync(async (req, res) => {
 });
 
 export const addAttachments = (config) => catchAsync(async (req, res) => {
-  const { attachments, comment, commentCreated, event } = await attachmentService.addAttachments(
+  const { attachments, commentCreated, event } = await attachmentService.addAttachments(
     req.user, req.params.id, req.files || [], config, {
       clientRef: req.body?.clientRef,
       commentId: req.body?.commentId,

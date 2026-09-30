@@ -17,6 +17,8 @@ export const AUTH_BOOTING = 'AUTH_BOOTING';
 export const AUTHENTICATED = 'AUTHENTICATED';
 export const AUTH_REQUIRED = 'AUTH_REQUIRED';
 export const AUTH_EXPIRED = 'AUTH_EXPIRED';
+// Chose to sign out: on the way to /login, not a session that stopped working.
+export const AUTH_SIGNED_OUT = 'AUTH_SIGNED_OUT';
 
 const AuthContext = createContext(null);
 
@@ -24,6 +26,7 @@ const nameOf = (person) => person?.name || person?.email || null;
 
 /** Backoff between boot refresh attempts while the backend is unreachable. Last value repeats. */
 const BOOT_RETRY_DELAYS_MS = [400, 1000, 2500, 5000];
+const RATE_LIMITED_RETRY_MS = 30_000;
 
 /**
  * When this page last signed in. Module-level, so it outlives the login page's
@@ -116,7 +119,11 @@ export function AuthProvider({ children }) {
           return;
         } catch (error) {
           if (cancelled) return;
-          if (isTransientApiError(error)) continue;
+          if (isTransientApiError(error)) {
+            // Rate limited: every 5s retry would only extend the block.
+            if (error.status === 429) await wait(RATE_LIMITED_RETRY_MS);
+            continue;
+          }
           // No valid session on this device: same as the session-lost case above.
           unsubscribePushInBrowser().catch(() => {});
           setAccessToken(null);
@@ -166,7 +173,7 @@ export function AuthProvider({ children }) {
       setImpersonation(null);
       setSessionNotice(null);
       resetBrandingToNeutral();
-      setStatus(AUTH_REQUIRED);
+      setStatus(AUTH_SIGNED_OUT);
       router.replace('/login');
     }
   }, [resetBrandingToNeutral, router]);

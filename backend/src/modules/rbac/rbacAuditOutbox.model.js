@@ -12,7 +12,10 @@ const rbacAuditOutboxSchema = new mongoose.Schema(
     details: { type: mongoose.Schema.Types.Mixed, default: {} },
     attempts: { type: Number, default: 0 },
     lastError: { type: String, default: null },
-    status: { type: String, enum: ['pending', 'failed'], default: 'pending', index: true },
+    // pending -> processing (claimed by one replayer) -> deleted on success,
+    // back to pending on failure, or failed once attempts reach the cap.
+    status: { type: String, enum: ['pending', 'processing', 'failed'], default: 'pending', index: true },
+    claimedAt: { type: Date, default: null },
   },
   { timestamps: true },
 );

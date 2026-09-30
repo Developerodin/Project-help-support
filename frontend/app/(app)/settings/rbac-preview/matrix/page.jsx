@@ -24,7 +24,6 @@ const SYSTEM_ROLES = new Set([ROLE_IDS.SUPER_ADMIN, ROLE_IDS.ADMIN]);
 async function loadRoleUserCounts() {
   const counts = Object.fromEntries(MATRIX_ROLES.map((role) => [role, 0]));
   for (let page = 1; page <= 10; page += 1) {
-    // eslint-disable-next-line no-await-in-loop
     const res = await listUsers({ page, limit: 100, includeSuperAdmins: true });
     for (const user of res.results || []) {
       for (const role of getUserRoles(user)) {

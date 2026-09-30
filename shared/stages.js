@@ -10,13 +10,6 @@ import { canBoardTransition, buildBoardRolePolicy } from './board-role-policy.js
  * Keys are stable and snake_case. Labels live beside them, so renaming a stage
  * is a one-line edit rather than a data migration.
  */
-/** Map global ROLE_IDS to legacy stage gate role strings (metadata / UI only). */
-const STAGE_ROLE_ALIASES = Object.freeze({
-  super_admin: 'admin',
-  project_admin: 'lead',
-  tester: 'qa',
-});
-
 export const STAGES = Object.freeze([
   { key: 'pending', index: 0, label: 'Pending', roles: [], relationships: [] },
   { key: 'under_review', index: 1, label: 'Under Review', roles: ['lead', 'admin'], relationships: [] },

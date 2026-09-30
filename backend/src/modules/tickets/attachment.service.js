@@ -7,7 +7,6 @@ import Ticket from './ticket.model.js';
 import { resolveTicketDoc, assertCanViewTicket, assertCanDeleteTicket } from './ticket.service.js';
 import { findComment } from './comment.service.js';
 import { recordTicketAudit } from './ticket-audit.js';
-import { canExternalViewTicket } from '../access/external-auth.service.js';
 
 const sameId = (a, b) => !!a && !!b && String(a._id ?? a) === String(b._id ?? b);
 
@@ -82,6 +81,10 @@ export async function addAttachments(actor, idOrKey, files, config, opts = {}) {
     const targetComment = findComment(ticket, commentId);
     if (isExternalUser(actor) && targetComment.internal === true) {
       throw new ApiError(403, 'FORBIDDEN', 'You do not have access to this ticket');
+    }
+    // Same rule as editing a comment: only its author may change what it carries.
+    if (String(targetComment.commentedBy?._id ?? targetComment.commentedBy) !== String(actor._id)) {
+      throw new ApiError(403, 'FORBIDDEN', 'Only the author may add files to this comment');
     }
   }
 

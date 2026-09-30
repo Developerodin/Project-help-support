@@ -11,9 +11,9 @@
  * - RE-RUN immediately after cutover to catch any comments written by old code
  *   during the deployment window. The function is idempotent.
  *
- * Usage (from repo root):
- *   node backend/src/scripts/migrate-comments-internal.js --dry-run
+ * Usage (from repo root). A dry run unless --apply is passed:
  *   node backend/src/scripts/migrate-comments-internal.js
+ *   node backend/src/scripts/migrate-comments-internal.js --apply
  */
 import mongoose from 'mongoose';
 import { pathToFileURL } from 'node:url';
@@ -46,16 +46,19 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     process.exit(1);
   }
 
-  const dryRun = process.argv.includes('--dry-run');
-  const unknownArgs = process.argv.slice(2).filter((arg) => arg !== '--dry-run');
+  // Dry run unless --apply; --dry-run is still accepted (and wins) for old runbooks.
+  const dryRun = !process.argv.includes('--apply') || process.argv.includes('--dry-run');
+  const unknownArgs = process.argv.slice(2).filter((arg) => arg !== '--dry-run' && arg !== '--apply');
   if (unknownArgs.length > 0) {
     console.error(`Unknown argument(s): ${unknownArgs.join(', ')}`);
     process.exit(1);
   }
 
   await mongoose.connect(uri);
+  console.log(`Target: ${mongoose.connection.host}/${mongoose.connection.name} (${dryRun ? 'dry run' : 'APPLY'})`);
   const report = await backfillCommentVisibility({ dryRun });
   const verb = dryRun ? '[dry run] would mark' : 'Marked';
   console.log(`${verb} ${report.comments} comment(s) across ${report.tickets} ticket(s) internal`);
+  if (dryRun) console.log('Dry run only. Re-run with --apply to write changes.');
   await mongoose.disconnect();
 }

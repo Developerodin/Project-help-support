@@ -128,7 +128,12 @@ const projectSchema = new mongoose.Schema(
     defaultTeam: { type: mongoose.Schema.Types.ObjectId, ref: 'Team' },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   },
-  { timestamps: true },
+  // save() rewrites the whole UI-QA tree (modules -> pages -> screens with their
+  // comments and attachments), so two saves from the same read would drop one
+  // side's edit. Every save() now matches and bumps __v; a stale one throws
+  // VersionError (409). Operator updates (findByIdAndUpdate) are not guarded
+  // unless they filter on __v themselves, as replaceModules does.
+  { timestamps: true, optimisticConcurrency: true },
 );
 
 projectSchema.plugin(toJSON);
