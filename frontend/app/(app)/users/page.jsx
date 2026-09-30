@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   PEOPLE_ASSIGNABLE_ROLES,
@@ -46,6 +47,14 @@ import '../../rbac-access.css';
 const SCRUBBED_EMAIL = /^deleted\+[a-f0-9]{24}@internal$/i;
 const PEOPLE_FILTER_ROLES = Object.freeze([...PEOPLE_ASSIGNABLE_ROLES, ROLE_IDS.SUPER_ADMIN]);
 const SEARCH_DEBOUNCE_MS = 300;
+const DIALOG_FOCUSABLE = [
+  'button:not([disabled])',
+  'textarea:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'a[href]',
+  '[tabindex]:not([tabindex="-1"])',
+].join(', ');
 
 /** Soft-deleted, including legacy hard-delete scrub rows (deleted+...@internal). */
 function accountDeleted(user) {
@@ -189,6 +198,88 @@ export default function UsersPage() {
   const [revokeBusyId, setRevokeBusyId] = useState(null);
   const [revokeTarget, setRevokeTarget] = useState(null);
   const [revokeReason, setRevokeReason] = useState('');
+  const revokeScrimRef = useRef(null);
+  const revokeDialogRef = useRef(null);
+  const revokeCancelRef = useRef(null);
+  const revokeOpen = Boolean(revokeTarget);
+  const revokeBusy = Boolean(revokeBusyId);
+
+  const cancelRevoke = useCallback(() => {
+    setRevokeTarget(null);
+    setRevokeReason('');
+  }, []);
+
+  // The revoke dialog opens over the access drawer, a modal Radix Sheet whose focus trap,
+  // Escape handler and outside-pointerdown dismissal all listen on document. React's root
+  // is also document, so its stopPropagation cannot reach them; window capture runs
+  // first, so while this dialog is open it owns Tab, Escape, focus and pointerdown.
+  useEffect(() => {
+    if (!revokeOpen) return undefined;
+    const focusableIn = (dialog) => dialog.querySelectorAll(DIALOG_FOCUSABLE);
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!revokeBusy) cancelRevoke();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const dialog = revokeDialogRef.current;
+      if (!dialog) return;
+      const focusable = focusableIn(dialog);
+      if (!focusable.length) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (!dialog.contains(active)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    const onFocusIn = (event) => {
+      event.stopPropagation();
+      const dialog = revokeDialogRef.current;
+      if (!dialog || dialog.contains(event.target)) return;
+      const cancel = revokeCancelRef.current;
+      (cancel && !cancel.disabled ? cancel : focusableIn(dialog)[0])?.focus();
+    };
+    const onFocusOut = (event) => event.stopPropagation();
+    const onPointerDown = (event) => {
+      if (revokeScrimRef.current?.contains(event.target)) event.stopPropagation();
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    window.addEventListener('focusin', onFocusIn, true);
+    window.addEventListener('focusout', onFocusOut, true);
+    window.addEventListener('pointerdown', onPointerDown, true);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('focusin', onFocusIn, true);
+      window.removeEventListener('focusout', onFocusOut, true);
+      window.removeEventListener('pointerdown', onPointerDown, true);
+    };
+  }, [revokeOpen, revokeBusy, cancelRevoke]);
+
+  useEffect(() => {
+    if (!revokeOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const returnFocusTo = document.activeElement;
+    document.body.style.overflow = 'hidden';
+    const timer = window.setTimeout(() => revokeCancelRef.current?.focus(), 50);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.clearTimeout(timer);
+      if (returnFocusTo instanceof HTMLElement && returnFocusTo.isConnected) returnFocusTo.focus();
+    };
+  }, [revokeOpen]);
 
   useEffect(() => {
     setSearchInput(urlSearch);
@@ -1027,18 +1118,20 @@ export default function UsersPage() {
         onClose={closeAccessProfile}
       />
 
-      {revokeTarget && (
+      {/* Portaled to body: the modal Sheet aria-hides every body child present when it
+          opens, and sets body pointer-events to none. */}
+      {revokeTarget && typeof document !== 'undefined' && createPortal(
         <div
+          ref={revokeScrimRef}
           className="dscrim on"
           role="presentation"
+          style={{ pointerEvents: 'auto' }}
           onClick={() => {
-            if (!revokeBusyId) {
-              setRevokeTarget(null);
-              setRevokeReason('');
-            }
+            if (!revokeBusyId) cancelRevoke();
           }}
         >
           <div
+            ref={revokeDialogRef}
             role="dialog"
             aria-modal="true"
             className="dlg grant-access-dialog"
@@ -1062,13 +1155,11 @@ export default function UsersPage() {
             </div>
             <div className="dlg-foot">
               <button
+                ref={revokeCancelRef}
                 type="button"
                 className="btn"
                 disabled={Boolean(revokeBusyId)}
-                onClick={() => {
-                  setRevokeTarget(null);
-                  setRevokeReason('');
-                }}
+                onClick={cancelRevoke}
               >
                 Cancel
               </button>
@@ -1083,7 +1174,8 @@ export default function UsersPage() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
