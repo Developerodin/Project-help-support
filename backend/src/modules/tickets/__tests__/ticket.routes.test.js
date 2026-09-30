@@ -1,0 +1,351 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { ROLE_IDS } from '@pms/shared';
+import request from 'supertest';
+import { withMemoryDb } from '../../../platform/__tests__/helpers/memoryDb.js';
+import User from '../../users/user.model.js';
+import Project from '../../projects/project.model.js';
+import Client from '../../clients/client.model.js';
+import AccessAssignment from '../../access/accessAssignment.model.js';
+import { createApp } from '../../../app.js';
+import Ticket from '../ticket.model.js';
+import mongoose from 'mongoose';
+import { generateAccessToken } from '../../auth/token.service.js';
+
+withMemoryDb();
+
+const config = {
+  nodeEnv: 'test', isProduction: false, port: 4000, mongoUrl: 'mongodb://unused',
+  frontendBaseUrl: 'http://localhost:3000', corsOrigins: ['http://localhost:3000'],
+  jwt: {
+    secret: 'a-sufficiently-long-test-secret-value-here',
+    accessExpirationMinutes: 15, refreshExpirationDays: 30,
+  },
+  cookie: { domain: undefined, secure: false },
+  features: { attachments: false, email: false, seed: false },
+  storage: null, email: null, seed: null,
+};
+
+const app = () => createApp(config);
+const bearer = (user) => `Bearer ${generateAccessToken(user, config)}`;
+
+async function actorAndProject(role = ROLE_IDS.DEVELOPER) {
+  const user = await User.create({
+    name: 'Ada', email: `${Math.random().toString(36).slice(2)}@example.com`,
+    password: 'a-long-enough-password', status: 'active', role,
+  });
+  const project = await Project.create({ key: 'WEB', name: 'Web App', createdBy: user._id });
+  return { user, project };
+}
+
+const createBody = (projectId, title = 'Broken login button') => ({
+  project: String(projectId),
+  title,
+  description: 'Expected login to succeed but the button does nothing when clicked.',
+});
+
+test('POST /v1/tickets creates and returns 201 with a ticketId', async () => {
+  const { user, project } = await actorAndProject();
+
+  const res = await request(app())
+    .post('/v1/tickets')
+    .set('Authorization', bearer(user))
+    .send(createBody(project._id))
+    .expect(201);
+
+  assert.equal(res.body.ticketId, 'WEB-1');
+});
+
+test('PATCH /v1/tickets/:id rejects status outright', async () => {
+  const { user, project } = await actorAndProject();
+  await request(app()).post('/v1/tickets').set('Authorization', bearer(user))
+    .send(createBody(project._id));
+
+  const res = await request(app())
+    .patch('/v1/tickets/WEB-1')
+    .set('Authorization', bearer(user))
+    .send({ revision: 0, status: 'live' })
+    .expect(400);
+
+  assert.equal(res.body.error.code, 'VALIDATION_ERROR');
+  assert.match(res.body.error.fields.status, /transition/);
+  assert.ok(res.body.requestId);
+});
+
+test('a body carrying role or createdBy is rejected, not silently dropped', async () => {
+  const { user, project } = await actorAndProject(ROLE_IDS.DEVELOPER);
+  await request(app()).post('/v1/tickets').set('Authorization', bearer(user))
+    .send(createBody(project._id));
+
+  const res = await request(app())
+    .patch('/v1/tickets/WEB-1')
+    .set('Authorization', bearer(user))
+    .send({ revision: 0, priority: 'Urgent', role: 'admin' })
+    .expect(400);
+
+  assert.equal(res.body.error.code, 'VALIDATION_ERROR');
+  assert.equal((await User.findById(user._id)).role, ROLE_IDS.DEVELOPER);
+});
+
+test('an unauthenticated request gets 401 carrying a requestId', async () => {
+  const res = await request(app()).get('/v1/tickets').expect(401);
+
+  assert.equal(res.body.error.code, 'UNAUTHENTICATED');
+  assert.ok(res.body.requestId);
+  assert.equal(res.headers['x-request-id'], res.body.requestId);
+});
+
+test('DELETE /v1/tickets/:id returns 403 for read_only users', async () => {
+  const { user: creator, project } = await actorAndProject(ROLE_IDS.DEVELOPER);
+  const readOnly = await User.create({
+    name: 'Viewer', email: `${Math.random().toString(36).slice(2)}@example.com`,
+    password: 'a-long-enough-password', status: 'active', role: ROLE_IDS.READ_ONLY,
+    roles: [ROLE_IDS.READ_ONLY],
+  });
+  await request(app()).post('/v1/tickets').set('Authorization', bearer(creator))
+    .send(createBody(project._id));
+
+  const res = await request(app())
+    .delete('/v1/tickets/WEB-1')
+    .set('Authorization', bearer(readOnly))
+    .expect(403);
+
+  assert.equal(res.body.error.code, 'FORBIDDEN');
+});
+
+test('GET /v1/tickets/:id resolves the human ticketId', async () => {
+  const { user, project } = await actorAndProject();
+  await request(app()).post('/v1/tickets').set('Authorization', bearer(user))
+    .send(createBody(project._id));
+
+  const res = await request(app())
+    .get('/v1/tickets/WEB-1')
+    .set('Authorization', bearer(user))
+    .expect(200);
+
+  assert.equal(res.body.title, 'Broken login button');
+});
+
+test('POST /v1/tickets/bulk returns per-item results, not blanket success', async () => {
+  const { user, project } = await actorAndProject(ROLE_IDS.PROJECT_ADMIN);
+  await request(app()).post('/v1/tickets').set('Authorization', bearer(user))
+    .send(createBody(project._id, 'Ticket one for bulk assign'));
+
+  const res = await request(app())
+    .post('/v1/tickets/bulk')
+    .set('Authorization', bearer(user))
+    .send({ action: 'assign', ids: ['WEB-1', 'WEB-999'], assignedTo: String(user._id) })
+    .expect(200);
+
+  assert.equal(res.body.succeeded, 1);
+  assert.equal(res.body.failed, 1);
+});
+
+test('POST /v1/tickets/bulk returns 403 for external users without enumerating ticket ids', async () => {
+  const admin = await User.create({
+    name: 'Admin', email: `${Math.random().toString(36).slice(2)}@example.com`,
+    password: 'a-long-enough-password', status: 'active', role: ROLE_IDS.ADMIN,
+  });
+  const external = await User.create({
+    name: 'Client Tester', email: `${Math.random().toString(36).slice(2)}@example.com`,
+    password: 'a-long-enough-password', status: 'active', role: ROLE_IDS.CLIENT_TESTER,
+    roles: [ROLE_IDS.CLIENT_TESTER],
+  });
+  const client = await Client.create({ name: 'Acme', status: 'active', createdBy: admin._id });
+  const project = await Project.create({
+    key: 'ACM', name: 'Portal', client: client._id, status: 'active', createdBy: admin._id,
+  });
+  await AccessAssignment.create({
+    user: external._id,
+    role: ROLE_IDS.CLIENT_TESTER,
+    client: client._id,
+    project: project._id,
+    grantedBy: admin._id,
+  });
+  await Ticket.create({
+    ticketId: 'ACM-1',
+    project: project._id,
+    title: 'Visible to external',
+    createdBy: external._id,
+    severity: 'Minor',
+    priority: 'Low',
+    status: 'pending',
+  });
+
+  const existingRes = await request(app())
+    .post('/v1/tickets/bulk')
+    .set('Authorization', bearer(external))
+    .send({ action: 'assign', ids: ['ACM-1'], assignedTo: String(admin._id) })
+    .expect(403);
+
+  assert.equal(existingRes.body.error.code, 'FORBIDDEN');
+  assert.equal(existingRes.body.results, undefined);
+
+  const missingRes = await request(app())
+    .post('/v1/tickets/bulk')
+    .set('Authorization', bearer(external))
+    .send({ action: 'assign', ids: ['ACM-999'], assignedTo: String(admin._id) })
+    .expect(403);
+
+  assert.equal(missingRes.body.error.code, 'FORBIDDEN');
+  assert.equal(missingRes.body.results, undefined);
+  assert.deepEqual(
+    { status: existingRes.status, code: existingRes.body.error.code },
+    { status: missingRes.status, code: missingRes.body.error.code },
+  );
+});
+
+test('POST /v1/tickets/:id/comments creates a comment', async () => {
+  const { user, project } = await actorAndProject();
+  await request(app()).post('/v1/tickets').set('Authorization', bearer(user))
+    .send(createBody(project._id));
+
+  const res = await request(app())
+    .post('/v1/tickets/WEB-1/comments')
+    .set('Authorization', bearer(user))
+    .send({ content: 'Reproduced on Safari', clientRef: 'client-ref-1' })
+    .expect(201);
+
+  assert.equal(res.body.content, 'Reproduced on Safari');
+  assert.ok(res.body.id || res.body._id);
+});
+
+test('POST /v1/tickets/:id/comments rejects empty content', async () => {
+  const { user, project } = await actorAndProject();
+  await request(app()).post('/v1/tickets').set('Authorization', bearer(user))
+    .send(createBody(project._id));
+
+  const res = await request(app())
+    .post('/v1/tickets/WEB-1/comments')
+    .set('Authorization', bearer(user))
+    .send({ content: '   ', clientRef: 'client-ref-2' })
+    .expect(400);
+
+  assert.equal(res.body.error.code, 'VALIDATION_ERROR');
+  assert.ok(res.body.requestId);
+});
+
+test('an unauthenticated GET /v1/tickets/:id gets 401 carrying a requestId', async () => {
+  const { user, project } = await actorAndProject();
+  await request(app()).post('/v1/tickets').set('Authorization', bearer(user))
+    .send(createBody(project._id));
+
+  const res = await request(app()).get('/v1/tickets/WEB-1').expect(401);
+
+  assert.equal(res.body.error.code, 'UNAUTHENTICATED');
+  assert.ok(res.body.requestId);
+});
+
+test('GET /v1/tickets/:id returns 403 for a member with no relationship to the ticket', async () => {
+  const { user, project } = await actorAndProject();
+  await request(app()).post('/v1/tickets').set('Authorization', bearer(user))
+    .send(createBody(project._id));
+
+  const stranger = await User.create({
+    name: 'Bob', email: `${Math.random().toString(36).slice(2)}@example.com`,
+    password: 'a-long-enough-password', status: 'active', role: ROLE_IDS.DEVELOPER,
+  });
+
+  const res = await request(app())
+    .get('/v1/tickets/WEB-1')
+    .set('Authorization', bearer(stranger))
+    .expect(403);
+
+  assert.equal(res.body.error.code, 'FORBIDDEN');
+});
+
+test('GET /v1/tickets/:id/attachments/:attachmentId/download returns a presigned URL as JSON', async () => {
+  const enabledConfig = {
+    ...config,
+    features: { attachments: true, email: false, seed: false },
+    storage: {
+      region: 'us-east-1',
+      accessKeyId: 'key',
+      secretAccessKey: 'secret',
+      bucket: 'test-bucket',
+    },
+  };
+  const enabledApp = () => createApp(enabledConfig);
+
+  const { user, project } = await actorAndProject();
+  await request(enabledApp()).post('/v1/tickets').set('Authorization', bearer(user))
+    .send(createBody(project._id));
+
+  const attachmentId = new mongoose.Types.ObjectId();
+  await Ticket.updateOne(
+    { ticketId: 'WEB-1' },
+    {
+      $push: {
+        attachments: {
+          _id: attachmentId,
+          key: `tickets/${user._id}/test.png`,
+          name: 'shot.png',
+          size: 128,
+          mimeType: 'image/png',
+          uploadedBy: user._id,
+          uploadedAt: new Date(),
+        },
+      },
+    },
+  );
+
+  const res = await request(enabledApp())
+    .get(`/v1/tickets/WEB-1/attachments/${attachmentId}/download`)
+    .set('Authorization', bearer(user))
+    .set('Accept', 'application/json')
+    .expect(200);
+
+  assert.match(res.body.url, /^https:\/\/test-bucket\.s3\.us-east-1\.amazonaws\.com\//);
+  assert.equal(res.body.filename, 'shot.png');
+  assert.match(res.body.url, /response-content-disposition=/i);
+  assert.match(decodeURIComponent(res.body.url), /filename\*=UTF-8''shot\.png/);
+});
+
+test('GET /v1/tickets/:id/attachments/:attachmentId/download returns 403 for an unrelated member', async () => {
+  const enabledConfig = {
+    ...config,
+    features: { attachments: true, email: false, seed: false },
+    storage: {
+      region: 'us-east-1',
+      accessKeyId: 'key',
+      secretAccessKey: 'secret',
+      bucket: 'test-bucket',
+    },
+  };
+  const enabledApp = () => createApp(enabledConfig);
+
+  const { user, project } = await actorAndProject();
+  await request(enabledApp()).post('/v1/tickets').set('Authorization', bearer(user))
+    .send(createBody(project._id));
+
+  const attachmentId = new mongoose.Types.ObjectId();
+  await Ticket.updateOne(
+    { ticketId: 'WEB-1' },
+    {
+      $push: {
+        attachments: {
+          _id: attachmentId,
+          key: `tickets/${user._id}/test.png`,
+          name: 'shot.png',
+          size: 128,
+          mimeType: 'image/png',
+          uploadedBy: user._id,
+          uploadedAt: new Date(),
+        },
+      },
+    },
+  );
+
+  const stranger = await User.create({
+    name: 'Eve', email: `${Math.random().toString(36).slice(2)}@example.com`,
+    password: 'a-long-enough-password', status: 'active', role: ROLE_IDS.DEVELOPER,
+  });
+
+  const res = await request(enabledApp())
+    .get(`/v1/tickets/WEB-1/attachments/${attachmentId}/download`)
+    .set('Authorization', bearer(stranger))
+    .set('Accept', 'application/json')
+    .expect(403);
+
+  assert.equal(res.body.error.code, 'FORBIDDEN');
+});

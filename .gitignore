@@ -28,16 +28,6 @@ docs/
 graphify-out/
 .graphify/
 
-# Test files (local only)
-**/__tests__/**
-**/*.test.js
-**/*.test.jsx
-**/*.test.ts
-**/*.test.tsx
-**/*.spec.js
-**/*.spec.jsx
-**/*.spec.ts
-**/*.spec.tsx
 .next-prod/
 
 # Local https certificates and private keys (scripts/dev-https-certs.sh).
