@@ -215,6 +215,10 @@ export function normaliseUserOverrides(overrides = {}) {
   const normalised = {};
   for (const [permission, state] of Object.entries(overrides || {})) {
     const resolved = resolvePermissionKey(permission);
+    // A stored override on a retired key whose successor isn't per-user (the old
+    // comment/attachment keys now fold into tickets.view) has nothing to apply to.
+    // Dropping it keeps that user's permissions loading; current keys still throw.
+    if (resolved !== permission && !OVERRIDE_EDITABLE_PERMISSIONS.includes(resolved)) continue;
     if (!OVERRIDE_EDITABLE_PERMISSIONS.includes(resolved)) {
       throw new Error(`Permission is not overrideable: ${permission}`);
     }

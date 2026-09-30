@@ -34,9 +34,8 @@ export const PERMISSION_KEY_MIGRATION = Object.freeze({
   'tickets.watch': 'tickets.view',
   'tickets.block': 'tickets.edit',
   'tickets.close_reopen': 'tickets.accept',
-  'tickets.manage_stage': 'ui_qa.edit',
-  'tickets.manage_comments': 'ui_qa.edit',
-  'tickets.manage_attachments': 'ui_qa.delete',
+  // Old ticket keys map to ticket permissions only. UI/QA rights come from the
+  // role bundles; a stored ticket grant must never widen into ui_qa.edit/delete.
   'teams.manage': 'teams.create',
 });
 
