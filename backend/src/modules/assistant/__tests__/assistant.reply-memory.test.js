@@ -4,7 +4,7 @@ import {
 import assert from 'node:assert/strict';
 import mongoose from 'mongoose';
 import { startTestDb, stopTestDb } from '../../../test/test-harness.js';
-import { isRecentReply, rememberReply } from '../assistant.guard.js';
+import { isRecentReply, recentNames, rememberReply } from '../assistant.guard.js';
 
 const alice = { _id: new mongoose.Types.ObjectId() };
 const bob = { _id: new mongoose.Types.ObjectId() };
@@ -34,6 +34,14 @@ describe('recent replies for read-aloud', () => {
     }
     assert.equal(await isRecentReply(bob, 'Reply 0'), false);
     assert.equal(await isRecentReply(bob, 'Reply 5'), true);
+  });
+
+  it('remembers the names a reply\'s drafts carried, newest kept', async () => {
+    const dana = { _id: new mongoose.Types.ObjectId() };
+    assert.deepEqual(await recentNames(dana), []);
+    await rememberReply(dana, 'Review the draft below.', new Date(), ['Priya Shah']);
+    await rememberReply(dana, 'Check the card.', new Date(), ['Platform']);
+    assert.deepEqual(await recentNames(dana), ['Priya Shah', 'Platform']);
   });
 
   it('forgets replies once they expire', async () => {

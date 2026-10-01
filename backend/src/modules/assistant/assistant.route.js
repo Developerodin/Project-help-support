@@ -12,9 +12,10 @@ import { validate } from '../../platform/validate.js';
 import { chat } from './assistant.service.js';
 import { TICKET_TABS, projectRoster } from './assistant.tools.js';
 import {
-  checkAllowance, estimateAudioSeconds, getAllowance, isRecentReply, recordUsage, rememberReply, withChatLock,
+  checkAllowance, estimateAudioSeconds, getAllowance, isRecentReply, recentNames, recordUsage, rememberReply,
+  signReply, signedHistory, withChatLock,
 } from './assistant.guard.js';
-import { speechAllowed } from './assistant.scope.js';
+import { namesIn, safePage, speechAllowed } from './assistant.scope.js';
 import { speak, transcribe } from './openai.client.js';
 
 const MINUTE = 60 * 1000;
@@ -26,6 +27,10 @@ const chatSchema = {
     messages: Joi.array().min(1).max(30).items(Joi.object({
       role: Joi.string().valid('user', 'assistant').required(),
       content: Joi.string().trim().min(1).max(4000).required(),
+      // The server's signature on an assistant reply; replies without a valid one are dropped (signedHistory).
+      sig: Joi.string().hex().length(64),
+      // The widget's notes under a reply (drafts, reports, outcomes).
+      notes: Joi.array().max(20).items(Joi.string().max(2000)),
     })).required(),
     // 'voice' when the user is talking in voice mode, so replies suit being heard.
     mode: Joi.string().valid('chat', 'voice').default('chat'),
@@ -109,10 +114,13 @@ export default function assistantRoutes(config) {
 
   router.post('/chat', requireAssistant(config), chatLimiter, validate(chatSchema), async (req, res, next) => {
     try {
-      const { messages, mode, page } = req.body;
-      if (messages[messages.length - 1].role !== 'user') {
+      const { mode } = req.body;
+      if (req.body.messages[req.body.messages.length - 1].role !== 'user') {
         throw new ApiError(400, 'VALIDATION_ERROR', 'The last message must be from the user.');
       }
+      // The browser holds the chat and builds the address: neither is trusted as sent.
+      const messages = signedHistory(config, req.user, req.body.messages);
+      const page = safePage(req.body.page);
       // If the user interrupts or leaves, stop paying for an answer nobody will read,
       // which also frees their chat lock for the next message.
       const cancelled = new AbortController();
@@ -124,10 +132,10 @@ export default function assistantRoutes(config) {
         const turn = await chat(config, req.user, req.permissionContext, messages, { mode, page, signal: cancelled.signal });
         logger.info('assistant: chat timing', { mode, ms: Date.now() - started });
         await recordUsage(config, req.user, turn.usage);
-        await rememberReply(req.user, turn.reply);
+        await rememberReply(req.user, turn.reply, new Date(), namesIn(turn.actions));
         return turn;
       });
-      res.json({ reply, actions });
+      res.json({ reply, actions, ...(reply ? { sig: signReply(config, req.user, reply) } : {}) });
     } catch (err) {
       next(err);
     }
@@ -144,12 +152,25 @@ export default function assistantRoutes(config) {
           throw new ApiError(400, 'UNSUPPORTED_AUDIO', 'That doesn\'t look like an audio recording.');
         }
         await checkAllowance(config, req.user);
+        // Charged up front, so recordings sent in parallel each see the others' cost,
+        // then settled to what OpenAI billed: the 60-second cap is the browser's, and
+        // a caller can send an hour of low-bitrate audio in 5MB.
+        const estimate = estimateAudioSeconds(req.file.size);
+        await recordUsage(config, req.user, { transcribeSeconds: estimate });
         // The user's project keys and names help the transcriber spell them right.
         const started = Date.now();
-        const vocabulary = await projectRoster({ user: req.user, permissionContext: req.permissionContext, projects: null });
-        const { text, attempts } = await transcribe(config, req.file, { vocabulary });
+        let result;
+        try {
+          const vocabulary = await projectRoster({ user: req.user, permissionContext: req.permissionContext, projects: null });
+          result = await transcribe(config, req.file, { vocabulary });
+        } catch (err) {
+          await recordUsage(config, req.user, { transcribeSeconds: -estimate });
+          throw err;
+        }
+        const { text, attempts, seconds } = result;
         logger.info('assistant: transcribe timing', { bytes: req.file.size, attempts, ms: Date.now() - started });
-        await recordUsage(config, req.user, { transcribeSeconds: estimateAudioSeconds(req.file.size) * attempts });
+        const billed = seconds ?? estimateAudioSeconds(req.file.size, Infinity) * attempts;
+        await recordUsage(config, req.user, { transcribeSeconds: billed - estimate });
         res.json({ text });
       } catch (err) {
         next(err);
@@ -160,7 +181,11 @@ export default function assistantRoutes(config) {
   router.post('/speech', requireAssistant(config), voiceLimiter, validate(speechSchema), async (req, res, next) => {
     try {
       // Read-aloud is for the assistant's replies, not a free text-to-speech service.
-      if (!speechAllowed(req.body.text, { isRecentReply: await isRecentReply(req.user, req.body.text) })) {
+      const allowed = speechAllowed(req.body.text, {
+        isRecentReply: await isRecentReply(req.user, req.body.text),
+        names: await recentNames(req.user),
+      });
+      if (!allowed) {
         throw new ApiError(400, 'SPEECH_NOT_ALLOWED', 'Only the assistant\'s replies can be read aloud.');
       }
       await checkAllowance(config, req.user);

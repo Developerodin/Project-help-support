@@ -221,8 +221,8 @@ export function draftNote(action) {
 /** Drafts with the same key are revisions of one another. */
 const draftKey = (action) => `${action.type}:${action.ticketId || action.ticketIds?.join(',') || action.clientId || ''}`;
 
-/** What the model sees for a past message: its text plus notes for any drafts. */
-export function historyText(message) {
+/** The notes under a past message: drafts, reports, what the app did or couldn't, files. */
+function historyNotes(message) {
   const notes = (message.actions || []).map(draftNote);
   if (message.report) notes.push(`[Report shown: ${reportTitle(message.report)}, ${message.report.from} to ${message.report.to}]`);
   if (message.did?.length) notes.push(`[Done in the app: ${message.did.join('; ')}]`);
@@ -230,7 +230,28 @@ export function historyText(message) {
   const files = message.attached?.length
     ? [`[Files ready to attach: ${message.attached.map((file) => file.name).join(', ')}]`]
     : [];
-  return [message.content, ...files, ...notes].filter(Boolean).join('\n');
+  return [...files, ...notes];
+}
+
+/** What the model sees for a past message: its text plus notes for any drafts. */
+export function historyText(message) {
+  return [message.content, ...historyNotes(message)].filter(Boolean).join('\n');
+}
+
+/**
+ * A past message as the server takes it. An assistant reply goes back as the
+ * server signed it, with its notes apart: the server drops replies it can't
+ * verify, so the chat can't be edited into something the assistant never said.
+ */
+export function historyEntry(message) {
+  if (message.role !== 'assistant') return { role: message.role, content: historyText(message).slice(0, 4000) };
+  const notes = historyNotes(message).map((note) => note.slice(0, 2000)).slice(0, 20);
+  return {
+    role: 'assistant',
+    content: message.content.slice(0, 4000),
+    ...(message.sig ? { sig: message.sig } : {}),
+    ...(notes.length ? { notes } : {}),
+  };
 }
 
 const FIELD_LABELS = {
@@ -1048,8 +1069,8 @@ export default function AssistantWidget() {
       const history = next
         .filter((message) => message.content)
         .slice(-HISTORY_LIMIT)
-        .map((message) => ({ role: message.role, content: historyText(message).slice(0, 4000) }));
-      const { reply, actions = [] } = await sendAssistantMessage(history, {
+        .map(historyEntry);
+      const { reply, actions = [], sig } = await sendAssistantMessage(history, {
         signal: controller.signal,
         page: { ...currentPage(), project: projectKeyRef.current },
         ...(handsFreeRef.current ? { mode: 'voice' } : {}),
@@ -1076,6 +1097,8 @@ export default function AssistantWidget() {
           role: 'assistant',
           turn,
           content: answer,
+          // Only the server's own reply is signed; the fallback lines are the widget's.
+          ...(reply && sig ? { sig } : {}),
           files,
           ...(report ? { report } : {}),
           actions: drafts.map((action) => ({

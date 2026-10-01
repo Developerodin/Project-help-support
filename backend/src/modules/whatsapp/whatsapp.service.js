@@ -28,6 +28,11 @@ const CODE_TTL_MS = 10 * MINUTE;
 /** Wrong codes one sender may try per hour; a code is 8 digits, so guessing is hopeless. */
 const MAX_LINK_FAILURES = 5;
 const HISTORY_MESSAGES = 20;
+/**
+ * A link unused this long is dropped and must be made again from the profile:
+ * carriers reassign numbers, and the next owner of one must not inherit the account.
+ */
+const LINK_IDLE_MS = 90 * 24 * 60 * MINUTE;
 const HISTORY_TTL_MS = 30 * MINUTE;
 /** Meta redelivers for up to 7 days. */
 const SEEN_TTL_MS = 7 * 24 * 60 * MINUTE;
@@ -141,10 +146,17 @@ async function tryLink(sender, code, messageId) {
   return `Linked to ${user.name}. Ask me about your tickets and projects, or tell me about a new ticket to file.`;
 }
 
-async function findLink(sender) {
+async function findLink(sender, messageId) {
   const or = [{ waId: sender.waId }, ...(sender.bsuid ? [{ bsuid: sender.bsuid }] : [])];
   const link = await WhatsappLink.findOne({ $or: or });
   if (!link) return null;
+  if (Date.now() - new Date(link.lastUsedAt ?? link.linkedAt).getTime() > LINK_IDLE_MS) {
+    await WhatsappLink.deleteOne({ _id: link._id });
+    await recordRbacAudit(null, 'whatsapp.unlinked', {
+      userId: String(link.user), waId: link.waId, messageId, reason: 'idle',
+    });
+    return null;
+  }
   link.lastUsedAt = new Date();
   if (sender.bsuid && !link.bsuid) link.bsuid = sender.bsuid;
   await link.save();
@@ -524,7 +536,7 @@ async function listen(config, session, message) {
     const vocabulary = await projectRoster({ user, permissionContext, projects: null });
     const audio = { buffer, mimetype: mimeType || 'audio/ogg', originalname: `voice.${AUDIO_EXT[mimeType] ?? 'ogg'}` };
     const result = await transcribe(config, audio, { vocabulary });
-    await recordUsage(config, user, { transcribeSeconds: estimateAudioSeconds(buffer.length, Infinity) * result.attempts });
+    await recordUsage(config, user, { transcribeSeconds: result.seconds ?? estimateAudioSeconds(buffer.length, Infinity) * result.attempts });
     text = result.text;
   } catch (err) {
     if (err?.isOperational) return err.message;
@@ -735,7 +747,7 @@ export async function answer(config, sender, message, { storage, receipt = {} } 
   const linkCode = text && LINK_MESSAGE.exec(text)?.[1];
   if (linkCode) return tryLink(sender, linkCode, message.id);
 
-  const link = await findLink(sender);
+  const link = await findLink(sender, message.id);
   if (!link) {
     await noteStranger(sender, message);
     return REPLIES.notLinked;
@@ -808,10 +820,31 @@ export function markRead(config, messageId) {
   return postRead(config, messageId, false);
 }
 
+const LINK = /\b(?:https?:\/\/|www\.)[^\s<>()]+/gi;
+
+/**
+ * Links in a reply, other than to the app itself, become "[link removed]".
+ * WhatsApp makes links clickable, and ticket or comment text the model read
+ * could have talked it into passing on someone's phishing link.
+ * ponytail: bare domains ("example.com/login") also link in WhatsApp but read
+ * like file names here ("report.pdf"), so they are left; strip them too if it matters.
+ */
+export function withoutForeignLinks(text, appUrl) {
+  // No app address known: no link is ours.
+  const app = appUrl ? new URL(appUrl).origin : null;
+  return text.replace(LINK, (link) => {
+    try {
+      return new URL(/^www\./i.test(link) ? `https://${link}` : link).origin === app ? link : '[link removed]';
+    } catch {
+      return '[link removed]';
+    }
+  });
+}
+
 /** Sends a text reply. True when Meta took it. */
 export async function send(config, to, body) {
   const res = await postMessage(config, {
-    to, type: 'text', text: { body: toWhatsapp(body).slice(0, MAX_BODY) },
+    to, type: 'text', text: { body: withoutForeignLinks(toWhatsapp(body), config.frontendBaseUrl).slice(0, MAX_BODY) },
   }, 15_000);
   if (!res.ok) logger.error('whatsapp send failed', { status: res.status, body: (await res.text()).slice(0, 500) });
   return res.ok;

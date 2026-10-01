@@ -202,7 +202,7 @@ describe('AssistantWidget', () => {
     await screen.findByText('Downloading it.');
     expect(downloadReport).toHaveBeenCalledTimes(2);
     expect(downloadReport).toHaveBeenLastCalledWith(report, 'A quiet week; WEB-4 is late.');
-    expect(sendAssistantMessage.mock.calls[1][0][1].content).toContain('[Report shown: Web App (WEB) report, 2026-09-16 to 2026-09-23]');
+    expect(sendAssistantMessage.mock.calls[1][0][1].notes).toContain('[Report shown: Web App (WEB) report, 2026-09-16 to 2026-09-23]');
   });
 
   it('chats, links ticket ids, and applies a draft only when confirmed', async () => {
@@ -488,7 +488,7 @@ describe('AssistantWidget', () => {
     await screen.findByText('Sorry about that.');
     const history = sendAssistantMessage.mock.calls[1][0];
     const reply = history.find((message) => message.content.startsWith('Moved to the next page.'));
-    expect(reply.content).toContain('[Not done, the app said: Paging works on the Tickets, People, Projects and Teams lists.]');
+    expect(reply.notes).toContain('[Not done, the app said: Paging works on the Tickets, People, Projects and Teams lists.]');
     window.history.replaceState(null, '', '/');
   });
 
@@ -515,7 +515,7 @@ describe('AssistantWidget', () => {
     say('Thanks');
     await screen.findByText('Ok.');
     const reply = sendAssistantMessage.mock.calls[1][0].find((message) => message.content.startsWith('Opened the board.'));
-    expect(reply.content).toContain('[Done in the app: opened Board; scrolled bottom]');
+    expect(reply.notes).toContain('[Done in the app: opened Board; scrolled bottom]');
     scrollTo.mockRestore();
   });
 
@@ -695,7 +695,25 @@ describe('AssistantWidget', () => {
     expect(screen.getByText('Replaced by the newer draft below')).toBeTruthy();
     expect(screen.getAllByRole('button', { name: 'Confirm' })).toHaveLength(1);
     const secondHistory = sendAssistantMessage.mock.calls[1][0];
-    expect(secondHistory[1].content).toContain('Status: waiting for the user to confirm');
+    expect(secondHistory[1].notes.some((note) => note.includes('Status: waiting for the user to confirm'))).toBe(true);
+  });
+
+  it('sends a reply back with the server\'s signature, and its notes apart', async () => {
+    const sig = 'a'.repeat(64);
+    getAssistantStatus.mockResolvedValue({ enabled: true });
+    sendAssistantMessage
+      .mockResolvedValueOnce({ reply: 'WEB-1 is In Progress.', actions: [], sig })
+      .mockResolvedValueOnce({ reply: 'Ok.', actions: [] });
+
+    render(<AssistantWidget />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Open assistant' }));
+    say('Status of WEB-1?');
+    await screen.findByText('In Progress.', { exact: false });
+    say('Thanks');
+    await screen.findByText('Ok.');
+
+    const [, reply] = sendAssistantMessage.mock.calls[1][0];
+    expect(reply).toEqual({ role: 'assistant', content: 'WEB-1 is In Progress.', sig });
   });
 
   it('keeps the conversation across a reload of the tab, and New chat clears it', async () => {

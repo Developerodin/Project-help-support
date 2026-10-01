@@ -322,6 +322,10 @@ export function loadConfig(env = process.env) {
         // The full model: far better than mini at Hindi-English switching mid-sentence.
         ? env.OPENAI_TRANSCRIBE_MODEL.trim() : 'gpt-4o-transcribe',
       speechModel: present(env.OPENAI_TTS_MODEL) ? env.OPENAI_TTS_MODEL.trim() : 'gpt-4o-mini-tts',
+      // Screens each chat message for off-topic asks the phrase lists miss; "off" skips it.
+      // Its tokens are costed at the chat model's prices, so the cap errs on the safe side.
+      scopeModel: !present(env.OPENAI_SCOPE_MODEL) ? 'gpt-6-luna'
+        : env.OPENAI_SCOPE_MODEL.trim() === 'off' ? null : env.OPENAI_SCOPE_MODEL.trim(),
       // One voice per language, each with its own accent (see openai.client.js).
       speechVoice: present(env.OPENAI_TTS_VOICE) ? env.OPENAI_TTS_VOICE.trim() : 'marin',
       speechVoiceHindi: present(env.OPENAI_TTS_VOICE_HI) ? env.OPENAI_TTS_VOICE_HI.trim() : 'coral',

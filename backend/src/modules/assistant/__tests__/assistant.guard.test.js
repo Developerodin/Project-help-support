@@ -87,6 +87,16 @@ test('the workspace pauses once the monthly token budget is spent, and warns onc
   await checkAllowance(config, bo, new Date('2026-10-01T06:30:00Z'));
 });
 
+test('voice counts against the monthly budget as the chat tokens its cost would buy, and refunds come off', async () => {
+  const may = new Date('2026-05-15T06:30:00Z');
+  const month = () => AssistantUsage.findById('workspace:2026-05').lean();
+  // 60s at $0.06/min is $0.06: 60,000 tokens at $1 per million.
+  await recordUsage(config, ada, { transcribeSeconds: 60 }, may);
+  assert.equal((await month()).tokens, 60_000);
+  await recordUsage(config, ada, { transcribeSeconds: -30 }, may);
+  assert.equal((await month()).tokens, 30_000);
+});
+
 test('one chat turn at a time per user; the lock is released after, even on failure', async () => {
   let release;
   const first = withChatLock(ada, () => new Promise((resolve) => { release = resolve; }));

@@ -1,7 +1,8 @@
-import { createHash } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import mongoose from 'mongoose';
 import { ApiError } from '../../platform/errors.js';
 import logger from '../../platform/logger.js';
+import { isWidgetLine } from './assistant.scope.js';
 
 /*
  * Production guardrails that must hold across every backend instance, so they
@@ -10,6 +11,8 @@ import logger from '../../platform/logger.js';
  *   - a monthly token budget for the whole workspace, with a warning at 80%,
  *   - one chat request in flight per user,
  *   - the user's last few replies, so read-aloud only speaks what the assistant said.
+ * And, statelessly, a signature on each reply, so a chat the browser sends back
+ * can only quote the assistant's real words.
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -49,6 +52,7 @@ const replySchema = new mongoose.Schema(
   {
     _id: { type: String }, // user id
     hashes: { type: [String], default: [] }, // newest last
+    names: { type: [String], default: [] }, // names recent drafts carried, newest last
     expiresAt: { type: Date, required: true },
   },
   { versionKey: false },
@@ -58,6 +62,7 @@ export const AssistantReply = mongoose.models.AssistantReply || mongoose.model('
 
 /** A few, since a voice turn can be read aloud after the next one was sent. */
 const RECENT_REPLIES = 5;
+const RECENT_NAMES = 20;
 const REPLY_TTL_MS = 30 * 60 * 1000;
 /** The speech route takes at most this many characters; the widget cuts replies to it the same way. */
 const SPOKEN_CHARS = 2000;
@@ -67,23 +72,71 @@ const replyHash = (text) => createHash('sha256')
   .update(String(text).slice(0, SPOKEN_CHARS).trim().replace(/\s+/g, ' '))
   .digest('hex');
 
-/** Remembers a reply just sent to this user, so it can be read aloud. */
-export async function rememberReply(user, text, now = new Date()) {
+/**
+ * Remembers a reply just sent to this user, so it can be read aloud, and the
+ * names its drafts carried, so the widget's line for a confirmed card can be.
+ */
+export async function rememberReply(user, text, now = new Date(), names = []) {
   if (!text) return;
   await AssistantReply.updateOne(
     { _id: String(user._id) },
     {
-      $push: { hashes: { $each: [replyHash(text)], $slice: -RECENT_REPLIES } },
+      $push: {
+        hashes: { $each: [replyHash(text)], $slice: -RECENT_REPLIES },
+        ...(names.length ? { names: { $each: names, $slice: -RECENT_NAMES } } : {}),
+      },
       $set: { expiresAt: new Date(now.getTime() + REPLY_TTL_MS) },
     },
     { upsert: true },
   );
 }
 
+/** Names recent drafts for this user carried (assignee, new project, team or client). */
+export async function recentNames(user, now = new Date()) {
+  const found = await AssistantReply.findOne({ _id: String(user._id), expiresAt: { $gt: now } }).lean();
+  return found?.names ?? [];
+}
+
 /** Whether `text` is one of the replies recently sent to this user. */
 export async function isRecentReply(user, text, now = new Date()) {
   const found = await AssistantReply.findOne({ _id: String(user._id), expiresAt: { $gt: now } }).lean();
   return Boolean(found?.hashes?.includes(replyHash(text)));
+}
+
+/** The longest reply the browser sends back (the chat route's cap), so a signature covers what returns. */
+const SIGNED_CHARS = 4000;
+const signedText = (text) => String(text).slice(0, SIGNED_CHARS).trim();
+
+/** HMAC of a reply for this user, keyed off the JWT secret with its own label. */
+export const signReply = (config, user, text) => createHmac('sha256', config.jwt.secret)
+  .update(['assistant-reply', String(user._id), signedText(text)].join('\n'))
+  .digest('hex');
+
+function isSigned(config, user, text, sig) {
+  if (typeof sig !== 'string' || !/^[0-9a-f]{64}$/.test(sig)) return false;
+  return timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(signReply(config, user, text), 'hex'));
+}
+
+/** The notes the widget adds under a reply (drafts, reports, outcomes); anything else is dropped. */
+const NOTE = /^\[(?:Draft "|Report shown: |Done in the app: |Not done, the app said: |Files ready to attach: )[\s\S]*\]$/;
+
+/**
+ * The chat as the browser sent it, with every assistant turn the server didn't
+ * write removed. The browser holds the chat, so without this anyone could feed
+ * the model a made-up history of it answering off-topic asks. A reply counts
+ * when its signature checks out, or it is one of the widget's fixed lines;
+ * its notes are kept when they have a note's shape (sanitizeHistory then
+ * judges what they say).
+ * ponytail: notes are unsigned, as card statuses change in the browser; signing
+ * them would mean the server tracking each card.
+ */
+export function signedHistory(config, user, messages) {
+  return messages.flatMap((message) => {
+    if (message.role !== 'assistant') return [{ role: message.role, content: message.content }];
+    if (!isSigned(config, user, message.content, message.sig) && !isWidgetLine(message.content)) return [];
+    const notes = (message.notes || []).filter((note) => NOTE.test(note));
+    return [{ role: 'assistant', content: [message.content, ...notes].join('\n') }];
+  });
 }
 
 /** About 15 spoken characters a second, for costing read-aloud from its text. */
@@ -176,12 +229,15 @@ export async function getAllowance(config, user, now = new Date()) {
 
 /**
  * Records what a finished call cost: added to the user's day (in micro-USD, so
- * no float drift) and, for chat tokens, to the workspace's month, with a single
- * warning once 80% of the monthly token budget is used.
+ * no float drift) and to the workspace's month, with a single warning once 80%
+ * of the monthly token budget is used. Voice has no tokens, so it counts against
+ * the month as the chat input tokens its cost would have bought. A negative
+ * usage refunds an earlier estimate.
  */
 export async function recordUsage(config, user, usage, now = new Date()) {
   const { day, month } = periodOf(config, now);
-  const costMicros = Math.ceil(costUsd(config.assistant.prices, usage) * 1e6);
+  const { prices } = config.assistant;
+  const costMicros = Math.ceil(costUsd(prices, usage) * 1e6);
   const tokens = (usage.inputTokens || 0) + (usage.outputTokens || 0);
   if (!costMicros && !tokens) return;
   await AssistantUsage.updateOne(
@@ -189,10 +245,12 @@ export async function recordUsage(config, user, usage, now = new Date()) {
     { $inc: { costMicros, tokens }, $setOnInsert: { expireAt: new Date(now.getTime() + 3 * DAY_MS) } },
     { upsert: true },
   );
-  if (!tokens) return;
+  const voiceMicros = Math.ceil(costUsd(prices, { transcribeSeconds: usage.transcribeSeconds, speechChars: usage.speechChars }) * 1e6);
+  const monthTokens = tokens + Math.round(voiceMicros / prices.chatInputPerM);
+  if (!monthTokens) return;
   const workspace = await AssistantUsage.findOneAndUpdate(
     { _id: monthKey(month) },
-    { $inc: { tokens }, $setOnInsert: { expireAt: new Date(now.getTime() + 400 * DAY_MS) } },
+    { $inc: { tokens: monthTokens }, $setOnInsert: { expireAt: new Date(now.getTime() + 400 * DAY_MS) } },
     { upsert: true, new: true, lean: true },
   );
   const budget = config.assistant.monthlyTokenBudget;

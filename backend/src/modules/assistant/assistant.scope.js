@@ -32,7 +32,8 @@ export const SCOPE_REFUSAL = 'I can only help with this app: tickets, projects, 
 export const MAX_UNSEEN_SPEECH_CHARS = 200;
 
 const ID = '[A-Z][A-Z0-9]{1,9}-\\d+';
-const NAME = '[^.!?\\n]{1,60}';
+/** A person, team, client or project name: only spoken when a recent draft carried it (speechAllowed). */
+const NAME = '(?<name>[^.!?\\n]{1,60})';
 const TARGET = `(?:${ID}|\\d+ tickets)`;
 /** What the assistant widget says itself after a card is confirmed or dismissed (applyAction, resolveDraft, send). */
 const WIDGET_LINES = [
@@ -55,6 +56,66 @@ const WIDGET_LINES = [
   'Sorry, I don\'t have an answer for that\\.',
   'That didn\'t work\\. Try again\\.',
 ].map((line) => new RegExp(`^${line}$`));
+
+const widgetMatch = (text) => {
+  const said = String(text ?? '').trim();
+  return WIDGET_LINES.map((line) => line.exec(said)).find(Boolean) ?? null;
+};
+
+/** Whether text is one of the widget's own fixed lines, which the server never sent or signed. */
+export const isWidgetLine = (text) => Boolean(widgetMatch(text));
+
+/** The names a confirmed card's widget line may say, from the drafts the server just sent. */
+export function namesIn(actions = []) {
+  return actions.flatMap((action) => {
+    switch (action.type) {
+      case 'assign': return [action.assigneeName];
+      case 'create_project':
+      case 'create_team': return [action.body?.name];
+      case 'client_brand': return [action.name];
+      default: return [];
+    }
+  }).filter((name) => typeof name === 'string' && name);
+}
+
+/**
+ * Address params the app's pages read (ticket-list-query.js and each list page).
+ * Anything else in the browser's address is dropped before the model sees it.
+ */
+const PAGE_PARAMS = new Set([
+  'q', 'status', 'priority', 'category', 'severity', 'scope', 'assignedTo', 'module', 'environment', 'label',
+  'blocked', 'overdue', 'reopened', 'newReply', 'view', 'sortBy', 'limit', 'page', 'ticket', 'tab', 'mine',
+  'search', 'role', 'unread', 'trendGroupBy', 'deliveryGroupBy', 'windowDays', 'dimension', 'action',
+  'clientId', 'actorId', 'targetUserId',
+]);
+/** Params that hold what someone typed (a search, a module or label name, an audit action). */
+const FREE_TEXT_PARAMS = new Set(['q', 'search', 'module', 'label', 'action']);
+const PLAIN_VALUE = /^[\w.,:-]{0,40}$/;
+
+/**
+ * Where the user is, made safe to describe to the model. The browser sends it,
+ * and anyone can send a colleague a link with any address, so it is untrusted
+ * text: only known params survive, values that aren't free text must be plain
+ * tokens, free text is capped and scope-checked, and a path that reads as an
+ * instruction becomes "/".
+ * ponytail: a 100-character free-text value can still carry a paraphrased
+ * instruction; it reaches the model as quoted data, like ticket text does.
+ */
+export function safePage(page) {
+  if (!page) return page;
+  const kept = new URLSearchParams();
+  for (const [key, raw] of new URLSearchParams(page.query || '')) {
+    const value = FREE_TEXT_PARAMS.has(key) ? raw.slice(0, 100) : raw;
+    const ok = FREE_TEXT_PARAMS.has(key) ? !value.trim() || checkScope(value).allowed : PLAIN_VALUE.test(value);
+    if (PAGE_PARAMS.has(key) && !kept.has(key) && ok) kept.set(key, value);
+  }
+  const words = page.path.replace(/[-_/]+/g, ' ').trim();
+  return {
+    ...page,
+    path: !words || checkScope(words).allowed ? page.path : '/',
+    query: kept.size ? `?${kept}` : '',
+  };
+}
 
 const INVISIBLE = /[\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u206A-\u206F\uFEFF]/g;
 
@@ -300,7 +361,7 @@ const APP_SIGNS = [
   /<\/?(?:html|body|head|script|style)\b|<!doctype/i,
 ];
 
-function codeLineCount(text) {
+export function codeLineCount(text) {
   let fenced = false;
   let count = 0;
   for (const line of text.split('\n')) {
@@ -362,14 +423,16 @@ const LIMITS = {
 /**
  * Whether text the model wrote stays in scope. `kind` is 'reply' for its chat
  * answer or 'draft' for text going into a ticket, comment or note; `looked` says
- * the turn used tools, which is when a long answer (a summary of many tickets) is fine.
+ * the turn looked data up, which is when a long answer (a summary of many tickets) is fine.
+ * `priorCode` is the code lines in the last few replies, so a program can't be
+ * drawn out ten lines a turn ("continue").
  * @returns {{ allowed: boolean, reason: null | 'code' | 'app' | 'essay' | 'verse' | 'too_long' }}
  */
-export function checkReply(text, { kind = 'reply', looked = false } = {}) {
+export function checkReply(text, { kind = 'reply', looked = false, priorCode = 0 } = {}) {
   const body = String(text ?? '').normalize('NFKC').replace(INVISIBLE, '');
   const limits = LIMITS[kind] ?? LIMITS.reply;
   const code = codeLineCount(body);
-  if (code > limits.codeLines) return { allowed: false, reason: 'code' };
+  if (code > limits.codeLines || (code && code + priorCode > limits.codeLines)) return { allowed: false, reason: 'code' };
   if (code >= limits.appLines && APP_SIGNS.filter((sign) => sign.test(body)).length >= 3) return { allowed: false, reason: 'app' };
   const prose = proseParagraphs(body, limits.proseMin);
   if (ESSAY_MARKER.test(body) && prose.length >= 2) return { allowed: false, reason: 'essay' };
@@ -471,12 +534,15 @@ export function sanitizeHistory(messages) {
  * Whether text may be read aloud: the reply the server just sent this user, or
  * one of the widget's own fixed lines (the outcome of a confirmed card, like
  * "Moved TES4-3 to In Progress.", which the server never saw). A new line in the
- * widget that isn't listed here is shown but not read aloud.
+ * widget that isn't listed here is shown but not read aloud. A line with a name
+ * in it is read only when a recent draft carried that name (`names`), so the
+ * template isn't free text-to-speech.
  */
-export function speechAllowed(text, { isRecentReply = false } = {}) {
+export function speechAllowed(text, { isRecentReply = false, names = [] } = {}) {
   if (isRecentReply) return true;
   const said = String(text ?? '').trim();
-  return said.length <= MAX_UNSEEN_SPEECH_CHARS
-    && WIDGET_LINES.some((line) => line.test(said))
-    && checkScope(said).allowed;
+  const match = said.length <= MAX_UNSEEN_SPEECH_CHARS && widgetMatch(said);
+  if (!match) return false;
+  const name = match.groups?.name;
+  return (!name || names.includes(name)) && checkScope(said).allowed;
 }

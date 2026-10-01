@@ -93,6 +93,19 @@ test('a link code works once, from the sender who sends it, and then expires', a
   assert.ok(audit.createdAt);
 });
 
+test('a link unused for 90 days is dropped, so a reassigned number does not inherit the account', async (t) => {
+  noModel(t);
+  const actor = await user(ROLE_IDS.DEVELOPER);
+  await linked(actor);
+  const stale = new Date(Date.now() - 91 * 24 * 60 * 60 * 1000);
+  await WhatsappLink.updateOne({ user: actor._id }, { $set: { lastUsedAt: stale, linkedAt: stale } });
+
+  assert.equal(await answer(config, sender, text('status of WEB-1?')), REPLIES.notLinked);
+  assert.equal(await WhatsappLink.countDocuments({ user: actor._id }), 0);
+  const audit = await RbacAuditLog.findOne({ action: 'whatsapp.unlinked', 'details.reason': 'idle' }).lean();
+  assert.equal(audit.details.userId, String(actor._id));
+});
+
 test('guessing codes is cut off after five wrong tries, and the block is audited once', async () => {
   const actor = await user(ROLE_IDS.DEVELOPER);
   for (let i = 0; i < 5; i += 1) assert.equal(await answer(config, sender, text('LINK 00000000')), REPLIES.badCode);
