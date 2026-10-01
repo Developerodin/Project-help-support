@@ -28,10 +28,15 @@ const speakText = vi.fn(async () => new Response(new Blob(['mp3'])));
 vi.mock('@/shared/api/assistant.js', () => ({
   getAssistantStatus: (...args) => getAssistantStatus(...args),
   sendAssistantMessage: (...args) => sendAssistantMessage(...args),
+  // Typed chat streams; one mock stands in for both, as they resolve the same.
+  streamAssistantMessage: (...args) => sendAssistantMessage(...args),
   transcribeAudio: (...args) => transcribeAudio(...args),
   speakText: (...args) => speakText(...args),
 }));
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(window.location.search),
+}));
 vi.mock('@/shared/contexts/auth-context.jsx', () => ({ useAuth: () => ({ user: { id: 'u1' } }) }));
 vi.mock('@/shared/contexts/project-context.jsx', () => ({
   useProject: () => ({ activeProject: null, setActiveProjectId: () => {} }),

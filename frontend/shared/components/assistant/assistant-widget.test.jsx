@@ -9,7 +9,11 @@ const getTicket = vi.fn();
 const transitionTicket = vi.fn();
 
 const push = vi.fn();
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push }),
+  // Read from the real address, so tests set it with history.replaceState and re-render.
+  useSearchParams: () => new URLSearchParams(window.location.search),
+}));
 
 // Who is signed in; tests swap this to simulate sign-in changes in the same tab.
 const refreshUser = vi.fn(() => Promise.resolve());
@@ -25,6 +29,8 @@ vi.mock('@/shared/contexts/project-context.jsx', () => ({
 vi.mock('@/shared/api/assistant.js', () => ({
   getAssistantStatus: (...args) => getAssistantStatus(...args),
   sendAssistantMessage: (...args) => sendAssistantMessage(...args),
+  // Typed chat streams; one mock stands in for both, as they resolve the same.
+  streamAssistantMessage: (...args) => sendAssistantMessage(...args),
   speakText: vi.fn(),
   transcribeAudio: vi.fn(),
 }));
@@ -698,6 +704,168 @@ describe('AssistantWidget', () => {
     expect(secondHistory[1].notes.some((note) => note.includes('Status: waiting for the user to confirm'))).toBe(true);
   });
 
+  describe('refinements', () => {
+    const openPanel = async () => {
+      render(<AssistantWidget />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Open assistant' }));
+    };
+    beforeEach(() => getAssistantStatus.mockResolvedValue({ enabled: true }));
+    afterEach(() => window.localStorage.removeItem('assistant.hinted'));
+
+    it('Stop cancels the answer and puts the question back in the box', async () => {
+      sendAssistantMessage.mockImplementationOnce((_history, { signal }) => new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+      }));
+      await openPanel();
+      say('What is overdue?');
+      fireEvent.click(await screen.findByRole('button', { name: 'Stop answering' }));
+      await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message the assistant' }).value).toBe('What is overdue?'));
+    });
+
+    it('a failed answer offers Try again, which sends the same question', async () => {
+      sendAssistantMessage
+        .mockRejectedValueOnce(Object.assign(new Error('The assistant is unavailable right now.'), { status: 502 }))
+        .mockResolvedValueOnce({ reply: 'Nothing is overdue.', actions: [] });
+      await openPanel();
+      say('What is overdue?');
+      fireEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+      expect(await screen.findByText('Nothing is overdue.', { selector: '.assistant-bubble p' })).toBeTruthy();
+      expect(sendAssistantMessage.mock.calls[1][0].filter((message) => message.content === 'What is overdue?')).toHaveLength(1);
+    });
+
+    it('warns at 80% of the daily allowance', async () => {
+      getAssistantStatus.mockResolvedValue({
+        enabled: true, usage: { percent: 85, limitInr: 100, usedInr: 85, resetsAt: '2026-10-01T18:30:00.000Z' },
+      });
+      await openPanel();
+      expect(screen.getByText(/used 85% of today/)).toBeTruthy();
+    });
+
+    it('Ctrl+J opens and closes the chat', async () => {
+      render(<AssistantWidget />);
+      await screen.findByRole('button', { name: 'Open assistant' });
+      fireEvent.keyDown(window, { key: 'j', ctrlKey: true });
+      expect(await screen.findByRole('dialog', { name: 'Assistant' })).toBeTruthy();
+      fireEvent.keyDown(window, { key: 'j', ctrlKey: true });
+      expect(await screen.findByRole('button', { name: 'Open assistant' })).toBeTruthy();
+    });
+
+    it('shows a first-visit tip once, until dismissed', async () => {
+      const view = render(<AssistantWidget />);
+      expect(await screen.findByRole('note')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Dismiss tip' }));
+      expect(screen.queryByRole('note')).toBeNull();
+      view.unmount();
+      render(<AssistantWidget />);
+      await screen.findByRole('button', { name: 'Open assistant' });
+      expect(screen.queryByRole('note')).toBeNull();
+    });
+  });
+
+  describe('sizes', () => {
+    /** Pretends the window matches the given media queries. */
+    const screenMatches = (...queries) => vi.stubGlobal('matchMedia', (query) => ({
+      matches: queries.includes(query), addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }));
+    const panel = () => screen.getByRole('dialog', { name: 'Assistant' });
+    const openPanel = async () => {
+      getAssistantStatus.mockResolvedValue({ enabled: true });
+      render(<AssistantWidget />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Open assistant' }));
+    };
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      window.localStorage.removeItem('assistant.size');
+    });
+
+    it('goes full screen and back; Esc steps down before it closes; the size is remembered', async () => {
+      await openPanel();
+      expect(panel().className).toContain('is-float');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Full screen' }));
+      expect(panel().className).toContain('is-full');
+      expect(window.localStorage.getItem('assistant.size')).toBe('full');
+
+      fireEvent.keyDown(panel(), { key: 'Escape' });
+      expect(panel().className).toContain('is-float');
+      fireEvent.keyDown(panel(), { key: 'Escape' });
+      expect(await screen.findByRole('button', { name: 'Open assistant' })).toBeTruthy();
+    });
+
+    it('docks beside the page on a wide screen, and floats on a narrower one', async () => {
+      screenMatches('(min-width: 1100px)');
+      await openPanel();
+      fireEvent.click(screen.getByRole('button', { name: 'More options' }));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Dock beside the page' }));
+      expect(panel().className).toContain('is-dock');
+      fireEvent.click(screen.getByRole('button', { name: 'More options' }));
+      expect(screen.getByRole('menuitem', { name: 'Float in the corner' })).toBeTruthy();
+    });
+
+    it('is a sheet on phones, with no size controls', async () => {
+      screenMatches('(max-width: 820px)');
+      window.localStorage.setItem('assistant.size', 'full');
+      await openPanel();
+      expect(panel().className).toContain('is-sheet');
+      expect(screen.queryByRole('button', { name: 'Full screen' })).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'More options' }));
+      expect(screen.queryByRole('menuitem', { name: /Dock beside/ })).toBeNull();
+    });
+  });
+
+  describe('more options menu', () => {
+    const openMenu = async () => {
+      getAssistantStatus.mockResolvedValue({ enabled: true });
+      render(<AssistantWidget />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Open assistant' }));
+      fireEvent.click(screen.getByRole('button', { name: 'More options' }));
+      return screen.getByRole('menu', { name: 'More options' });
+    };
+
+    it('holds new chat and read aloud; read aloud shows whether it is on', async () => {
+      const menu = await openMenu();
+      expect(screen.getByRole('menuitem', { name: 'New chat' }).disabled).toBe(true); // nothing to clear yet
+      const aloud = screen.getByRole('menuitemcheckbox', { name: /Read replies aloud/ });
+      expect(aloud.getAttribute('aria-checked')).toBe('false');
+      fireEvent.click(aloud);
+      expect(screen.queryByRole('menu')).toBeNull();
+      expect(window.localStorage.getItem('assistant.speak')).toBe('1');
+      expect(menu).toBeTruthy();
+    });
+
+    it('Esc closes the menu but not the chat, and arrows move between items', async () => {
+      await openMenu();
+      const aloud = screen.getByRole('menuitemcheckbox', { name: /Read replies aloud/ });
+      expect(document.activeElement).toBe(aloud); // New chat is disabled, so the first usable item
+      fireEvent.keyDown(aloud, { key: 'ArrowDown' });
+      expect(document.activeElement).toBe(aloud); // the only usable item wraps to itself
+      fireEvent.keyDown(aloud, { key: 'Escape' });
+      expect(screen.queryByRole('menu')).toBeNull();
+      expect(screen.getByRole('dialog', { name: 'Assistant' })).toBeTruthy();
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'More options' }));
+    });
+  });
+
+  it('shows the reply as it streams in, then the finished reply in its place', async () => {
+    let finish;
+    getAssistantStatus.mockResolvedValue({ enabled: true });
+    sendAssistantMessage.mockImplementationOnce((_history, { onText }) => {
+      onText('Checking the board');
+      return new Promise((resolve) => { finish = resolve; });
+    });
+
+    render(<AssistantWidget />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Open assistant' }));
+    say('Anything overdue?');
+    expect(await screen.findByText('Checking the board')).toBeTruthy();
+    expect(screen.queryByRole('status', { name: 'Assistant is thinking' })).toBeNull();
+
+    await act(async () => finish({ reply: 'Nothing is overdue.', actions: [] }));
+    expect(await screen.findByText('Nothing is overdue.')).toBeTruthy();
+    expect(screen.queryByText('Checking the board')).toBeNull();
+  });
+
   it('sends a reply back with the server\'s signature, and its notes apart', async () => {
     const sig = 'a'.repeat(64);
     getAssistantStatus.mockResolvedValue({ enabled: true });
@@ -708,7 +876,7 @@ describe('AssistantWidget', () => {
     render(<AssistantWidget />);
     fireEvent.click(await screen.findByRole('button', { name: 'Open assistant' }));
     say('Status of WEB-1?');
-    await screen.findByText('In Progress.', { exact: false });
+    await screen.findByText('In Progress.', { exact: false, selector: '.assistant-bubble p' });
     say('Thanks');
     await screen.findByText('Ok.');
 
@@ -729,7 +897,8 @@ describe('AssistantWidget', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Open assistant' }));
     expect(await screen.findByText('Remember me.')).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'New chat' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More options' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'New chat' }));
     expect(screen.queryByText('Remember me.')).toBeNull();
     expect(window.sessionStorage.getItem('assistant.chat:u1')).toBeNull();
   });
@@ -833,7 +1002,7 @@ describe('AssistantWidget', () => {
     const view = render(<AssistantWidget />);
     fireEvent.click(await screen.findByRole('button', { name: 'Open assistant' }));
     say('show WEB-9');
-    await screen.findByText(/details for Ada only/);
+    await screen.findByText(/details for Ada only/, { selector: '.assistant-bubble p' });
 
     // Someone else signs in (or an admin starts impersonating) without a reload.
     auth.user = { id: 'u2', name: 'Bo' };
@@ -1019,6 +1188,59 @@ describe('AssistantWidget', () => {
       expect(watchTicket).toHaveBeenCalledWith('WEB-5');
       expect(screen.queryByRole('button', { name: 'Confirm' })).toBeNull();
     });
+  });
+});
+
+describe('ticket context chip', () => {
+  beforeEach(() => {
+    getAssistantStatus.mockReset().mockResolvedValue({ enabled: true });
+    sendAssistantMessage.mockReset().mockResolvedValue({ reply: 'Okay.', actions: [] });
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    auth.user = { id: 'u1', name: 'Ada' };
+  });
+  afterEach(() => window.history.replaceState(null, '', '/'));
+
+  const pageSent = () => sendAssistantMessage.mock.calls.at(-1)[1].page;
+
+  it('shows the open ticket, and dismissing it stops sending that ticket', async () => {
+    window.history.replaceState(null, '', '/tickets?view=list&ticket=WEB-12&tab=details');
+    render(<AssistantWidget />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Open assistant' }));
+
+    expect(await screen.findByText('WEB-12')).toHaveClass('assistant-context-id');
+    say('Who owns this?');
+    await screen.findByText('Okay.');
+    expect(pageSent()).toMatchObject({ ticketId: 'WEB-12', tab: 'details' });
+
+    fireEvent.click(screen.getByRole('button', { name: "Don't use WEB-12 as context" }));
+    expect(screen.queryByText('WEB-12')).toBeNull();
+    say('List my tickets');
+    await waitFor(() => expect(sendAssistantMessage).toHaveBeenCalledTimes(2));
+    expect(pageSent()).toMatchObject({ ticketId: null, tab: null, query: '?view=list' });
+  });
+
+  it('follows the address as tickets open and close, and comes back for another ticket', async () => {
+    const view = render(<AssistantWidget />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Open assistant' }));
+    expect(screen.queryByRole('button', { name: /as context/ })).toBeNull();
+
+    // The client router changes the query; the widget re-renders with it.
+    window.history.replaceState(null, '', '/tickets?ticket=WEB-12');
+    view.rerender(<AssistantWidget />);
+    fireEvent.click(await screen.findByRole('button', { name: "Don't use WEB-12 as context" }));
+    expect(screen.queryByRole('button', { name: /as context/ })).toBeNull();
+
+    window.history.replaceState(null, '', '/tickets?ticket=WEB-13');
+    view.rerender(<AssistantWidget />);
+    expect(await screen.findByRole('button', { name: "Don't use WEB-13 as context" })).toBeInTheDocument();
+    say('What is this about?');
+    await screen.findByText('Okay.');
+    expect(pageSent().ticketId).toBe('WEB-13');
+
+    window.history.replaceState(null, '', '/tickets');
+    view.rerender(<AssistantWidget />);
+    await waitFor(() => expect(screen.queryByRole('button', { name: /as context/ })).toBeNull());
   });
 });
 

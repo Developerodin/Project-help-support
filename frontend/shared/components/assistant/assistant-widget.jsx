@@ -1,16 +1,17 @@
 'use client';
 
 import {
-  useCallback, useEffect, useLayoutEffect, useRef, useState,
+  Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore,
 } from 'react';
+import { flushSync } from 'react-dom';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   CATEGORIES, ENVIRONMENTS, PRIORITIES, SEVERITIES, speechLanguage, stageLabel,
 } from '@pms/shared';
 import Icon from '../icons.jsx';
 import {
-  getAssistantStatus, sendAssistantMessage, speakText, transcribeAudio,
+  getAssistantStatus, sendAssistantMessage, speakText, streamAssistantMessage, transcribeAudio,
 } from '@/shared/api/assistant.js';
 import {
   addComment, assignTicket, clearBlocked, createTicket, getTicket, patchTicket, resolveAttachmentDownloadUrl, setBlocked,
@@ -22,7 +23,7 @@ import { createTeam } from '@/shared/api/teams.js';
 import { resetNotificationPrefs, updateNotificationPrefs } from '@/shared/api/users.js';
 import { mutateNotifications } from '@/shared/lib/notification-swr.js';
 import { isAbortError } from '@/shared/api/client.js';
-import { TAB_PARAM, TICKET_PARAM } from '@/shared/lib/deep-link.js';
+import { TAB_PARAM, TICKET_PARAM, withoutTicketParam } from '@/shared/lib/deep-link.js';
 import { friendlyTransitionError, normalizeApiError } from '@/shared/lib/api-error.js';
 import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import { useProject } from '@/shared/contexts/project-context.jsx';
@@ -59,6 +60,40 @@ export function currentPage() {
     // Filters, view and page, so "next page" or "remove that filter" is not a guess.
     query: window.location.search.slice(0, 1000),
   };
+}
+
+/**
+ * Reports the open ticket (?ticket=) as the client router changes it.
+ * Its own tiny component so the useSearchParams() call can sit in a <Suspense>:
+ * without one, `next build` fails prerendering any page under the app layout.
+ * Inside it, only this null-rendering child bails out to client rendering.
+ */
+function TicketParamWatch({ onChange }) {
+  const ticketId = useSearchParams().get(TICKET_PARAM);
+  useEffect(() => {
+    onChange(ticketId);
+  }, [ticketId, onChange]);
+  return null;
+}
+
+/** "About WEB-12" above the composer, with a way to stop sending that ticket as context. */
+function TicketContextChip({ ticketId, onDismiss }) {
+  return (
+    <div className="assistant-context">
+      <span className="chip assistant-context-chip">
+        About <span className="assistant-context-id">{ticketId}</span>
+        <button
+          type="button"
+          className="assistant-context-x"
+          aria-label={`Don't use ${ticketId} as context`}
+          title={`Don't use ${ticketId} as context`}
+          onClick={onDismiss}
+        >
+          <Icon name="x" size={10} aria-hidden="true" />
+        </button>
+      </span>
+    </div>
+  );
 }
 
 /**
@@ -140,6 +175,15 @@ const VOICE_FATAL_CODES = new Set(['ASSISTANT_DAILY_LIMIT', 'ASSISTANT_BUDGET_EX
 export const AI_NOTICE = 'AI assistant: it can make mistakes. Messages, voice and ticket details are processed by OpenAI.';
 const TICKET_ID = /\b([A-Z][A-Z0-9]{1,9}-\d+)\b/g;
 const SUGGESTIONS = ['What is overdue right now?', 'Open the board', 'How do I move a ticket to QA?'];
+
+/** Starting points that fit where the user is: an open ticket, the board, or anywhere else. */
+function suggestionsFor(page) {
+  if (page.ticketId) {
+    return ['Summarise this ticket\'s discussion', 'What is blocking this ticket?', 'What happens next with it?'];
+  }
+  if (page.path === '/tickets/board') return ['What is overdue on the board?', 'Who has the most tickets?', 'What is stuck in review?'];
+  return SUGGESTIONS;
+}
 
 /** Splits text so ticket ids (WEB-55) can render as links to the ticket drawer. */
 export function splitTicketIds(text) {
@@ -523,6 +567,110 @@ function AssistantMark({ size = 22 }) {
   );
 }
 
+/**
+ * The header's "more" menu, for what isn't needed every turn (new chat, read
+ * aloud, docking). Same .menu/.menuitem vocabulary as the profile menu. Opening
+ * focuses the first item; arrows move, Esc closes it (not the chat) and gives
+ * focus back to the button. Items are { label, icon, onSelect, disabled?,
+ * checked? }; `checked` makes a checkbox item with an On/Off hint.
+ */
+function MoreMenu({ items, note }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  const buttonRef = useRef(null);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    menuRef.current?.querySelector('[role^="menuitem"]:not(:disabled)')?.focus();
+    const onPointerDown = (event) => {
+      if (!wrapRef.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [open]);
+
+  const onKeyDown = (event) => {
+    if (!open) return;
+    if (event.key === 'Escape') {
+      event.stopPropagation(); // the panel would close too
+      setOpen(false);
+      buttonRef.current?.focus();
+      return;
+    }
+    const step = { ArrowDown: 1, ArrowUp: -1 }[event.key];
+    if (!step) return;
+    event.preventDefault();
+    const choices = [...menuRef.current.querySelectorAll('[role^="menuitem"]:not(:disabled)')];
+    const at = choices.indexOf(document.activeElement);
+    choices[(at + step + choices.length) % choices.length]?.focus();
+  };
+
+  return (
+    <div className="menuwrap assistant-more" ref={wrapRef} onKeyDown={onKeyDown}>
+      <button
+        type="button"
+        ref={buttonRef}
+        className="assistant-icon-btn"
+        aria-label="More options"
+        title="More options"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <Icon name="more" size={18} aria-hidden="true" />
+      </button>
+      {open ? (
+        <div className="menu on" role="menu" aria-label="More options" ref={menuRef}>
+          {items.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              className="menuitem"
+              role={item.checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
+              aria-checked={item.checked}
+              disabled={item.disabled}
+              onClick={() => {
+                setOpen(false);
+                buttonRef.current?.focus();
+                item.onSelect();
+              }}
+            >
+              <Icon name={item.icon} size={16} aria-hidden="true" />
+              <span>{item.label}</span>
+              {item.checked === undefined ? null : <span className="k">{item.checked ? 'On' : 'Off'}</span>}
+            </button>
+          ))}
+          {note ? (
+            <>
+              <div className="menusep" />
+              <p className="menucap assistant-more-note">{note}</p>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Copies a reply, for pasting a summary into a ticket, an email or a chat. */
+function CopyButton({ text }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch { /* clipboard blocked: nothing to do */ }
+  };
+  return (
+    <button type="button" className="assistant-msg-copy" onClick={copy} aria-label={copied ? 'Copied' : 'Copy reply'}>
+      <Icon name={copied ? 'check' : 'copy'} size={13} aria-hidden="true" />
+      <span>{copied ? 'Copied' : 'Copy'}</span>
+    </button>
+  );
+}
+
 function FileButton({ file }) {
   const [state, setState] = useState('idle');
   const open = async () => {
@@ -806,6 +954,83 @@ function readSpeakPref() {
   }
 }
 
+/** The chat's size: a corner panel, docked beside the page, or the whole screen. */
+const SIZES = ['float', 'dock', 'full'];
+const SIZE_KEY = 'assistant.size';
+/** Phones and small tablets get a full-height sheet whatever the chosen size (DESIGN.md's touch breakpoint). */
+const SHEET_QUERY = '(max-width: 820px)';
+/** Docking leaves the page about 700px beside a 400px panel; narrower, it floats instead. */
+const DOCK_QUERY = '(min-width: 1100px)';
+
+const HINT_KEY = 'assistant.hinted';
+const DOCK_WIDTH_KEY = 'assistant.dockWidth';
+const DOCK_MIN = 320;
+/** Never so wide the page beside it drops under 600px, and never past 720px. */
+const clampDock = (width) => Math.round(Math.max(DOCK_MIN, Math.min(width, 720, window.innerWidth - 600)));
+
+function readDockWidth() {
+  try {
+    const saved = Number(window.localStorage.getItem(DOCK_WIDTH_KEY));
+    return saved >= DOCK_MIN ? saved : 400;
+  } catch {
+    return 400;
+  }
+}
+
+function readSize() {
+  try {
+    const saved = window.localStorage.getItem(SIZE_KEY);
+    return SIZES.includes(saved) ? saved : 'float';
+  } catch {
+    return 'float';
+  }
+}
+
+/** Whether a media query matches now, kept current as the window changes. */
+function useMediaQuery(query) {
+  return useSyncExternalStore(
+    (onChange) => {
+      const list = window.matchMedia?.(query);
+      list?.addEventListener('change', onChange);
+      return () => list?.removeEventListener('change', onChange);
+    },
+    () => Boolean(window.matchMedia?.(query)?.matches),
+    () => false,
+  );
+}
+
+let inMorph = false;
+
+/**
+ * Runs a change of size or mode as a view transition where the browser has
+ * them: elements sharing a view-transition-name (the chat button and panel,
+ * the voice button and orb) morph from one place and size to the other. Without
+ * support, or with reduced motion, the change just happens. Nested calls (a
+ * change that ends voice mode while opening the chat) join the outer one.
+ * ponytail: same-document view transitions only (Chromium, Safari 18, Firefox
+ * 144); older browsers get the instant change, no polyfill.
+ */
+function morph(update) {
+  if (inMorph || typeof document.startViewTransition !== 'function' || prefersReducedMotion()) {
+    update();
+    return;
+  }
+  const root = document.documentElement;
+  // The panel's and orb's own entrance animations would play inside the morph; this turns them off.
+  root.classList.add('is-morphing');
+  const transition = document.startViewTransition(() => {
+    inMorph = true;
+    try {
+      flushSync(update);
+    } finally {
+      inMorph = false;
+    }
+  });
+  transition.finished.finally(() => root.classList.remove('is-morphing'));
+}
+
+const canMorph = () => typeof document !== 'undefined' && typeof document.startViewTransition === 'function' && !prefersReducedMotion();
+
 export default function AssistantWidget() {
   const router = useRouter();
   const { user, refreshUser } = useAuth();
@@ -819,9 +1044,30 @@ export default function AssistantWidget() {
   // Today's allowance for the usage ring: { percent, limitInr, usedInr, resetsAt }.
   const [usage, setUsage] = useState(null);
   const [open, setOpen] = useState(false);
+  const [size, setSize] = useState('float');
+  // Where Esc and "exit full screen" go back to.
+  const sizeBeforeFull = useRef('float');
+  // Voice opens full screen; minimised, it shrinks into the corner so the page stays usable.
+  const [voiceSize, setVoiceSize] = useState('full');
+  const [dockWidth, setDockWidth] = useState(400);
+  // A first-visit hint beside the chat button, until it is dismissed or the chat is opened.
+  const [hint, setHint] = useState(false);
+  const dismissHint = useCallback(() => {
+    setHint(false);
+    try {
+      window.localStorage.setItem(HINT_KEY, '1');
+    } catch { /* storage blocked */ }
+  }, []);
+  const panelRef = useRef(null);
+  const sheet = useMediaQuery(SHEET_QUERY);
+  const dockable = useMediaQuery(DOCK_QUERY);
+  // What the panel actually is right now: a sheet on phones, and no docking on narrow screens.
+  const shownSize = sheet ? 'sheet' : size === 'dock' && !dockable ? 'float' : size;
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  /** The reply so far, while it streams in. */
+  const [liveText, setLiveText] = useState('');
   const [error, setError] = useState(null);
   const [transcribing, setTranscribing] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -843,6 +1089,26 @@ export default function AssistantWidget() {
   const removeFile = useCallback((file) => {
     setStaged((prev) => prev.filter((entry) => entry !== file));
     setStageError(null);
+  }, []);
+  // The ticket open in the drawer, and one the user said not to send as context.
+  const [openTicket, setOpenTicket] = useState(null);
+  const [ignoredTicket, setIgnoredTicket] = useState(null);
+  // Read at send time, like projectKeyRef.
+  const ignoredTicketRef = useRef(ignoredTicket);
+  ignoredTicketRef.current = ignoredTicket;
+  const onTicketParam = useCallback((ticketId) => {
+    setOpenTicket(ticketId);
+    // Opening another ticket (or closing it) ends the opt-out, so the chip comes back.
+    setIgnoredTicket((prev) => (prev === ticketId ? prev : null));
+  }, []);
+  /** The page as sent, minus a ticket the user dismissed from the context chip. */
+  const sentPage = useCallback(() => {
+    const page = { ...currentPage(), project: projectKeyRef.current };
+    if (!page.ticketId || page.ticketId !== ignoredTicketRef.current) return page;
+    // The server reads the raw query too, so the ticket leaves it as well.
+    return {
+      ...page, ticketId: null, tab: null, query: withoutTicketParam(window.location.search).slice(0, 1000),
+    };
   }, []);
   const {
     recording, record, stop: stopRecording, level: micLevel,
@@ -883,6 +1149,9 @@ export default function AssistantWidget() {
   const logRef = useRef(null);
   const inputRef = useRef(null);
   const fabRef = useRef(null);
+  // The last question sent, for Retry; and whether the Stop button cancelled it.
+  const lastAsked = useRef(null);
+  const stoppedByUser = useRef(false);
   // Whose conversation `messages` holds; saving waits until it is known.
   const chatOwner = useRef(null);
 
@@ -896,8 +1165,21 @@ export default function AssistantWidget() {
       })
       .catch(() => { /* no assistant: leave the button hidden */ });
     setSpeakOn(readSpeakPref());
+    setSize(readSize());
+    setDockWidth(readDockWidth());
+    try {
+      setHint(window.localStorage.getItem(HINT_KEY) !== '1');
+    } catch { /* storage blocked: no hint, rather than one every visit */ }
     return () => { cancelled = true; };
   }, []);
+
+  // The docked width drives the panel and the room the page makes for it (design-system.css).
+  useEffect(() => {
+    document.documentElement.style.setProperty('--assistant-dock-w', `${dockWidth}px`);
+    try {
+      window.localStorage.setItem(DOCK_WIDTH_KEY, String(dockWidth));
+    } catch { /* storage blocked: the width lasts this visit */ }
+  }, [dockWidth]);
 
   // Never saves an empty chat: in development React runs effects twice on
   // mount, and saving [] before the saved chat is read back would erase it.
@@ -909,7 +1191,7 @@ export default function AssistantWidget() {
   useEffect(() => {
     const log = logRef.current;
     if (log) log.scrollTop = log.scrollHeight;
-  }, [messages, busy]);
+  }, [messages, busy, liveText]);
 
   // After closing, focus goes back to the chat button once it is on screen again.
   useEffect(() => {
@@ -1057,6 +1339,7 @@ export default function AssistantWidget() {
     const attached = stagedRef.current.map((file) => ({ name: file.name, size: file.size }));
     const turn = `${Date.now()}-${Math.random()}`;
     const asked = { role: 'user', content, ...(attached.length ? { attached } : {}) };
+    lastAsked.current = asked;
     const next = [...messagesRef.current, asked];
     setMessages(next);
     setInput('');
@@ -1070,11 +1353,20 @@ export default function AssistantWidget() {
         .filter((message) => message.content)
         .slice(-HISTORY_LIMIT)
         .map(historyEntry);
-      const { reply, actions = [], sig } = await sendAssistantMessage(history, {
-        signal: controller.signal,
-        page: { ...currentPage(), project: projectKeyRef.current },
-        ...(handsFreeRef.current ? { mode: 'voice' } : {}),
-      });
+      // Typed chat shows the reply as it is written; voice speaks it once it is whole.
+      const { reply, actions = [], sig } = handsFreeRef.current
+        ? await sendAssistantMessage(history, {
+          signal: controller.signal,
+          page: sentPage(),
+          mode: 'voice',
+        })
+        : await streamAssistantMessage(history, {
+          signal: controller.signal,
+          page: sentPage(),
+          onText: setLiveText,
+        });
+      // The finished reply replaces the text shown while it was written.
+      setLiveText('');
       const files = actions.filter((action) => action.type === 'attachment');
       const drafts = actions.filter((action) => ![
         'navigate', 'attachment', 'switch_project', 'watch', 'ticket_filters', 'report', 'report_download', 'scroll', 'change_page', 'people_filters', 'page_filters', 'module_view',
@@ -1225,6 +1517,11 @@ export default function AssistantWidget() {
       // goes too, so a retracted "open the board" can't win the next turn.
       if (isAbortError(err) || controller.signal.aborted) {
         setMessages((prev) => prev.filter((message) => message !== asked));
+        // Stopped with the Stop button: the question goes back in the box to edit or resend.
+        if (stoppedByUser.current) {
+          stoppedByUser.current = false;
+          setInput(asked.content);
+        }
         return null;
       }
       lastErrorCode.current = normalizeApiError(err)?.code ?? null;
@@ -1232,10 +1529,11 @@ export default function AssistantWidget() {
       return null;
     } finally {
       if (chatAbort.current === controller) chatAbort.current = null;
+      setLiveText('');
       setBusy(false);
       refreshUsage();
     }
-  }, [router, refreshUsage, setActiveProjectId]);
+  }, [router, refreshUsage, setActiveProjectId, sentPage]);
 
   /** Applies or rejects a draft. Resolves with a short sentence saying what happened. */
   const resolveDraft = useCallback(async (action, confirm) => {
@@ -1358,8 +1656,11 @@ export default function AssistantWidget() {
   }, [userId, stopAudio, stopRecording]);
 
   const endHandsFree = useCallback(() => {
+    const wasOn = handsFreeRef.current;
     handsFreeRef.current = false;
-    setHandsFree(false);
+    // The orb shrinks back into the voice button it came from.
+    if (wasOn) morph(() => setHandsFree(false));
+    else setHandsFree(false);
     stopRecording();
     stopAudio();
     chatAbort.current?.abort();
@@ -1404,7 +1705,11 @@ export default function AssistantWidget() {
    */
   const startHandsFree = useCallback(async () => {
     handsFreeRef.current = true;
-    setHandsFree(true);
+    // Voice opens full screen, the orb growing out of the button that started it.
+    morph(() => {
+      setVoiceSize('full');
+      setHandsFree(true);
+    });
     setError(null);
     setHeard('');
     setLastReply('');
@@ -1513,7 +1818,8 @@ export default function AssistantWidget() {
   useEffect(() => {
     const ended = wasHandsFree.current && !handsFree;
     wasHandsFree.current = handsFree;
-    if (!ended || prefersReducedMotion()) {
+    // A view transition already shrank the orb away (endHandsFree); the keyframe exit is the fallback.
+    if (!ended || prefersReducedMotion() || canMorph()) {
       setVoiceLeaving(false);
       return undefined;
     }
@@ -1533,13 +1839,101 @@ export default function AssistantWidget() {
       setClosing(false);
       setOpen(false);
     };
-    // Play the exit animation first, unless the user prefers no motion.
-    if (prefersReducedMotion()) finish();
+    // The panel shrinks back into the chat button; without view transitions it plays
+    // its own exit first, unless the user prefers no motion.
+    if (canMorph() || prefersReducedMotion()) morph(finish);
     else {
       setClosing(true);
       window.setTimeout(finish, PANEL_EXIT_MS);
     }
   };
+
+  const openChat = () => {
+    if (hint) dismissHint();
+    morph(() => setOpen(true));
+  };
+
+  /** Floating, docked or full screen; remembered for next time. */
+  const changeSize = (next) => {
+    if (next === 'full') sizeBeforeFull.current = shownSize === 'full' ? sizeBeforeFull.current : size;
+    morph(() => setSize(next));
+    try {
+      window.localStorage.setItem(SIZE_KEY, next);
+    } catch { /* storage blocked: the size lasts this visit */ }
+  };
+
+  // Esc steps down from full screen first, then closes.
+  const onPanelKey = (event) => {
+    if (event.key !== 'Escape') return;
+    if (shownSize === 'full') changeSize(sizeBeforeFull.current);
+    else close();
+  };
+
+  /** Drag the docked panel's left edge to resize it. */
+  const startDockResize = (event) => {
+    event.preventDefault();
+    const move = (moved) => setDockWidth(clampDock(window.innerWidth - moved.clientX));
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      document.body.style.removeProperty('cursor');
+    };
+    document.body.style.cursor = 'col-resize';
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
+  /**
+   * On a phone, drag the sheet's header down to dismiss it. The sheet follows
+   * the finger; let go past 100px and it closes, otherwise it springs back.
+   */
+  const startSheetDrag = (event) => {
+    if (shownSize !== 'sheet' || event.target.closest('button')) return;
+    const sheetEl = panelRef.current;
+    const from = event.clientY;
+    let dragged = 0;
+    const move = (moved) => {
+      dragged = Math.max(0, moved.clientY - from);
+      sheetEl.style.transform = `translateY(${dragged}px)`;
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      sheetEl.style.removeProperty('transform');
+      if (dragged > 100) close();
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
+  /** Sends the question that failed again, in its place at the end of the chat. */
+  const retry = () => {
+    const asked = lastAsked.current;
+    if (!asked || busy) return;
+    // The ref too: send() builds the history from it before this render lands.
+    messagesRef.current = messagesRef.current.filter((message) => message !== asked);
+    setMessages((prev) => prev.filter((message) => message !== asked));
+    setError(null);
+    handleUtterance(asked.content);
+  };
+
+  // Ctrl/⌘+J opens the chat from anywhere and closes it again, as in Notion and Linear.
+  const toggleRef = useRef(null);
+  toggleRef.current = () => {
+    if (open) close();
+    else if (!handsFreeRef.current) openChat();
+  };
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const onKey = (event) => {
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'j') {
+        event.preventDefault();
+        toggleRef.current();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [enabled]);
 
   const startNewChat = () => {
     endHandsFree();
@@ -1574,8 +1968,11 @@ export default function AssistantWidget() {
       leaving={!handsFree}
       phase={voicePhase}
       besidePanel={open}
+      // With the chat open beside it (a report), voice keeps to the corner.
+      size={open ? 'mini' : voiceSize}
+      onResize={(next) => morph(() => setVoiceSize(next))}
       report={voiceReport}
-      onShowReport={() => setOpen(true)}
+      onShowReport={openChat}
       heard={heard}
       reply={lastReply}
       draft={pendingDraft ? { ...describeAction(pendingDraft), status: pendingDraft.status, error: pendingDraft.error } : null}
@@ -1591,10 +1988,10 @@ export default function AssistantWidget() {
       })}
       onConfirmDraft={async () => setLastReply(await resolveDraft(pendingDraft, true))}
       onCancelDraft={async () => setLastReply(await resolveDraft(pendingDraft, false))}
-      onEditDraft={() => {
+      onEditDraft={() => morph(() => {
         endHandsFree();
         setOpen(true);
-      }}
+      })}
       micLevel={micLevel}
       outputLevel={outputLevel}
       files={staged}
@@ -1607,10 +2004,10 @@ export default function AssistantWidget() {
       notice={AI_NOTICE}
       error={error}
       onEnd={endHandsFree}
-      onShowChat={() => {
+      onShowChat={() => morph(() => {
         endHandsFree();
         setOpen(true);
-      }}
+      })}
     />
   ) : null;
 
@@ -1620,6 +2017,17 @@ export default function AssistantWidget() {
         {voiceMode}
         {handsFree ? null : (
           <div className="assistant-fabs">
+            {hint ? (
+              <div className="assistant-hint" role="note">
+                <p>
+                  Ask about your tickets, file one, or say where to go. Hold <kbd>Space</kbd> to talk,
+                  or press <kbd>Ctrl</kbd>+<kbd>J</kbd>.
+                </p>
+                <button type="button" className="assistant-icon-btn" aria-label="Dismiss tip" onClick={dismissHint}>
+                  <Icon name="x" size={14} aria-hidden="true" />
+                </button>
+              </div>
+            ) : null}
             <button
               type="button"
               className="assistant-fab is-voice"
@@ -1635,7 +2043,7 @@ export default function AssistantWidget() {
               className="assistant-fab"
               aria-label={unread ? `Open assistant, ${unread} new ${unread === 1 ? 'reply' : 'replies'}` : 'Open assistant'}
               title="Assistant (hold Space to talk)"
-              onClick={() => setOpen(true)}
+              onClick={openChat}
             >
               <AssistantMark />
               {unread ? <span className="assistant-fab-dot" aria-hidden="true" /> : null}
@@ -1659,29 +2067,54 @@ export default function AssistantWidget() {
     <>
       {voiceMode}
       <section
-        className={`assistant-panel${closing ? ' is-closing' : ''}`}
+        className={`assistant-panel is-${shownSize}${closing ? ' is-closing' : ''}`}
         role="dialog"
         aria-modal="false"
         aria-labelledby="assistant-title"
-        onKeyDown={(event) => { if (event.key === 'Escape') close(); }}
+        onKeyDown={onPanelKey}
+        ref={panelRef}
         {...fileDropProps(addFiles)}
       >
-        <header className="assistant-head">
+        {shownSize === 'dock' ? (
+          // A focusable separator is the ARIA pattern for a resizer.
+          <div
+            className="assistant-dock-handle"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize the assistant"
+            aria-valuenow={dockWidth}
+            aria-valuemin={DOCK_MIN}
+            aria-valuemax={720}
+            tabIndex={0}
+            onPointerDown={startDockResize}
+            onKeyDown={(event) => {
+              const step = { ArrowLeft: 24, ArrowRight: -24 }[event.key];
+              if (step) {
+                event.preventDefault();
+                setDockWidth((width) => clampDock(width + step));
+              }
+            }}
+          />
+        ) : null}
+        <header className="assistant-head" onPointerDown={startSheetDrag}>
           <div className="assistant-title">
             <h2 id="assistant-title">Assistant</h2>
             <span className="assistant-status" aria-live="polite">{activity || (handsFree ? 'Hands-free' : '')}</span>
           </div>
           <span className="spacer" />
-          <button
-            type="button"
-            className="assistant-icon-btn"
-            aria-label="New chat"
-            title="New chat"
-            disabled={!messages.length || busy}
-            onClick={startNewChat}
-          >
-            <Icon name="new-chat" size={18} aria-hidden="true" />
-          </button>
+          {/* Only while a reply is read aloud: its ring follows the voice, and a tap stops it. */}
+          {speaking && !handsFree ? (
+            <button
+              type="button"
+              ref={speakButtonRef}
+              className="assistant-icon-btn assistant-speaker is-speaking"
+              aria-label="Stop reading aloud"
+              title="Stop reading aloud"
+              onClick={stopAudio}
+            >
+              <Icon name="volume" size={18} aria-hidden="true" />
+            </button>
+          ) : null}
           <button
             type="button"
             className="assistant-icon-btn"
@@ -1694,30 +2127,53 @@ export default function AssistantWidget() {
               endHandsFree();
               return;
             }
-            // The voice dock lives in the same corner as this panel; hand over to it.
-            setOpen(false);
-            startHandsFree();
+            // The chat hands over to voice, which opens full screen.
+            morph(() => {
+              setOpen(false);
+              startHandsFree();
+            });
           }}
           >
             <Icon name="voice" size={18} className="assistant-voice-icon" aria-hidden="true" />
           </button>
-          <button
-            type="button"
-            ref={speakButtonRef}
-            className={`assistant-icon-btn assistant-speaker${speaking ? ' is-speaking' : ''}`}
-            aria-pressed={speakOn}
-            aria-label="Read replies aloud"
-            title={speakOn ? 'Reading replies aloud' : 'Read replies aloud'}
-            onClick={toggleSpeak}
-          >
-            <Icon name={speakOn ? 'volume' : 'volume-off'} size={18} aria-hidden="true" />
-          </button>
+          {/* Phones always get a full-height sheet, so full screen is for larger screens. */}
+          {sheet ? null : (
+            <button
+              type="button"
+              className="assistant-icon-btn"
+              aria-label={shownSize === 'full' ? 'Exit full screen' : 'Full screen'}
+              title={shownSize === 'full' ? 'Exit full screen (Esc)' : 'Full screen'}
+              onClick={() => changeSize(shownSize === 'full' ? sizeBeforeFull.current : 'full')}
+            >
+              <Icon name={shownSize === 'full' ? 'minimize' : 'maximize'} size={18} aria-hidden="true" />
+            </button>
+          )}
+          <MoreMenu
+            items={[
+              {
+                label: 'New chat', icon: 'new-chat', disabled: !messages.length || busy, onSelect: startNewChat,
+              },
+              {
+                label: 'Read replies aloud', icon: speakOn ? 'volume' : 'volume-off', checked: speakOn, onSelect: toggleSpeak,
+              },
+              ...(!sheet && dockable && shownSize !== 'full' ? [{
+                label: shownSize === 'dock' ? 'Float in the corner' : 'Dock beside the page',
+                icon: shownSize === 'dock' ? 'float' : 'panel-right',
+                onSelect: () => changeSize(shownSize === 'dock' ? 'float' : 'dock'),
+              }] : []),
+            ]}
+            note="Ctrl+J opens and closes the chat"
+          />
           <button type="button" className="assistant-icon-btn" aria-label="Close assistant" onClick={close}>
             <Icon name="x" size={18} aria-hidden="true" />
           </button>
         </header>
 
-        <div className="assistant-log" ref={logRef} aria-live="polite">
+        {/* Only each finished reply is announced; the log itself would read out cards and reports too. */}
+        <p className="sr-only" aria-live="polite">
+          {busy || lastMessage?.role !== 'assistant' ? '' : `Assistant: ${lastMessage.content}`}
+        </p>
+        <div className="assistant-log" ref={logRef}>
           {messages.length === 0 ? (
             <div className="assistant-empty">
               <p>
@@ -1726,7 +2182,7 @@ export default function AssistantWidget() {
               </p>
               <p>It only helps with this app, not general questions, writing or coding.</p>
               <div className="assistant-suggestions">
-                {SUGGESTIONS.map((suggestion) => (
+                {suggestionsFor(currentPage()).map((suggestion) => (
                   <button key={suggestion} type="button" className="btn btn-sm" onClick={() => handleUtterance(suggestion)}>
                     {suggestion}
                   </button>
@@ -1738,6 +2194,7 @@ export default function AssistantWidget() {
             // Index keys are fine: the log only ever appends.
             <div key={index} className={`assistant-msg is-${message.role}${index >= enterFrom ? ' is-new' : ''}`}>
               <div className="assistant-bubble"><MessageText text={message.content} /></div>
+              {message.role === 'assistant' && message.sig ? <CopyButton text={message.content} /> : null}
               {message.attached?.length ? (
                 <p className="assistant-msg-files">
                   <Icon name="clip" size={12} aria-hidden="true" />
@@ -1763,15 +2220,44 @@ export default function AssistantWidget() {
               ))}
             </div>
           ))}
-          {busy ? (
+          {busy && liveText ? (
+            // Not a live region: a screen reader hears the finished reply once, not every few words.
+            <div className="assistant-msg is-assistant" aria-busy="true">
+              <div className="assistant-bubble"><MessageText text={liveText} /></div>
+            </div>
+          ) : busy ? (
             <div className="assistant-msg is-assistant assistant-typing" role="status" aria-label="Assistant is thinking">
               <span /><span /><span />
             </div>
           ) : null}
         </div>
 
-        {error ? <p className="assistant-error" role="alert">{error}</p> : null}
+        {error ? (
+          <div className="assistant-error" role="alert">
+            <span>{error}</span>
+            {/* The question that failed is still the last message: offer to send it again. */}
+            {!busy && lastAsked.current && messages.at(-1) === lastAsked.current ? (
+              <button type="button" className="btn btn-sm" onClick={retry}>Try again</button>
+            ) : null}
+          </div>
+        ) : null}
+        {usage && usage.percent >= 80 && usage.percent < 100 ? (
+          <p className="assistant-budget">
+            You&rsquo;ve used {usage.percent}% of today&rsquo;s assistant allowance. It resets at midnight.
+          </p>
+        ) : null}
 
+        <Suspense fallback={null}><TicketParamWatch onChange={onTicketParam} /></Suspense>
+        {openTicket && openTicket !== ignoredTicket ? (
+          <TicketContextChip
+            ticketId={openTicket}
+            onDismiss={() => {
+              setIgnoredTicket(openTicket);
+              // The button goes with the chip; keep focus in the chat.
+              inputRef.current?.focus();
+            }}
+          />
+        ) : null}
         <StagedFiles files={staged} error={stageError} onRemove={removeFile} />
         <form
           className="assistant-compose"
@@ -1809,9 +2295,24 @@ export default function AssistantWidget() {
               }
             }}
           />
-          <button type="submit" className="assistant-icon-btn assistant-send" aria-label="Send" disabled={busy || !input.trim()}>
-            <Icon name="send" size={18} aria-hidden="true" />
-          </button>
+          {busy && !handsFree ? (
+            <button
+              type="button"
+              className="assistant-icon-btn assistant-stop"
+              aria-label="Stop answering"
+              title="Stop (your message goes back in the box)"
+              onClick={() => {
+                stoppedByUser.current = true;
+                chatAbort.current?.abort();
+              }}
+            >
+              <Icon name="stop" size={16} aria-hidden="true" />
+            </button>
+          ) : (
+            <button type="submit" className="assistant-icon-btn assistant-send" aria-label="Send" disabled={busy || !input.trim()}>
+              <Icon name="send" size={18} aria-hidden="true" />
+            </button>
+          )}
         </form>
         <div className="assistant-footer">
           <UsageMeter usage={usage} onReset={refreshUsage} />

@@ -44,9 +44,9 @@ export function useLevelVar(elementRef, cssVar, pickLevel, active = true) {
 }
 
 /**
- * Voice conversation docked in the corner where the assistant buttons live:
- * a living orb that swells with whoever is talking, plus a small caption card.
- * It never covers the page, so people keep working while they talk. The
+ * Voice conversation: a living orb that swells with whoever is talking, plus
+ * captions. It opens full screen; minimised, it shrinks into the corner where
+ * the assistant buttons live, so people keep working while they talk. The
  * conversation loop itself lives in the widget; this only shows it.
  */
 /** Draft rows holding free text: shown full width and in full, not squeezed onto one line. */
@@ -58,7 +58,9 @@ export default function VoiceMode({
   files = [], fileError = null, onAddFiles, onRemoveFile,
   draftFiles = null, draftFileError = null, onDraftFiles, onDraftRemoveFile,
   besidePanel = false, report = null, onShowReport, leaving = false, error = null,
+  size = 'mini', onResize,
 }) {
+  const full = size === 'full';
   const orbRef = useRef(null);
   const endRef = useRef(null);
   const phaseRef = useRef(phase);
@@ -87,7 +89,7 @@ export default function VoiceMode({
 
   return (
     <section
-      className={`voice-dock is-${phase}${besidePanel ? ' is-beside-panel' : ''}${leaving ? ' is-leaving' : ''}`}
+      className={`voice-dock is-${phase} is-${full ? 'full' : 'mini'}${besidePanel ? ' is-beside-panel' : ''}${leaving ? ' is-leaving' : ''}`}
       aria-label="Voice mode"
       // Ended and playing its exit: out of reach of clicks, focus and screen readers.
       inert={leaving}
@@ -167,6 +169,17 @@ export default function VoiceMode({
           <UsageMeter usage={usage} onReset={onUsageReset} />
           <span className="voice-card-notice" title={notice}>AI · processed by OpenAI</span>
           {onAddFiles ? <AttachButton className="voice-card-btn" onAdd={onAddFiles} /> : null}
+          {onResize && !besidePanel ? (
+            <button
+              type="button"
+              className="voice-card-btn"
+              onClick={() => onResize(full ? 'mini' : 'full')}
+              aria-label={full ? 'Minimize voice mode' : 'Expand voice mode'}
+              title={full ? 'Minimize to the corner and keep working' : 'Full screen'}
+            >
+              <Icon name={full ? 'minimize' : 'maximize'} size={16} aria-hidden="true" />
+            </button>
+          ) : null}
           <button type="button" className="voice-card-btn" onClick={onShowChat} aria-label="Show chat" title="Continue in chat">
             <Icon name="chat" size={16} aria-hidden="true" />
           </button>

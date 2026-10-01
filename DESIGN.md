@@ -173,6 +173,8 @@ Dark mode redefines the same roles. **Night Paper** (`oklch(0.196 0.010 262)`), 
 
 **The One Signal Rule.** Signal blue marks the current stage, the primary button, links, and the keyboard focus ring. It is not a background for sections, not a sidebar wash, and not a gradient.
 
+**The Voice Exception.** The assistant's voice orb is the one place the product is expressive. Its palette follows who has the floor: slate while starting, coral and amber while the user speaks, violet while it thinks, the signal blue family while it speaks. The colours blend between phases and, full screen, tint the room faintly. They live only on `.voice-dock` (`--orb-a`, `--orb-b`, `--orb-c`) and must not spread to other components.
+
 **The Paper Ground Rule.** Light is the default scene. Dark mode is the same ledger after hours: every color is a redefinition of an existing token. A hardcoded hex that ignores `data-theme` is a defect.
 
 ## 3. Typography
@@ -270,5 +272,5 @@ There is no PRODUCT.md in this repo yet. These guardrails are the ones the style
 - **Don't** introduce another button shape beside `.btn`. The shadcn `Button` must match `.btn` (30px, 4px radius, Signal Blue) or it should not ship on product screens.
 - **Don't** hardcode hex, `#000`, or `#fff` in components. UI QA status chips that use `#fff4e5` / `#e8f1ff` / `#e8f7ee` break dark mode.
 - **Don't** reference `var(--shadow)`. That token does not exist.
-- **Don't** use bounce or elastic easing. The assistant fab's `cubic-bezier(0.34, 1.56, 0.64, 1)` is the counterexample.
+- **Don't** use bounce or elastic easing, and don't lift or squash a button on hover or press.
 - **Don't** put Amber (`--warn`) on Warm Paper as text. It fails 4.5:1.

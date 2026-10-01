@@ -4998,14 +4998,8 @@ body:has(.assistant-fab) .page{ padding-bottom:96px; } /* keep the pager clear o
   transition:background 120ms ease-out, transform 120ms ease-out;
 }
 .assistant-fab:hover{ background:var(--sig-hi); }
-.assistant-fab:active{ transform:scale(0.96); }
-/* Mouse only: lift on hover, settle back from the press. */
-@media (hover:hover) and (prefers-reduced-motion:no-preference){
-  .assistant-fab{ transition:background 120ms ease-out, box-shadow 150ms ease-out,
-    transform 160ms ease-out; }
-  .assistant-fab:hover{ transform:translateY(-1px); box-shadow:0 10px 24px oklch(0.245 0.014 262 / 0.28); }
-  .assistant-fab:active{ transform:scale(0.96); transition-duration:120ms, 120ms, 80ms; }
-}
+/* The Flat Desk Rule: hover and press change colour, never lift or squash the button. */
+.assistant-fab:active{ background:var(--sig-hi); box-shadow:0 3px 10px oklch(0.245 0.014 262 / 0.22); }
 /* A reply landed while the chat was shut. The label says it too, not just the colour. */
 .assistant-fab-dot{ position:absolute; top:2px; right:2px; width:12px; height:12px; border-radius:50%;
   background:var(--alarm); border:2px solid var(--paper); }
@@ -5037,6 +5031,59 @@ body:has(.assistant-fab) .page{ padding-bottom:96px; } /* keep the pager clear o
   background:var(--paper); border:1px solid var(--rule); border-radius:var(--r-lg);
   box-shadow:var(--shadow-drawer); overflow:hidden;
 }
+
+/* ---- Sizes. Floating is the base above. The panel and the chat button share a
+   view-transition name, so opening, closing and resizing morph one into the
+   other (see morph() in assistant-widget.jsx). */
+.assistant-panel,
+.assistant-fab:not(.is-voice){ view-transition-name:assistant-chat; }
+:root{ --assistant-dock-w:400px; }
+
+/* Docked: a full-height column at the right edge, and the page makes room
+   for it instead of sitting underneath. */
+.assistant-panel.is-dock{
+  top:0; right:0; bottom:0; width:var(--assistant-dock-w); height:auto;
+  border-width:0 0 0 1px; border-radius:0; box-shadow:none;
+}
+body:has(.assistant-panel.is-dock:not(.is-closing)) [data-slot="sidebar-inset"]{ margin-right:var(--assistant-dock-w); }
+/* The pager no longer hides behind a button when the chat is docked. */
+body:has(.assistant-panel.is-dock) .page{ padding-bottom:var(--page-y, 20px); }
+
+/* Full screen: the whole window, with one readable column down the middle.
+   Padding (not a wrapper) centres the column, so the log still scrolls at the
+   window's edge. Under the ticket drawer (z 40/41), so a ticket opened from a
+   reply still lands on top. */
+.assistant-panel.is-full{
+  --assistant-col:max(16px, calc((100% - 760px) / 2));
+  inset:0; width:auto; height:auto; border:0; border-radius:0; box-shadow:none;
+}
+.assistant-panel.is-full .assistant-head{ padding-inline:max(16px, calc((100% - 1040px) / 2)) max(8px, calc((100% - 1040px) / 2 - 8px)); }
+.assistant-panel.is-full .assistant-log{ padding:28px var(--assistant-col) 12px; gap:16px; }
+.assistant-panel.is-full :is(.assistant-compose, .assistant-staged, .assistant-error, .assistant-footer){
+  padding-inline:var(--assistant-col);
+}
+.assistant-panel.is-full .assistant-compose{ border-top:0; padding-bottom:12px; }
+.assistant-panel.is-full .assistant-compose textarea{ padding:12px 14px; border-radius:var(--r-lg); font-size:1rem; }
+.assistant-panel.is-full .assistant-msg{ max-width:min(88%, 68ch); font-size:0.9375rem; line-height:1.6; }
+.assistant-panel.is-full .assistant-msg:has(.assistant-action),
+.assistant-panel.is-full .assistant-msg:has(.assistant-report){ max-width:100%; }
+.assistant-panel.is-full .assistant-empty{ max-width:60ch; margin:auto; font-size:0.9375rem; }
+
+/* Phones and small tablets (DESIGN.md's 820px touch breakpoint): a near-full-height
+   sheet whatever size was picked; 16px input so iOS doesn't zoom on focus. */
+.assistant-panel.is-sheet{
+  right:0; bottom:0; width:100vw; height:min(92dvh, 100dvh - 32px);
+  border-width:1px 0 0; border-radius:var(--r-lg) var(--r-lg) 0 0; padding-bottom:env(safe-area-inset-bottom, 0px);
+}
+.assistant-panel.is-sheet .assistant-compose textarea{ font-size:1rem; }
+.assistant-panel.is-sheet .assistant-icon-btn{ width:44px; height:44px; }
+
+/* The header's "more" menu: the shared .menu, kept inside the panel's edge. */
+.assistant-more .menu{ min-width:228px; }
+.assistant-more .menuitem{ min-height:36px; }
+.assistant-more .menuitem :is(svg){ flex:none; color:var(--ink-3); }
+.assistant-more-note{ margin:0; font-size:0.75rem; color:var(--ink-3); }
+.assistant-panel.is-sheet .assistant-more .menuitem{ min-height:44px; }
 .assistant-head{ display:flex; align-items:center; gap:4px; padding:8px 8px 8px 16px; border-bottom:1px solid var(--rule); }
 .assistant-head h2{ margin:0; font-size:0.9375rem; font-weight:600; }
 .assistant-title{ display:flex; flex-direction:column; min-width:0; }
@@ -5130,7 +5177,61 @@ body:has(.assistant-fab) .page{ padding-bottom:96px; } /* keep the pager clear o
 .assistant-report-extra{ display:block; font-size:0.75rem; color:var(--ink-3); }
 .assistant-report-download{ align-self:flex-start; display:inline-flex; align-items:center; gap:6px; min-height:32px; }
 
-.assistant-error{ margin:0; padding:6px 14px; font-size:0.8125rem; color:var(--alarm); }
+.assistant-error{ display:flex; align-items:center; gap:10px; margin:0; padding:6px 14px; font-size:0.8125rem; color:var(--alarm); }
+.assistant-error span{ flex:1; min-width:0; }
+.assistant-error .btn{ flex:none; color:var(--ink); }
+/* Ahead of the limit, not only when it bites. Amber Ink: Amber itself fails contrast on paper. */
+.assistant-budget{ margin:0; padding:6px 14px; font-size:0.75rem; color:var(--warn-hi); background:var(--warn-wash); }
+.assistant-panel.is-full .assistant-budget{ padding-inline:var(--assistant-col); }
+.assistant-stop{ color:var(--ink); background:var(--panel-2); }
+.assistant-stop:hover{ background:var(--rule); }
+
+/* Copy under a reply: quiet until the reply is hovered or the button is focused. */
+.assistant-msg-copy{
+  display:inline-flex; align-items:center; gap:4px; margin-top:3px; padding:2px 6px; min-height:24px;
+  border:0; border-radius:var(--r); background:none; color:var(--ink-3); font:inherit; font-size:0.75rem; cursor:pointer;
+}
+.assistant-msg-copy:hover{ background:var(--panel-2); color:var(--ink); }
+.assistant-msg-copy:focus-visible{ outline:2px solid var(--sig); outline-offset:1px; }
+@media (hover:hover){
+  .assistant-msg-copy{ opacity:0; transition:opacity 120ms ease-out; }
+  .assistant-msg:hover .assistant-msg-copy,
+  .assistant-msg-copy:focus-visible,
+  .assistant-msg:last-child .assistant-msg-copy{ opacity:1; }
+}
+
+/* Docked: drag (or arrow-key) the left edge to resize. */
+.assistant-dock-handle{
+  position:absolute; left:-3px; top:0; bottom:0; z-index:2; width:7px; cursor:col-resize; touch-action:none;
+}
+.assistant-dock-handle::after{ content:""; position:absolute; left:3px; top:0; bottom:0; width:1px; background:transparent;
+  transition:background 120ms ease-out; }
+.assistant-dock-handle:hover::after,
+.assistant-dock-handle:focus-visible::after{ background:var(--sig); width:2px; }
+.assistant-dock-handle:focus-visible{ outline:none; }
+.assistant-panel.is-dock{ overflow:visible; }
+
+/* Phone sheet: a grab pill says "drag me down". */
+.assistant-panel.is-sheet .assistant-head{ position:relative; padding-top:14px; touch-action:none; }
+.assistant-panel.is-sheet .assistant-head::before{
+  content:""; position:absolute; top:5px; left:50%; width:36px; height:4px; margin-left:-18px;
+  border-radius:2px; background:var(--rule);
+}
+
+/* First-visit tip beside the chat button. */
+.assistant-hint{
+  position:absolute; right:calc(100% + 12px); bottom:4px; display:flex; align-items:flex-start; gap:4px;
+  width:max-content; max-width:min(280px, calc(100vw - 110px)); padding:10px 6px 10px 12px;
+  background:var(--paper); border:1px solid var(--rule); border-radius:var(--r-lg); box-shadow:var(--shadow-pop);
+  font-size:0.8125rem; line-height:1.45; color:var(--ink-2);
+}
+.assistant-hint p{ margin:0; }
+.assistant-hint kbd{ font-family:var(--mono); font-size:0.6875rem; padding:0 4px; border:1px solid var(--rule);
+  border-bottom-width:2px; border-radius:var(--r); background:var(--panel); color:var(--ink); }
+.assistant-hint .assistant-icon-btn{ width:24px; height:24px; flex:none; }
+@media (prefers-reduced-motion: no-preference){
+  .assistant-hint{ animation:assistant-msg-in 260ms cubic-bezier(0.16, 1, 0.3, 1) 400ms backwards; }
+}
 .assistant-footer{ display:flex; align-items:center; gap:8px; padding:0 12px 8px; }
 .assistant-disclaimer{ flex:1; margin:0; font-size:0.6875rem; line-height:1.4; color:var(--ink-3); }
 
@@ -5198,6 +5299,43 @@ body:has(.assistant-fab) .page{ padding-bottom:96px; } /* keep the pager clear o
 }
 @keyframes assistant-panel-in{ from{ opacity:0; transform:translateY(14px) scale(0.94); } }
 @keyframes assistant-panel-out{ to{ opacity:0; transform:translateY(10px) scale(0.96); } }
+/* Without view transitions: docked slides in from its edge, full screen settles in place. */
+@media (prefers-reduced-motion: no-preference){
+  .assistant-panel.is-dock{ animation-name:assistant-dock-in; }
+  .assistant-panel.is-dock.is-closing{ animation-name:assistant-dock-out; }
+  .assistant-panel.is-full{ transform-origin:center; animation-name:assistant-full-in; }
+  .assistant-panel.is-full.is-closing{ animation-name:assistant-full-out; }
+  .assistant-panel.is-sheet{ animation-name:assistant-sheet-in; }
+  .assistant-panel.is-sheet.is-closing{ animation-name:assistant-sheet-out; }
+}
+@keyframes assistant-dock-in{ from{ opacity:0; transform:translateX(24px); } }
+@keyframes assistant-dock-out{ to{ opacity:0; transform:translateX(24px); } }
+@keyframes assistant-full-in{ from{ opacity:0; transform:scale(0.985); } }
+@keyframes assistant-full-out{ to{ opacity:0; transform:scale(0.985); } }
+@keyframes assistant-sheet-in{ from{ transform:translateY(100%); } }
+@keyframes assistant-sheet-out{ to{ transform:translateY(100%); } }
+
+/* ---- View transitions (morph() in assistant-widget.jsx). The chat button grows
+   into the panel and the panel into its next size; the voice button grows into
+   the orb. The page itself doesn't crossfade, it just makes room. */
+::view-transition-old(root),
+::view-transition-new(root){ animation:none; }
+::view-transition-group(assistant-chat),
+::view-transition-group(assistant-orb),
+::view-transition-group(assistant-voice-card){
+  animation-duration:320ms; animation-timing-function:cubic-bezier(0.16, 1, 0.3, 1);
+}
+/* Contents fade across quickly, so text never shows stretched mid-morph. */
+::view-transition-old(assistant-chat),
+::view-transition-old(assistant-voice-card){ animation:assistant-vt-out 120ms ease-out both; }
+::view-transition-new(assistant-chat),
+::view-transition-new(assistant-voice-card){ animation:assistant-vt-in 200ms ease-out 60ms both; }
+::view-transition-old(assistant-chat),
+::view-transition-new(assistant-chat){ height:100%; object-fit:cover; object-position:top left; overflow:clip; }
+@keyframes assistant-vt-out{ to{ opacity:0; } }
+@keyframes assistant-vt-in{ from{ opacity:0; } }
+/* A morph is the animation: the keyframe entrances and exits would play inside it. */
+.is-morphing :is(.assistant-panel, .assistant-fab, .voice-orb, .voice-card){ animation:none !important; }
 @keyframes assistant-pop-in{ from{ opacity:0; transform:scale(0.6); } }
 @keyframes assistant-msg-in{ from{ opacity:0; transform:translateY(10px) scale(0.97); } }
 
@@ -5225,11 +5363,8 @@ body:has(.assistant-fab) .page{ padding-bottom:96px; } /* keep the pager clear o
 .assistant-empty kbd{ font-family:var(--mono); font-size:0.75rem; padding:1px 5px; border:1px solid var(--rule);
   border-bottom-width:2px; border-radius:var(--r); background:var(--panel); color:var(--ink); }
 
-/* Phones: a bottom sheet, 16px input so iOS doesn't zoom on focus. */
+/* Phones: the sheet itself is .assistant-panel.is-sheet (set from 820px down). */
 @media (max-width:560px){
-  .assistant-panel{ right:0; bottom:0; width:100vw; height:min(88dvh, 100dvh - 56px);
-    border-radius:var(--r-lg) var(--r-lg) 0 0; padding-bottom:env(safe-area-inset-bottom, 0px); }
-  .assistant-compose textarea{ font-size:1rem; }
   .assistant-fabs{ right:16px; bottom:calc(16px + env(safe-area-inset-bottom, 0px)); }
   .assistant-report-totals{ grid-template-columns:repeat(2, 1fr); }
 }
@@ -5245,11 +5380,34 @@ body:has(.voice-dock) .page{ padding-bottom:120px; }
   display:flex; align-items:flex-end; gap:12px;
 }
 
+/* The orb's palette changes with who has the floor, and registered colours let
+   it blend from one phase to the next instead of switching. This is the one
+   deliberate exception to the One Signal Rule (see DESIGN.md): voice is the
+   assistant's expressive moment. */
+@property --orb-a{ syntax:'<color>'; inherits:true; initial-value:oklch(0.82 0.06 240); }
+@property --orb-b{ syntax:'<color>'; inherits:true; initial-value:oklch(0.6 0.09 255); }
+@property --orb-c{ syntax:'<color>'; inherits:true; initial-value:oklch(0.92 0.03 230); }
+.voice-dock{
+  /* Starting / transcribing: calm slate, waiting on nobody in particular. */
+  --orb-a:oklch(0.82 0.06 240); --orb-b:oklch(0.6 0.09 255); --orb-c:oklch(0.92 0.03 230);
+}
+/* Listening: warm coral and amber, the user's voice. */
+.voice-dock.is-listening{ --orb-a:oklch(0.8 0.13 50); --orb-b:oklch(0.63 0.19 25); --orb-c:oklch(0.92 0.08 80); }
+/* Thinking: violet, turning it over. */
+.voice-dock:is(.is-thinking, .is-transcribing){ --orb-a:oklch(0.78 0.13 310); --orb-b:oklch(0.55 0.2 290); --orb-c:oklch(0.9 0.07 330); }
+/* Speaking: the signal blue family, the assistant's own voice. */
+.voice-dock.is-speaking{ --orb-a:oklch(0.8 0.12 220); --orb-b:oklch(0.56 0.17 262); --orb-c:oklch(0.9 0.07 200); }
+@media (prefers-reduced-motion: no-preference){
+  .voice-dock{ transition:--orb-a 700ms ease-out, --orb-b 700ms ease-out, --orb-c 700ms ease-out; }
+}
+
+/* The voice button grows into the orb and the orb shrinks back into it (morph()). */
+.assistant-fab.is-voice,
+.voice-orb{ view-transition-name:assistant-orb; }
+.voice-card{ view-transition-name:assistant-voice-card; }
+
 .voice-orb{
   --vm-level:0;
-  --orb-a:oklch(0.8 0.12 225);
-  --orb-b:oklch(0.62 0.17 268);
-  --orb-c:oklch(0.9 0.07 200);
   position:relative; flex:none; width:64px; height:64px;
   padding:0; border:0; border-radius:50%; background:none; color:inherit;
 }
@@ -5258,7 +5416,7 @@ body:has(.voice-dock) .page{ padding-bottom:120px; }
 .voice-orb:focus-visible{ outline:2px solid var(--sig); outline-offset:6px; }
 .voice-card-cutin{ font-weight:400; color:var(--ink-3); }
 .voice-orb-halo{
-  position:absolute; inset:-14px; border-radius:50%;
+  position:absolute; inset:-22%; border-radius:50%;
   background:radial-gradient(circle, color-mix(in oklch, var(--orb-a) 70%, transparent) 0%, transparent 68%);
   opacity:calc(0.35 + var(--vm-level) * 0.65);
   transform:scale(calc(0.85 + var(--vm-level) * 0.55));
@@ -5286,8 +5444,36 @@ body:has(.voice-dock) .page{ padding-bottom:120px; }
 }
 .voice-dock.is-idle .voice-orb,
 .voice-dock.is-transcribing .voice-orb{ opacity:0.85; }
-/* The assistant's own voice reads warmer, so "who is talking" shows at a glance. */
-.voice-dock.is-speaking .voice-orb{ --orb-a:oklch(0.8 0.11 205); --orb-b:oklch(0.6 0.15 250); }
+
+/* ---- Full screen: the orb takes the stage, captions read like subtitles under
+   it, and the room takes on a faint wash of whoever is talking. Below the
+   ticket drawer (z 40/41), like the chat. */
+.voice-dock.is-full{
+  inset:0; flex-direction:column-reverse; align-items:center; justify-content:center; gap:clamp(20px, 5vh, 40px);
+  padding:48px 20px calc(28px + env(safe-area-inset-bottom, 0px));
+  background:radial-gradient(70% 55% at 50% 38%, color-mix(in oklch, var(--orb-b) 13%, var(--paper)) 0%, var(--paper) 72%);
+}
+.voice-dock.is-full .voice-orb{ width:clamp(140px, 32vmin, 248px); height:clamp(140px, 32vmin, 248px); }
+.voice-dock.is-full .voice-orb-cloud{ filter:blur(20px); }
+.voice-dock.is-full .voice-orb-body{
+  box-shadow:0 24px 64px color-mix(in oklch, var(--orb-b) 40%, transparent), inset 0 -18px 40px oklch(0.3 0.15 272 / 0.35);
+}
+.voice-dock.is-full .voice-card{
+  width:min(680px, 100%); max-height:none; overflow:visible; padding:0; gap:16px; align-items:center; text-align:center;
+  background:none; border:0; box-shadow:none;
+}
+.voice-dock.is-full .voice-card-phase{ justify-content:center; font-size:0.8125rem; }
+.voice-dock.is-full .voice-card-captions{ max-height:min(34vh, 14em); gap:10px; }
+.voice-dock.is-full .voice-card-heard{ font-size:1rem; }
+.voice-dock.is-full .voice-card-reply{ font-size:clamp(1.0625rem, 1.6vw, 1.3125rem); line-height:1.5; letter-spacing:-0.015em; }
+.voice-dock.is-full :is(.voice-draft, .voice-report, .assistant-staged){ width:min(520px, 100%); text-align:left; }
+.voice-dock.is-full .voice-card-actions{ justify-content:center; gap:10px; margin-top:8px; }
+.voice-dock.is-full .voice-card-notice{ position:absolute; left:50%; bottom:calc(10px + env(safe-area-inset-bottom, 0px));
+  transform:translateX(-50%); margin:0; white-space:nowrap; }
+.voice-dock.is-full .voice-card-btn{ width:48px; height:48px; background:var(--paper); border:1px solid var(--rule); }
+.voice-dock.is-full .voice-card-btn:hover{ background:var(--panel-2); }
+.voice-dock.is-full .voice-card-btn.is-end{ background:var(--alarm-wash); border-color:transparent; }
+.voice-dock.is-full .voice-card-btn.is-end:hover{ background:var(--alarm); }
 
 .voice-card{
   display:flex; flex-direction:column; gap:6px;
@@ -5400,6 +5586,20 @@ body:has(.voice-dock) .page{ padding-bottom:120px; }
 .assistant-attach-field .btn{ align-self:flex-start; }
 .assistant-msg-files{ display:flex; align-items:center; gap:4px; margin:4px 0 0; font-size:0.75rem; color:var(--ink-3); }
 .voice-card .assistant-staged{ padding:0; }
+
+/* "About WEB-12": the open ticket the assistant treats as "this ticket". A .chip. */
+.assistant-context{ padding:6px 8px 0; }
+.assistant-panel.is-full .assistant-context{ padding-inline:var(--assistant-col); }
+.assistant-context-chip{ max-width:100%; padding-right:2px; font-weight:500; }
+.assistant-context-id{ font-family:var(--mono); color:var(--ink); }
+.assistant-context-x{
+  position:relative; display:inline-grid; place-items:center; width:14px; height:14px; padding:0;
+  border:0; border-radius:2px; background:transparent; color:var(--ink-3); cursor:pointer;
+}
+.assistant-context-x:hover{ background:var(--rule); color:var(--ink); }
+.assistant-context-x:focus-visible{ outline:2px solid var(--sig); outline-offset:1px; }
+/* Touch: a 44px target around the small mark (DESIGN.md). */
+@media (max-width:820px){ .assistant-context-x::after{ content:''; position:absolute; inset:-15px; } }
 .voice-card-hint{ margin:0; font-size:0.75rem; color:var(--ink-3); }
 
 /* The Attachments-tab drop area, sized for the assistant's cards. */

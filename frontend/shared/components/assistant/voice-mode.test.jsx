@@ -26,6 +26,19 @@ const setup = (over = {}) => {
 };
 
 describe('VoiceMode', () => {
+  it('full screen minimises to the corner, and the corner expands back', () => {
+    const props = setup({ size: 'full', onResize: vi.fn() });
+    expect(screen.getByRole('region', { name: 'Voice mode' }).className).toContain('is-full');
+    fireEvent.click(screen.getByRole('button', { name: 'Minimize voice mode' }));
+    expect(props.onResize).toHaveBeenCalledWith('mini');
+  });
+
+  it('beside the open chat it stays in the corner, with no way to expand over it', () => {
+    setup({ size: 'mini', besidePanel: true, onResize: vi.fn() });
+    expect(screen.getByRole('region', { name: 'Voice mode' }).className).toContain('is-mini');
+    expect(screen.queryByRole('button', { name: 'Expand voice mode' })).toBeNull();
+  });
+
   it('a report shows as a short block with a way to open it in chat and to download it', () => {
     const report = { title: 'Web App (WEB) report', period: '16 Sep – 23 Sep 2026', download: vi.fn() };
     const props = setup({ report, onShowReport: vi.fn() });
