@@ -569,6 +569,17 @@ function AssistantMark({ size = 22 }) {
   );
 }
 
+/**
+ * The conversation before the exchange on screen, for voice mode to look back
+ * on: the last few typed or spoken turns, without the ones its captions show.
+ */
+function earlierTurns(messages, onScreen, limit = 10) {
+  const turns = messages.filter((message) => message.content && (message.role === 'user' || message.role === 'assistant'));
+  let end = turns.length;
+  while (end > 0 && onScreen.includes(turns[end - 1].content)) end -= 1;
+  return turns.slice(Math.max(0, end - limit), end).map(({ role, content }) => ({ role, content }));
+}
+
 /** "Recent chats" entries for the more menu: a heading, then one item per earlier chat. */
 function recentMenuItems(chats, onOpen, busy) {
   if (!chats.length) return [];
@@ -2012,6 +2023,7 @@ export default function AssistantWidget() {
       besidePanel={open}
       // With the chat open beside it (a report), voice keeps to the corner.
       size={open ? 'mini' : voiceSize}
+      earlier={earlierTurns(messages, [heard, lastReply])}
       onResize={(next) => morph(() => setVoiceSize(next))}
       report={voiceReport}
       onShowReport={openChat}

@@ -58,7 +58,7 @@ export default function VoiceMode({
   files = [], fileError = null, onAddFiles, onRemoveFile,
   draftFiles = null, draftFileError = null, onDraftFiles, onDraftRemoveFile,
   besidePanel = false, report = null, onShowReport, leaving = false, error = null,
-  size = 'mini', onResize,
+  size = 'mini', onResize, earlier = [],
 }) {
   const full = size === 'full';
   const orbRef = useRef(null);
@@ -102,6 +102,21 @@ export default function VoiceMode({
           {PHASE_LABEL[phase] || PHASE_LABEL.idle}
           {interruptible ? <span className="voice-card-cutin">· speak or tap the orb to interrupt</span> : null}
         </p>
+        {/* Full screen has room to look back; the turn in progress is the captions below. */}
+        {full && earlier.length ? (
+          <details className="voice-transcript">
+            <summary>Earlier in this conversation ({earlier.length})</summary>
+            <ol>
+              {earlier.map((turn, index) => (
+                // Index keys are fine: the list is positional and only grows at the end.
+                <li key={index} className={`is-${turn.role}`}>
+                  <span className="voice-transcript-who">{turn.role === 'user' ? 'You' : 'Assistant'}</span>
+                  <p>{turn.content}</p>
+                </li>
+              ))}
+            </ol>
+          </details>
+        ) : null}
         <div className="voice-card-captions" aria-live="polite">
           {heard ? <p className="voice-card-heard">&ldquo;{heard}&rdquo;</p> : null}
           {reply ? <p className="voice-card-reply">{reply}</p> : null}

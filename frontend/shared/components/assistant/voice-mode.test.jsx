@@ -33,6 +33,18 @@ describe('VoiceMode', () => {
     expect(props.onResize).toHaveBeenCalledWith('mini');
   });
 
+  it('full screen can look back at earlier turns; the corner has no room for them', () => {
+    const earlier = [{ role: 'user', content: 'Status of WEB-1?' }, { role: 'assistant', content: 'In Progress.' }];
+    setup({ size: 'full', earlier });
+    expect(screen.getByText('Earlier in this conversation (2)')).toBeTruthy();
+    expect(screen.getByText('Status of WEB-1?')).toBeTruthy();
+  });
+
+  it('shows no earlier turns in the corner', () => {
+    setup({ size: 'mini', earlier: [{ role: 'user', content: 'Status of WEB-1?' }] });
+    expect(screen.queryByText(/Earlier in this conversation/)).toBeNull();
+  });
+
   it('beside the open chat it stays in the corner, with no way to expand over it', () => {
     setup({ size: 'mini', besidePanel: true, onResize: vi.fn() });
     expect(screen.getByRole('region', { name: 'Voice mode' }).className).toContain('is-mini');

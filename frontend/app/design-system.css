@@ -5610,3 +5610,20 @@ body:has(.voice-dock) .page{ padding-bottom:120px; }
 .assistant-dropzone .file-drop-hint{ font-size:0.6875rem; }
 .voice-draft-files{ display:flex; flex-direction:column; gap:6px; }
 
+/* Full-screen voice: the conversation so far, folded away until asked for. */
+.voice-transcript{ width:min(640px, 100%); text-align:left; font-size:0.875rem; }
+.voice-transcript summary{
+  display:inline-flex; align-items:center; min-height:32px; padding:0 10px; border-radius:var(--r);
+  color:var(--ink-3); font-size:0.75rem; font-weight:600; cursor:pointer; list-style:none;
+}
+.voice-transcript summary::-webkit-details-marker{ display:none; }
+.voice-transcript summary:hover{ background:var(--panel-2); color:var(--ink); }
+.voice-transcript summary:focus-visible{ outline:2px solid var(--sig); outline-offset:2px; }
+.voice-transcript ol{
+  display:flex; flex-direction:column; gap:10px; margin:8px 0 0; padding:12px 14px; list-style:none;
+  max-height:min(30vh, 16em); overflow-y:auto; overscroll-behavior:contain;
+  background:color-mix(in oklch, var(--paper) 80%, transparent); border:1px solid var(--rule); border-radius:var(--r-lg);
+}
+.voice-transcript li p{ margin:2px 0 0; line-height:1.5; color:var(--ink); overflow-wrap:anywhere; }
+.voice-transcript li.is-user p{ color:var(--ink-2); }
+.voice-transcript-who{ font-size:0.6875rem; font-weight:600; letter-spacing:0.055em; text-transform:uppercase; color:var(--ink-3); }
