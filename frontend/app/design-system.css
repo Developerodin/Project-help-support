@@ -5083,6 +5083,9 @@ body:has(.assistant-panel.is-dock) .page{ padding-bottom:var(--page-y, 20px); }
 .assistant-more .menuitem{ min-height:36px; }
 .assistant-more .menuitem :is(svg){ flex:none; color:var(--ink-3); }
 .assistant-more-note{ margin:0; font-size:0.75rem; color:var(--ink-3); }
+.assistant-more .menu{ max-width:min(320px, calc(100vw - 32px)); }
+.assistant-more-label{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.assistant-more-heading{ margin:0; font-size:0.6875rem; font-weight:600; letter-spacing:0.055em; text-transform:uppercase; color:var(--ink-3); }
 .assistant-panel.is-sheet .assistant-more .menuitem{ min-height:44px; }
 .assistant-head{ display:flex; align-items:center; gap:4px; padding:8px 8px 8px 16px; border-bottom:1px solid var(--rule); }
 .assistant-head h2{ margin:0; font-size:0.9375rem; font-weight:600; }
@@ -5606,3 +5609,4 @@ body:has(.voice-dock) .page{ padding-bottom:120px; }
 .assistant-dropzone{ padding:12px; gap:4px; }
 .assistant-dropzone .file-drop-hint{ font-size:0.6875rem; }
 .voice-draft-files{ display:flex; flex-direction:column; gap:6px; }
+

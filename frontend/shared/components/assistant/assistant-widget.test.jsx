@@ -815,6 +815,25 @@ describe('AssistantWidget', () => {
   });
 
   describe('more options menu', () => {
+    it('New chat sets the chat aside, and Recent chats brings it back', async () => {
+      getAssistantStatus.mockResolvedValue({ enabled: true });
+      sendAssistantMessage.mockResolvedValue({ reply: 'Two tickets are overdue.', actions: [] });
+      render(<AssistantWidget />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Open assistant' }));
+      say('What is overdue?');
+      await screen.findByText('Two tickets are overdue.', { selector: '.assistant-bubble p' });
+
+      fireEvent.click(screen.getByRole('button', { name: 'More options' }));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'New chat' }));
+      expect(screen.queryByText('Two tickets are overdue.', { selector: '.assistant-bubble p' })).toBeNull();
+
+      fireEvent.click(screen.getByRole('button', { name: 'More options' }));
+      fireEvent.click(screen.getByRole('menuitem', { name: /What is overdue\?/ }));
+      expect(screen.getByText('Two tickets are overdue.', { selector: '.assistant-bubble p' })).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'More options' }));
+      expect(screen.queryByRole('menuitem', { name: /What is overdue\?/ })).toBeNull(); // it is the open chat again
+    });
+
     const openMenu = async () => {
       getAssistantStatus.mockResolvedValue({ enabled: true });
       render(<AssistantWidget />);

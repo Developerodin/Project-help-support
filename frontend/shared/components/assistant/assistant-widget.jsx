@@ -29,7 +29,9 @@ import { useAuth } from '@/shared/contexts/auth-context.jsx';
 import { useProject } from '@/shared/contexts/project-context.jsx';
 import { useRealtime } from '@/shared/contexts/realtime-context.jsx';
 import { requestModuleView, requestTicketFilters } from '@/shared/lib/assistant-ticket-filters.js';
-import { clearAssistantChats, readSavedChat, saveChat } from '@/shared/lib/assistant-chat-storage.js';
+import {
+  archiveChat, clearAssistantChats, readRecentChats, readSavedChat, saveChat, takeRecentChat,
+} from '@/shared/lib/assistant-chat-storage.js';
 import { useVoiceRecorder, voiceErrorMessage, watchForSpeech } from './use-voice-recorder.js';
 import VoiceMode, { useLevelVar } from './voice-mode.jsx';
 import UsageMeter from './usage-meter.jsx';
@@ -567,6 +569,23 @@ function AssistantMark({ size = 22 }) {
   );
 }
 
+/** "Recent chats" entries for the more menu: a heading, then one item per earlier chat. */
+function recentMenuItems(chats, onOpen, busy) {
+  if (!chats.length) return [];
+  const when = (at) => new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return [
+    { heading: 'Recent chats' },
+    ...chats.map((chat) => ({
+      key: chat.id,
+      label: chat.title,
+      hint: when(chat.at),
+      icon: 'chat',
+      disabled: busy,
+      onSelect: () => onOpen(chat.id),
+    })),
+  ];
+}
+
 /**
  * The header's "more" menu, for what isn't needed every turn (new chat, read
  * aloud, docking). Same .menu/.menuitem vocabulary as the profile menu. Opening
@@ -622,9 +641,14 @@ function MoreMenu({ items, note }) {
       </button>
       {open ? (
         <div className="menu on" role="menu" aria-label="More options" ref={menuRef}>
-          {items.map((item) => (
+          {items.map((item) => (item.heading ? (
+            <div key={item.heading} role="presentation">
+              <div className="menusep" />
+              <p className="menucap assistant-more-heading">{item.heading}</p>
+            </div>
+          ) : (
             <button
-              key={item.label}
+              key={item.key ?? item.label}
               type="button"
               className="menuitem"
               role={item.checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
@@ -637,10 +661,11 @@ function MoreMenu({ items, note }) {
               }}
             >
               <Icon name={item.icon} size={16} aria-hidden="true" />
-              <span>{item.label}</span>
+              <span className="assistant-more-label">{item.label}</span>
               {item.checked === undefined ? null : <span className="k">{item.checked ? 'On' : 'Off'}</span>}
+              {item.hint ? <span className="k">{item.hint}</span> : null}
             </button>
-          ))}
+          )))}
           {note ? (
             <>
               <div className="menusep" />
@@ -1938,9 +1963,26 @@ export default function AssistantWidget() {
   const startNewChat = () => {
     endHandsFree();
     stopAudio();
+    // Set aside, not thrown away: it is one of the recent chats in the menu.
+    archiveChat(chatOwner.current, messagesRef.current);
     saveChat(chatOwner.current, []);
     setMessages([]);
     setInput('');
+    setError(null);
+    inputRef.current?.focus();
+  };
+
+  /** Reopens an earlier chat; the one on screen takes its place in the list. */
+  const openRecentChat = (id) => {
+    const chat = takeRecentChat(chatOwner.current, id);
+    if (!chat) return;
+    endHandsFree();
+    stopAudio();
+    archiveChat(chatOwner.current, messagesRef.current);
+    // Shown as they were, not replayed as new arrivals.
+    setEnterFrom(chat.messages.length);
+    setMessages(chat.messages);
+    saveChat(chatOwner.current, chat.messages);
     setError(null);
     inputRef.current?.focus();
   };
@@ -2161,6 +2203,7 @@ export default function AssistantWidget() {
                 icon: shownSize === 'dock' ? 'float' : 'panel-right',
                 onSelect: () => changeSize(shownSize === 'dock' ? 'float' : 'dock'),
               }] : []),
+              ...recentMenuItems(readRecentChats(chatOwner.current), openRecentChat, busy),
             ]}
             note="Ctrl+J opens and closes the chat"
           />
