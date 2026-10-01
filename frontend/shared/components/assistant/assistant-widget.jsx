@@ -993,6 +993,9 @@ function readSpeakPref() {
 /** The chat's size: a corner panel, docked beside the page, or the whole screen. */
 const SIZES = ['float', 'dock', 'full'];
 const SIZE_KEY = 'assistant.size';
+/** Voice layout: the whole screen, or the corner beside the page. */
+const VOICE_SIZES = ['full', 'mini'];
+const VOICE_SIZE_KEY = 'assistant.voiceSize';
 /** Phones and small tablets get a full-height sheet whatever the chosen size (DESIGN.md's touch breakpoint). */
 const SHEET_QUERY = '(max-width: 820px)';
 /** Docking leaves the page about 700px beside a 400px panel; narrower, it floats instead. */
@@ -1013,13 +1016,37 @@ function readDockWidth() {
   }
 }
 
-function readSize() {
+/** Per account when we know who is signed in; otherwise the one shared key. */
+function layoutStorageKey(base, userId) {
+  return userId ? `${base}:${userId}` : base;
+}
+
+function readLayout(base, userId, allowed, fallback) {
   try {
-    const saved = window.localStorage.getItem(SIZE_KEY);
-    return SIZES.includes(saved) ? saved : 'float';
+    if (userId) {
+      const own = window.localStorage.getItem(layoutStorageKey(base, userId));
+      if (allowed.includes(own)) return own;
+    }
+    // A size saved before layouts were stored per account.
+    const shared = window.localStorage.getItem(base);
+    return allowed.includes(shared) ? shared : fallback;
   } catch {
-    return 'float';
+    return fallback;
   }
+}
+
+function writeLayout(base, userId, value) {
+  try {
+    window.localStorage.setItem(layoutStorageKey(base, userId), value);
+  } catch { /* storage blocked: the choice lasts this visit */ }
+}
+
+function readSize(userId) {
+  return readLayout(SIZE_KEY, userId, SIZES, 'float');
+}
+
+function readVoiceSize(userId) {
+  return readLayout(VOICE_SIZE_KEY, userId, VOICE_SIZES, 'full');
 }
 
 /** Whether a media query matches now, kept current as the window changes. */
@@ -1083,7 +1110,7 @@ export default function AssistantWidget() {
   const [size, setSize] = useState('float');
   // Where Esc and "exit full screen" go back to.
   const sizeBeforeFull = useRef('float');
-  // Voice opens full screen; minimised, it shrinks into the corner so the page stays usable.
+  // Full screen, or the corner. Restored when voice opens; first visit is full screen.
   const [voiceSize, setVoiceSize] = useState('full');
   const [dockWidth, setDockWidth] = useState(400);
   // A first-visit hint beside the chat button, until it is dismissed or the chat is opened.
@@ -1201,7 +1228,6 @@ export default function AssistantWidget() {
       })
       .catch(() => { /* no assistant: leave the button hidden */ });
     setSpeakOn(readSpeakPref());
-    setSize(readSize());
     setDockWidth(readDockWidth());
     try {
       setHint(window.localStorage.getItem(HINT_KEY) !== '1');
@@ -1684,6 +1710,7 @@ export default function AssistantWidget() {
     stopAudio();
     clearAssistantChats(userId);
     chatOwner.current = userId;
+    setSize(readSize(userId));
     setMessages(readSavedChat(userId));
     setInput('');
     setError(null);
@@ -1741,9 +1768,10 @@ export default function AssistantWidget() {
    */
   const startHandsFree = useCallback(async () => {
     handsFreeRef.current = true;
-    // Voice opens full screen, the orb growing out of the button that started it.
+    // The last layout this account used (full screen, or the corner). First time, full screen.
+    const openingVoiceSize = readVoiceSize(userId);
     morph(() => {
-      setVoiceSize('full');
+      setVoiceSize(openingVoiceSize);
       setHandsFree(true);
     });
     setError(null);
@@ -1797,7 +1825,7 @@ export default function AssistantWidget() {
       if (problem) setError(problem);
       setOpen(true);
     }
-  }, [endHandsFree, interrupt, record, runVoiceTurn, stopAudio, unlockOutputAudio]);
+  }, [endHandsFree, interrupt, record, runVoiceTurn, stopAudio, unlockOutputAudio, userId]);
 
   // Push-to-talk from anywhere in the app: hold Space, release to send.
   useEffect(() => {
@@ -1886,16 +1914,24 @@ export default function AssistantWidget() {
 
   const openChat = () => {
     if (hint) dismissHint();
-    morph(() => setOpen(true));
+    const nextSize = readSize(userId);
+    morph(() => {
+      setSize(nextSize);
+      setOpen(true);
+    });
   };
 
-  /** Floating, docked or full screen; remembered for next time. */
+  /** Floating, docked or full screen; remembered for the next time this account opens the chat. */
   const changeSize = (next) => {
     if (next === 'full') sizeBeforeFull.current = shownSize === 'full' ? sizeBeforeFull.current : size;
     morph(() => setSize(next));
-    try {
-      window.localStorage.setItem(SIZE_KEY, next);
-    } catch { /* storage blocked: the size lasts this visit */ }
+    writeLayout(SIZE_KEY, userId, next);
+  };
+
+  /** Full screen or the corner; remembered as soon as it changes, for the next voice open. */
+  const changeVoiceSize = (next) => {
+    writeLayout(VOICE_SIZE_KEY, userId, next);
+    morph(() => setVoiceSize(next));
   };
 
   // Esc steps down from full screen first, then closes.
@@ -2077,7 +2113,7 @@ export default function AssistantWidget() {
       // With the chat open beside it (a report), voice keeps to the corner.
       size={open ? 'mini' : voiceSize}
       earlier={earlierTurns(messages, [heard, lastReply])}
-      onResize={(next) => morph(() => setVoiceSize(next))}
+      onResize={changeVoiceSize}
       report={voiceReport}
       onShowReport={openChat}
       heard={heard}

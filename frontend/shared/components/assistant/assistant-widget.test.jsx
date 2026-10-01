@@ -779,6 +779,7 @@ describe('AssistantWidget', () => {
     afterEach(() => {
       vi.unstubAllGlobals();
       window.localStorage.removeItem('assistant.size');
+      window.localStorage.removeItem('assistant.size:u1');
     });
 
     it('goes full screen and back; Esc steps down before it closes; the size is remembered', async () => {
@@ -787,12 +788,31 @@ describe('AssistantWidget', () => {
 
       fireEvent.click(screen.getByRole('button', { name: 'Full screen' }));
       expect(panel().className).toContain('is-full');
-      expect(window.localStorage.getItem('assistant.size')).toBe('full');
+      expect(window.localStorage.getItem('assistant.size:u1')).toBe('full');
 
       fireEvent.keyDown(panel(), { key: 'Escape' });
       expect(panel().className).toContain('is-float');
       fireEvent.keyDown(panel(), { key: 'Escape' });
       expect(await screen.findByRole('button', { name: 'Open assistant' })).toBeTruthy();
+    });
+
+    it('opens in the layout this account last used', async () => {
+      screenMatches('(min-width: 1100px)');
+      window.localStorage.setItem('assistant.size:u1', 'dock');
+      await openPanel();
+      expect(panel().className).toContain('is-dock');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Full screen' }));
+      expect(window.localStorage.getItem('assistant.size:u1')).toBe('full');
+      fireEvent.click(screen.getByRole('button', { name: 'Close assistant' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Open assistant' }));
+      expect(panel().className).toContain('is-full');
+    });
+
+    it('still opens a layout saved before it was stored per account', async () => {
+      window.localStorage.setItem('assistant.size', 'full');
+      await openPanel();
+      expect(panel().className).toContain('is-full');
     });
 
     it('docks beside the page on a wide screen, and floats on a narrower one', async () => {

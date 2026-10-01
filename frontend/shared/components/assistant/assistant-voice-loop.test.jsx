@@ -51,6 +51,7 @@ describe('voice mode loop', () => {
     recordings.length = 0;
     [getAssistantStatus, sendAssistantMessage, transcribeAudio].forEach((fn) => fn.mockReset());
     window.sessionStorage.clear();
+    window.localStorage.clear();
     getAssistantStatus.mockResolvedValue({ enabled: true });
     URL.createObjectURL = vi.fn(() => 'blob:reply');
     URL.revokeObjectURL = vi.fn();
@@ -61,6 +62,32 @@ describe('voice mode loop', () => {
     };
     window.HTMLMediaElement.prototype.pause = () => {};
     window.HTMLMediaElement.prototype.load = () => {};
+  });
+
+  it('opens full screen until the user picks the corner, then reopens there', async () => {
+    let release;
+    const hang = () => new Promise((resolve) => { release = resolve; });
+    recordings.push(hang());
+    const first = render(<AssistantWidget />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Start voice mode' }));
+    expect((await screen.findByRole('region', { name: 'Voice mode' })).className).toContain('is-full');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Minimize voice mode' }));
+    expect(screen.getByRole('region', { name: 'Voice mode' }).className).toContain('is-mini');
+    expect(window.localStorage.getItem('assistant.voiceSize:u1')).toBe('mini');
+
+    fireEvent.click(screen.getByRole('button', { name: 'End voice mode' }));
+    release(null);
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Voice mode' })).toBeNull());
+    first.unmount();
+
+    recordings.push(hang());
+    render(<AssistantWidget />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Start voice mode' }));
+    expect((await screen.findByRole('region', { name: 'Voice mode' })).className).toContain('is-mini');
+    fireEvent.click(screen.getByRole('button', { name: 'End voice mode' }));
+    release(null);
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Voice mode' })).toBeNull());
   });
 
   it('a busy server on one turn does not end voice mode; the next turn is answered', async () => {
