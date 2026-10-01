@@ -5,8 +5,8 @@ import logger from '../../platform/logger.js';
 const BASE_URL = 'https://api.openai.com/v1';
 const TIMEOUT_MS = 45_000;
 
-// ponytail: plain fetch, no SDK. Three endpoints don't justify a dependency;
-// switch to the `openai` package if we need streaming or its retry logic.
+// ponytail: plain fetch, no SDK. Three endpoints (and one event stream) don't
+// justify a dependency; switch to the `openai` package if we need its retry logic.
 async function call(config, path, { signal, ...init }) {
   let res;
   try {
@@ -44,9 +44,46 @@ export function outputText(response) {
     .join('');
 }
 
-/** One Responses API turn. `input` is the running item list (messages, calls, outputs). */
+const upstreamError = () => new ApiError(502, 'ASSISTANT_UPSTREAM', 'The assistant is unavailable right now. Try again shortly.');
+
+/**
+ * Reads a streamed Responses API reply (server-sent events), handing each piece
+ * of text to `onText` as it arrives, and returns the finished response, the same
+ * object an unstreamed call returns.
+ */
+async function readEvents(res, onText) {
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for await (const chunk of res.body) {
+    buffer += decoder.decode(chunk, { stream: true }).replace(/\r/g, '');
+    let end = buffer.indexOf('\n\n');
+    while (end !== -1) {
+      const data = buffer.slice(0, end).split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trimStart())
+        .join('\n');
+      buffer = buffer.slice(end + 2);
+      end = buffer.indexOf('\n\n');
+      if (!data || data === '[DONE]') continue;
+      const event = JSON.parse(data);
+      if (event.type === 'response.output_text.delta') onText(event.delta);
+      else if (event.type === 'response.completed') return event.response;
+      else if (event.type === 'response.failed' || event.type === 'response.incomplete' || event.type === 'error') {
+        logger.warn('assistant: OpenAI stream failed', { type: event.type, detail: JSON.stringify(event).slice(0, 500) });
+        throw upstreamError();
+      }
+    }
+  }
+  throw upstreamError(); // ended without a finished response
+}
+
+/**
+ * One Responses API turn. `input` is the running item list (messages, calls,
+ * outputs). With `onText`, the reply streams and each piece of its text is
+ * handed over as the model writes it.
+ */
 export async function createResponse(config, {
-  instructions, input, tools, signal, toolChoice, quick = false, model = config.assistant.chatModel, format,
+  instructions, input, tools, signal, toolChoice, quick = false, model = config.assistant.chatModel, format, onText,
 }) {
   const res = await call(config, '/responses', {
     method: 'POST',
@@ -61,12 +98,21 @@ export async function createResponse(config, {
       ...(format ? { text: { format } } : {}),
       // Voice: someone is waiting to hear it, and the reply is a sentence or two anyway.
       ...(quick ? { reasoning: { effort: 'low' }, text: { verbosity: 'low' } } : {}),
+      ...(onText ? { stream: true } : {}),
       // Nothing is kept on OpenAI's side; reasoning state rides along encrypted instead.
       store: false,
       include: ['reasoning.encrypted_content'],
     }),
   });
-  return res.json();
+  if (!onText) return res.json();
+  try {
+    return await readEvents(res, onText);
+  } catch (err) {
+    if (signal?.aborted) throw new ApiError(499, 'ASSISTANT_CANCELLED', 'The request was cancelled.');
+    if (err instanceof ApiError) throw err;
+    logger.warn('assistant: OpenAI stream broke', { error: err.message });
+    throw upstreamError();
+  }
 }
 
 /**

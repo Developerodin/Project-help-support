@@ -34,6 +34,8 @@ const chatSchema = {
     })).required(),
     // 'voice' when the user is talking in voice mode, so replies suit being heard.
     mode: Joi.string().valid('chat', 'voice').default('chat'),
+    // Answer as newline-delimited JSON events, the reply's text arriving as it is written.
+    stream: Joi.boolean().default(false),
     // Where the user is right now, so "this ticket" and "the details tab" mean something.
     page: Joi.object({
       path: Joi.string().max(200).pattern(/^\/[\w\-/]*$/).required(),
@@ -113,8 +115,26 @@ export default function assistantRoutes(config) {
   });
 
   router.post('/chat', requireAssistant(config), chatLimiter, validate(chatSchema), async (req, res, next) => {
+    /**
+     * Streaming: { type: 'delta', text } and { type: 'reset' } while the model
+     * writes, then { type: 'done', reply, actions, sig } or { type: 'error', error }.
+     * Headers go out with the first event, so a refusal before any text (budget,
+     * busy, bad input) is still an ordinary error response.
+     */
+    const send = (event) => {
+      if (!res.headersSent) {
+        res.status(200).set({
+          'Content-Type': 'application/x-ndjson; charset=utf-8',
+          'Cache-Control': 'no-cache',
+          // Proxies (nginx) would otherwise hold the stream back until it ends.
+          'X-Accel-Buffering': 'no',
+        });
+      }
+      res.write(`${JSON.stringify(event)}\n`);
+      res.flush?.(); // compression, if it ever wraps this type
+    };
     try {
-      const { mode } = req.body;
+      const { mode, stream } = req.body;
       if (req.body.messages[req.body.messages.length - 1].role !== 'user') {
         throw new ApiError(400, 'VALIDATION_ERROR', 'The last message must be from the user.');
       }
@@ -129,15 +149,32 @@ export default function assistantRoutes(config) {
       const { reply, actions } = await withChatLock(req.user, async () => {
         await checkAllowance(config, req.user);
         const started = Date.now();
-        const turn = await chat(config, req.user, req.permissionContext, messages, { mode, page, signal: cancelled.signal });
+        const turn = await chat(config, req.user, req.permissionContext, messages, {
+          mode, page, signal: cancelled.signal, ...(stream ? { onStream: send } : {}),
+        });
         logger.info('assistant: chat timing', { mode, ms: Date.now() - started });
         await recordUsage(config, req.user, turn.usage);
         await rememberReply(req.user, turn.reply, new Date(), namesIn(turn.actions));
         return turn;
       });
-      res.json({ reply, actions, ...(reply ? { sig: signReply(config, req.user, reply) } : {}) });
+      const result = { reply, actions, ...(reply ? { sig: signReply(config, req.user, reply) } : {}) };
+      if (!stream) return res.json(result);
+      send({ type: 'done', ...result });
+      return res.end();
     } catch (err) {
-      next(err);
+      if (!res.headersSent) return next(err);
+      // Mid-stream: the status is already 200, so the error goes as the last event.
+      if (!err?.isOperational) logger.error('assistant: chat stream failed', { error: err?.message, stack: err?.stack });
+      if (!res.writableEnded && !res.destroyed) {
+        send({
+          type: 'error',
+          error: err?.isOperational
+            ? { code: err.code, message: err.message }
+            : { code: 'ASSISTANT_FAILED', message: 'The assistant could not answer. Try again.' },
+        });
+        res.end();
+      }
+      return undefined;
     }
   });
 

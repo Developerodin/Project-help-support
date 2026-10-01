@@ -153,11 +153,14 @@ ${external ? CLIENT_RULES : TEAM_RULES}${APP_GUIDE}`;
  * time (validated and capped by the route); nothing is stored server-side.
  * Out-of-scope asks get SCOPE_REFUSAL: the message before any model call, then
  * draft text after each tool, then the reply (assistant.scope.js).
+ * With `onStream`, the reply's text is also handed over as it is written:
+ * { type: 'delta', text } for more of it, { type: 'reset' } when what was shown
+ * turned out to lead into a lookup and is dropped.
  * @returns {{ reply: string, actions: object[], usage: { inputTokens: number, outputTokens: number } }}
  *   usage is summed over every model round, for the spend caps.
  */
 export async function chat(config, user, permissionContext, messages, {
-  mode = 'chat', page = null, now = new Date(), signal,
+  mode = 'chat', page = null, now = new Date(), signal, onStream,
 } = {}) {
   if (!config.assistant) throw new ApiError(503, 'ASSISTANT_DISABLED', 'The assistant is not configured.');
 
@@ -225,10 +228,42 @@ export async function chat(config, user, permissionContext, messages, {
     : Promise.resolve(true);
   // Settled even if round 0 throws first, so a rejection is never left unhandled.
   inScope.catch(() => {});
+
+  // Streaming: text is shown as it is written, but only once the classifier has
+  // passed the message and only while what has been written still passes the
+  // reply checks, so no more is ever shown than a whole reply could carry. The
+  // finished reply is checked as before and replaces what was shown.
+  const live = {
+    written: '', shown: '', cleared: false, held: false,
+  };
+  const show = () => {
+    if (!onStream || live.held || !live.cleared || live.written === live.shown) return;
+    if (!checkReply(live.written, { looked, priorCode }).allowed) {
+      live.held = true;
+      return;
+    }
+    onStream({ type: 'delta', text: live.written.slice(live.shown.length) });
+    live.shown = live.written;
+  };
+  if (onStream) {
+    inScope.then((ok) => {
+      live.cleared = ok;
+      live.held ||= !ok;
+      show();
+    }, () => {});
+  }
+  const onText = onStream && ((delta) => {
+    live.written += delta;
+    // Checked a line or so at a time, not every token.
+    if (delta.includes('\n') || live.written.length - live.shown.length >= 80) show();
+  });
+
   /** One model round, timed so a slow turn shows which round (and how many) it spent on. */
   const respond = async (round, request) => {
     const started = Date.now();
-    const response = await createResponse(config, { ...request, signal, quick });
+    const response = await createResponse(config, {
+      ...request, signal, quick, onText,
+    });
     logger.info('assistant: model round', { mode, round, ms: Date.now() - started });
     return response;
   };
@@ -244,6 +279,10 @@ export async function chat(config, user, permissionContext, messages, {
     const calls = (response.output || []).filter((item) => item.type === 'function_call');
     if (!calls.length) return answer(outputText(response));
 
+    // Text before a lookup ("Let me check") was never the reply.
+    if (live.shown) onStream({ type: 'reset' });
+    live.written = '';
+    live.shown = '';
     input.push(...response.output);
     for (const toolCall of calls) {
       // Sequential on purpose: tools share ctx (project cache, actions).
