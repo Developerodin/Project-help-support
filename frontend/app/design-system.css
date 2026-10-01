@@ -5646,3 +5646,14 @@ body:has(.voice-dock) .page{ padding-bottom:120px; }
 .assistant-recent-title{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .assistant-recent-time{ flex:none; font-family:var(--mono); font-size:0.6875rem; color:var(--ink-3); }
 .assistant-panel.is-sheet .assistant-recent button{ min-height:44px; }
+
+/* Past what the assistant can see: a quiet note above the composer, with a way on. */
+.assistant-context-note{
+  display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; margin:0; padding:8px 14px;
+  border-top:1px solid var(--rule-soft); background:var(--panel); font-size:0.8125rem; color:var(--ink-2);
+}
+.assistant-context-note p{ flex:1 1 220px; margin:0; }
+.assistant-context-note-actions{ display:flex; gap:6px; }
+.assistant-panel.is-full .assistant-context-note{ padding-inline:var(--assistant-col); }
+/* The summary that opens a continued chat says where it came from. */
+.assistant-carried{ margin:0 0 4px; font-size:0.6875rem; font-weight:600; letter-spacing:0.055em; text-transform:uppercase; color:var(--ink-3); }

@@ -9,7 +9,7 @@ import { ApiError } from '../../platform/errors.js';
 import logger from '../../platform/logger.js';
 import { MongoRateLimitStore, makeLimiter } from '../../platform/rateLimit.js';
 import { validate } from '../../platform/validate.js';
-import { chat } from './assistant.service.js';
+import { chat, summarize } from './assistant.service.js';
 import { TICKET_TABS, projectRoster } from './assistant.tools.js';
 import {
   checkAllowance, estimateAudioSeconds, getAllowance, isRecentReply, recentNames, recordUsage, rememberReply,
@@ -47,6 +47,11 @@ const chatSchema = {
       query: Joi.string().max(1000).pattern(/^(\?.*)?$/).allow(''),
     }),
   }),
+};
+
+/** A whole chat to summarise: the same message shape as chat, up to everything the widget keeps. */
+const summarySchema = {
+  body: Joi.object({ messages: chatSchema.body.extract('messages').max(40) }),
 };
 
 const speechSchema = {
@@ -175,6 +180,24 @@ export default function assistantRoutes(config) {
         res.end();
       }
       return undefined;
+    }
+  });
+
+  // "Continue in a new chat": a signed summary of this one to start the next with.
+  router.post('/summarize', requireAssistant(config), chatLimiter, validate(summarySchema), async (req, res, next) => {
+    try {
+      const messages = signedHistory(config, req.user, req.body.messages);
+      const cancelled = new AbortController();
+      res.on('close', () => { if (!res.writableEnded) cancelled.abort(); });
+      const { summary } = await withChatLock(req.user, async () => {
+        await checkAllowance(config, req.user);
+        const result = await summarize(config, messages, { signal: cancelled.signal });
+        await recordUsage(config, req.user, result.usage);
+        return result;
+      });
+      res.json({ summary, sig: signReply(config, req.user, summary) });
+    } catch (err) {
+      next(err);
     }
   });
 

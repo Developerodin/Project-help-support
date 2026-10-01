@@ -11,7 +11,7 @@ import {
 } from '@pms/shared';
 import Icon from '../icons.jsx';
 import {
-  getAssistantStatus, sendAssistantMessage, speakText, streamAssistantMessage, transcribeAudio,
+  getAssistantStatus, sendAssistantMessage, speakText, streamAssistantMessage, summarizeAssistantChat, transcribeAudio,
 } from '@/shared/api/assistant.js';
 import {
   addComment, assignTicket, clearBlocked, createTicket, getTicket, patchTicket, resolveAttachmentDownloadUrl, setBlocked,
@@ -2006,6 +2006,36 @@ export default function AssistantWidget() {
       : entry)));
   };
 
+  /**
+   * "Continue in a new chat": the server summarises this chat, the summary
+   * opens a new one as its first (signed) message, and this one goes to
+   * Recent chats. Like /compact, the assistant keeps the gist past the turns
+   * it can see.
+   */
+  const [carrying, setCarrying] = useState(false);
+  const continueInNewChat = async () => {
+    if (busy || carrying) return;
+    setCarrying(true);
+    setError(null);
+    try {
+      const current = messagesRef.current;
+      const { summary, sig } = await summarizeAssistantChat(current.filter((message) => message.content).slice(-40).map(historyEntry));
+      endHandsFree();
+      stopAudio();
+      archiveChat(chatOwner.current, current);
+      const next = [{ role: 'assistant', content: summary, sig, carried: true }];
+      setEnterFrom(0);
+      setMessages(next);
+      saveChat(chatOwner.current, next);
+      setInput('');
+      inputRef.current?.focus();
+    } catch (err) {
+      setError(normalizeApiError(err)?.message || 'Couldn\'t carry this chat over. Try again, or start a new chat.');
+    } finally {
+      setCarrying(false);
+    }
+  };
+
   /** Reopens an earlier chat; the one on screen takes its place in the list. */
   const openRecentChat = (id) => {
     const chat = takeRecentChat(chatOwner.current, id);
@@ -2233,6 +2263,13 @@ export default function AssistantWidget() {
                 label: 'New chat', icon: 'new-chat', disabled: !messages.length || busy, onSelect: startNewChat,
               },
               {
+                label: 'Continue in a new chat',
+                icon: 'msg',
+                // Worth it once there is a conversation to carry: at least two questions.
+                disabled: busy || carrying || messages.filter((message) => message.role === 'user').length < 2,
+                onSelect: continueInNewChat,
+              },
+              {
                 label: 'Read replies aloud', icon: speakOn ? 'volume' : 'volume-off', checked: speakOn, onSelect: toggleSpeak,
               },
               ...(!sheet && dockable && shownSize !== 'full' ? [{
@@ -2292,6 +2329,7 @@ export default function AssistantWidget() {
           {messages.map((message, index) => (
             // Index keys are fine: the log only ever appends.
             <div key={index} className={`assistant-msg is-${message.role}${index >= enterFrom ? ' is-new' : ''}`}>
+              {message.carried ? <p className="assistant-carried">Carried over from your earlier chat</p> : null}
               <div className="assistant-bubble"><MessageText text={message.content} /></div>
               {message.role === 'assistant' && message.sig ? (
                 <div className="assistant-msg-tools">
@@ -2353,6 +2391,20 @@ export default function AssistantWidget() {
             {!busy && lastAsked.current && messages.at(-1) === lastAsked.current ? (
               <button type="button" className="btn btn-sm" onClick={retry}>Try again</button>
             ) : null}
+          </div>
+        ) : null}
+        {/* Past HISTORY_LIMIT the oldest turns stop reaching the assistant; say so, and offer to carry on. */}
+        {messages.filter((message) => message.content).length > HISTORY_LIMIT ? (
+          <div className="assistant-context-note" role="status">
+            <p>This chat is long: the assistant no longer remembers its earliest messages.</p>
+            <div className="assistant-context-note-actions">
+              <button type="button" className="btn btn-sm" disabled={busy || carrying} onClick={continueInNewChat}>
+                {carrying ? 'Summarising…' : 'Continue in a new chat'}
+              </button>
+              <button type="button" className="btn btn-sm btn-ghost" disabled={busy || carrying} onClick={startNewChat}>
+                Start fresh
+              </button>
+            </div>
           </div>
         ) : null}
         {usage && usage.percent >= 80 && usage.percent < 100 ? (

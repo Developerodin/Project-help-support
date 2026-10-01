@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 
 const getAssistantStatus = vi.fn();
 const sendAssistantMessage = vi.fn();
+const summarizeAssistantChat = vi.fn();
 const createTicket = vi.fn();
 const getTicket = vi.fn();
 const transitionTicket = vi.fn();
@@ -31,6 +32,7 @@ vi.mock('@/shared/api/assistant.js', () => ({
   sendAssistantMessage: (...args) => sendAssistantMessage(...args),
   // Typed chat streams; one mock stands in for both, as they resolve the same.
   streamAssistantMessage: (...args) => sendAssistantMessage(...args),
+  summarizeAssistantChat: (...args) => summarizeAssistantChat(...args),
   speakText: vi.fn(),
   transcribeAudio: vi.fn(),
 }));
@@ -811,6 +813,54 @@ describe('AssistantWidget', () => {
       expect(screen.queryByRole('button', { name: 'Full screen' })).toBeNull();
       fireEvent.click(screen.getByRole('button', { name: 'More options' }));
       expect(screen.queryByRole('menuitem', { name: /Dock beside/ })).toBeNull();
+    });
+  });
+
+  describe('long chats', () => {
+    /** A saved chat of `count` questions and answers for Ada (u1), as a reload would find it. */
+    const savedChat = (count) => window.sessionStorage.setItem('assistant.chat:u1', JSON.stringify(
+      Array.from({ length: count }, (_, i) => [
+        { role: 'user', content: `Question ${i + 1}` },
+        { role: 'assistant', content: `Answer ${i + 1}`, sig: 'c'.repeat(64) },
+      ]).flat(),
+    ));
+    const openPanel = async () => {
+      getAssistantStatus.mockResolvedValue({ enabled: true });
+      render(<AssistantWidget />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Open assistant' }));
+    };
+    afterEach(() => window.sessionStorage.clear());
+
+    it('says nothing while the assistant still sees the whole chat', async () => {
+      savedChat(10); // 20 messages: all of them still reach the assistant
+      await openPanel();
+      await screen.findByText('Answer 10', { selector: '.assistant-bubble p' });
+      expect(screen.queryByText(/no longer remembers/)).toBeNull();
+    });
+
+    it('past the limit, offers to continue in a new chat that opens with a summary', async () => {
+      savedChat(11);
+      summarizeAssistantChat.mockResolvedValue({ summary: 'Picking up from an earlier chat:\n- WEB-12 is blocked.', sig: 'd'.repeat(64) });
+      await openPanel();
+      expect(await screen.findByText(/no longer remembers its earliest messages/)).toBeTruthy();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Continue in a new chat' }));
+      expect(await screen.findByText('Carried over from your earlier chat')).toBeTruthy();
+      expect(screen.getByText('- WEB-12 is blocked.', { exact: false })).toBeTruthy();
+      expect(screen.queryByText('Answer 11', { selector: '.assistant-bubble p' })).toBeNull();
+      expect(summarizeAssistantChat.mock.calls[0][0]).toHaveLength(22);
+      // The old chat is one of the recent ones, and the summary goes back to the server signed.
+      expect(JSON.parse(window.sessionStorage.getItem('assistant.recent:u1'))[0].title).toBe('Question 1');
+      expect(JSON.parse(window.sessionStorage.getItem('assistant.chat:u1'))[0]).toMatchObject({ role: 'assistant', sig: 'd'.repeat(64) });
+    });
+
+    it('keeps the chat and says why when the summary fails', async () => {
+      savedChat(11);
+      summarizeAssistantChat.mockRejectedValue(Object.assign(new Error('Couldn\'t summarise this chat. Start a new chat instead.'), { status: 422 }));
+      await openPanel();
+      fireEvent.click(await screen.findByRole('button', { name: 'Continue in a new chat' }));
+      expect(await screen.findByText(/Couldn't summarise this chat/)).toBeTruthy();
+      expect(screen.getByText('Answer 11', { selector: '.assistant-bubble p' })).toBeTruthy();
     });
   });
 

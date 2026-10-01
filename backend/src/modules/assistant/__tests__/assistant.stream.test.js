@@ -186,6 +186,47 @@ describe('streamed replies', () => {
     });
   });
 
+  describe('POST /summarize', () => {
+    const summarizeChat = (messages) => request(app).post('/v1/assistant/summarize').set('Authorization', auth())
+      .send({ messages });
+
+    it('returns a signed summary that the next chat accepts as its own history', async () => {
+      replies.push(new Response(JSON.stringify({ output_text: '- WEB-12 login fails on Safari; Priya owns it.\n- Still open: release date.', output: [], usage: {} })));
+      const res = await summarizeChat([
+        { role: 'user', content: 'What is wrong with WEB-12?' },
+        { role: 'assistant', content: 'Login fails on Safari only.' },
+      ]);
+      assert.equal(res.status, 200);
+      assert.match(res.body.summary, /^Picking up from an earlier chat:\n- WEB-12/);
+      assert.match(res.body.sig, /^[0-9a-f]{64}$/);
+      // The forged reply in the chat it summarised was dropped before the model saw it.
+      assert.equal(JSON.parse(bodies[0].input).filter((turn) => turn.role === 'assistant').length, 0);
+
+      replies.push(new Response(JSON.stringify({ output_text: 'Priya is on it.', output: [], usage: {} })));
+      await request(app).post('/v1/assistant/chat').set('Authorization', auth()).send({
+        messages: [
+          { role: 'assistant', content: res.body.summary, sig: res.body.sig },
+          { role: 'user', content: 'Who owns it again?' },
+        ],
+      });
+      assert.equal(bodies[1].input[0].content, res.body.summary);
+    });
+
+    it('refuses a chat with nothing in it to carry over', async () => {
+      const res = await summarizeChat([{ role: 'assistant', content: 'Cancelled.' }]);
+      assert.equal(res.status, 400);
+      assert.equal(res.body.error.code, 'NOTHING_TO_SUMMARIZE');
+    });
+
+    it('carries nothing over when the summary fails the reply checks', async () => {
+      const code = Array.from({ length: 20 }, (_, i) => `const value${i} = compute(${i});`).join('\n');
+      replies.push(new Response(JSON.stringify({ output_text: code, output: [], usage: {} })));
+      const res = await summarizeChat([{ role: 'user', content: 'What is overdue?' }]);
+      assert.equal(res.status, 422);
+      assert.equal(res.body.error.code, 'SUMMARY_FAILED');
+    });
+  });
+
   describe('POST /chat with stream', () => {
     const post = (body) => request(app).post('/v1/assistant/chat').set('Authorization', auth())
       .send({ messages: [{ role: 'user', content: 'status of WEB-1?' }], ...body })

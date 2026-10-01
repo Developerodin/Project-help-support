@@ -70,3 +70,12 @@ export function transcribeAudio(audio, options) {
 export const speakText = (text, { language, ...options } = {}) => apiFetchResponse('/assistant/speech', {
   method: 'POST', body: { text, ...(language ? { language } : {}) }, ...options,
 });
+
+/**
+ * A signed summary of the chat, to start a new one with its context.
+ * @param {{ role: 'user'|'assistant', content: string, sig?: string, notes?: string[] }[]} messages
+ * @returns {Promise<{ summary: string, sig: string }>}
+ */
+export const summarizeAssistantChat = (messages, options) => apiFetch('/assistant/summarize', {
+  method: 'POST', body: { messages }, ...options,
+});
