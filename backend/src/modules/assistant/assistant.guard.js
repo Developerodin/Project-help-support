@@ -151,11 +151,16 @@ const SPEECH_CHARS_PER_MIN = 900;
  */
 export const estimateAudioSeconds = (bytes, maxSeconds = 60) => Math.min(maxSeconds, Math.max(1, bytes / 2000));
 
-/** Estimated USD cost of one call from what it used. */
+/**
+ * Estimated USD cost of one call from what it used. `cachedInputTokens` is the
+ * part of `inputTokens` OpenAI served from its prompt cache, at the cached rate.
+ */
 export function costUsd(prices, {
-  inputTokens = 0, outputTokens = 0, transcribeSeconds = 0, speechChars = 0,
+  inputTokens = 0, cachedInputTokens = 0, outputTokens = 0, transcribeSeconds = 0, speechChars = 0,
 } = {}) {
-  return (inputTokens * prices.chatInputPerM) / 1e6
+  const cached = Math.min(cachedInputTokens, inputTokens);
+  return ((inputTokens - cached) * prices.chatInputPerM) / 1e6
+    + (cached * (prices.chatCachedInputPerM ?? prices.chatInputPerM)) / 1e6
     + (outputTokens * prices.chatOutputPerM) / 1e6
     + (transcribeSeconds / 60) * prices.transcribePerMin
     + (speechChars / SPEECH_CHARS_PER_MIN) * prices.speechPerMin;
@@ -175,7 +180,9 @@ const budgetMicros = (config) => (config.assistant.userDailyBudgetInr / config.a
 
 /**
  * Refuses a call once the user has spent today's allowance, or the workspace its
- * monthly budget. Checked before the call because its cost is only known after.
+ * monthly budget. Checked before the call because its cost is only known after;
+ * what is left of today's allowance comes back, so a chat turn can stop its
+ * lookups before running past it (chat()'s budgetUsd).
  * ponytail: a call already in flight can overshoot the cap by its own cost (at
  * most one chat turn, as chat is one-at-a-time per user). A pre-authorised
  * reservation would close that gap if it ever matters.
@@ -198,6 +205,7 @@ export async function checkAllowance(config, user, now = new Date()) {
       `You have used today's ₹${config.assistant.userDailyBudgetInr} assistant allowance. It resets at midnight.`,
     );
   }
+  return { remainingUsd: (budgetMicros(config) - (today.costMicros ?? 0)) / 1e6 };
 }
 
 /** The next midnight in the budget's time zone: when today's allowance resets. */

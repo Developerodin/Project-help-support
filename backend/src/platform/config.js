@@ -74,8 +74,8 @@ function readPositiveNumber(env, key, defaultValue) {
  * OpenAI's short-context list prices (USD per 1M tokens), checked 2026-09-24
  * against developers.openai.com/api/docs/pricing. A model not listed here is
  * costed at the priciest one, so the spend cap errs on the safe side.
- * ponytail: input is all charged at the full rate, though cached input is 90%
- * cheaper; subtract input_tokens_details.cached_tokens if the meter reads high.
+ * Cached input (input_tokens_details.cached_tokens) is costed at
+ * ASSISTANT_PRICE_CHAT_CACHED_INPUT_PER_M, a tenth of the input price by default.
  */
 const CHAT_PRICES = {
   'gpt-6-luna': { inputPerM: 0.1, outputPerM: 0.5 },
@@ -266,8 +266,10 @@ export function loadConfig(env = process.env) {
   const ticketNotificationSink = readTicketNotificationSink(env, isProduction);
   const push = readPush(env);
 
-  const chatModel = present(env.OPENAI_CHAT_MODEL) ? env.OPENAI_CHAT_MODEL.trim() : 'gpt-5.6-terra';
+  // Luna: the same 1.05M context as Terra at a twentieth of the input price ($0.10 vs $2 per 1M).
+  const chatModel = present(env.OPENAI_CHAT_MODEL) ? env.OPENAI_CHAT_MODEL.trim() : 'gpt-6-luna';
   const chatPrices = chatPricesFor(chatModel);
+  const chatInputPerM = readPositiveNumber(env, 'ASSISTANT_PRICE_CHAT_INPUT_PER_M', chatPrices.inputPerM);
 
   const sameSite = readRefreshCookieSameSite(env);
   const cookie = {
@@ -338,7 +340,10 @@ export function loadConfig(env = process.env) {
       // USD list prices. Defaults are OpenAI's published prices for the default
       // models; update them when models or prices change.
       prices: {
-        chatInputPerM: readPositiveNumber(env, 'ASSISTANT_PRICE_CHAT_INPUT_PER_M', chatPrices.inputPerM),
+        chatInputPerM,
+        // Input OpenAI served from its prompt cache (the instructions and tools every
+        // round repeats) bills at about a tenth of the input price.
+        chatCachedInputPerM: readPositiveNumber(env, 'ASSISTANT_PRICE_CHAT_CACHED_INPUT_PER_M', chatInputPerM * 0.1),
         chatOutputPerM: readPositiveNumber(env, 'ASSISTANT_PRICE_CHAT_OUTPUT_PER_M', chatPrices.outputPerM),
         transcribePerMin: readPositiveNumber(env, 'ASSISTANT_PRICE_TRANSCRIBE_PER_MIN', 0.006),
         speechPerMin: readPositiveNumber(env, 'ASSISTANT_PRICE_SPEECH_PER_MIN', 0.015),

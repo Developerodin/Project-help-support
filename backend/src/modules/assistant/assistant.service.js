@@ -1,6 +1,7 @@
 import { LANES, STAGES, isExternalUser } from '@pms/shared';
 import { ApiError } from '../../platform/errors.js';
 import logger from '../../platform/logger.js';
+import { costUsd } from './assistant.guard.js';
 import { classifyScope, createResponse, outputText } from './openai.client.js';
 import {
   WHATSAPP_TOOLS, projectRoster, runTool, toolsFor,
@@ -16,6 +17,31 @@ const LOOKUPS = new Set([
   'search_tickets', 'get_ticket', 'get_ticket_discussion', 'recent_comments', 'list_projects', 'list_teams',
   'list_clients', 'search_users', 'get_notification_settings', 'get_analytics', 'create_project_report',
 ]);
+/**
+ * Input tokens one message may use across its lookup rounds before it must
+ * answer with what it has. Every round resends the whole conversation and all
+ * results so far, so a message that keeps looking things up grows fast.
+ */
+const TURN_INPUT_TOKENS = 120_000;
+/** A lookup result from an earlier round is resent as an excerpt of this many characters. */
+const OLD_OUTPUT_CHARS = 1500;
+const OLD_OUTPUT_NOTE = '… [cut after use; look it up again if you need the rest]';
+
+/**
+ * Cuts the results of earlier lookup rounds to an excerpt, in place. The model
+ * has read and acted on them; the newest round's results stay whole. The call
+ * id stays, so each call still has its output.
+ */
+export function shrinkOldOutputs(input) {
+  for (const item of input) {
+    // Already-cut ones end with the note, so they're never cut again; no marker
+    // field on the item, as OpenAI rejects fields it doesn't know.
+    if (item.type === 'function_call_output' && item.output.length > OLD_OUTPUT_CHARS + OLD_OUTPUT_NOTE.length) {
+      item.output = `${item.output.slice(0, OLD_OUTPUT_CHARS)}${OLD_OUTPUT_NOTE}`;
+    }
+  }
+}
+
 /** Earlier replies whose code lines count toward this one's limit. */
 const CODE_LOOKBACK = 3;
 
@@ -156,15 +182,29 @@ ${external ? CLIENT_RULES : TEAM_RULES}${APP_GUIDE}`;
  * With `onStream`, the reply's text is also handed over as it is written:
  * { type: 'delta', text } for more of it, { type: 'reset' } when what was shown
  * turned out to lead into a lookup and is dropped.
- * @returns {{ reply: string, actions: object[], usage: { inputTokens: number, outputTokens: number } }}
+ * `budgetUsd` is what is left of the user's daily allowance (checkAllowance):
+ * lookups stop before they would run past it, or past TURN_INPUT_TOKENS.
+ * @returns {{ reply: string, actions: object[], usage: { inputTokens: number, cachedInputTokens: number, outputTokens: number } }}
  *   usage is summed over every model round, for the spend caps.
  */
 export async function chat(config, user, permissionContext, messages, {
-  mode = 'chat', page = null, now = new Date(), signal, onStream,
+  mode = 'chat', page = null, now = new Date(), signal, onStream, budgetUsd = null,
 } = {}) {
   if (!config.assistant) throw new ApiError(503, 'ASSISTANT_DISABLED', 'The assistant is not configured.');
 
-  const usage = { inputTokens: 0, outputTokens: 0 };
+  const usage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 };
+  /** Adds one call's usage to the turn's, and returns that call's on its own. */
+  const addUsage = (reported) => {
+    const call = {
+      inputTokens: Number(reported?.input_tokens) || 0,
+      cachedInputTokens: Number(reported?.input_tokens_details?.cached_tokens) || 0,
+      outputTokens: Number(reported?.output_tokens) || 0,
+    };
+    usage.inputTokens += call.inputTokens;
+    usage.cachedInputTokens += call.cachedInputTokens;
+    usage.outputTokens += call.outputTokens;
+    return call;
+  };
   const refuse = (stage, reason) => {
     logger.info('assistant: out of scope', { mode, stage, reason });
     return { reply: SCOPE_REFUSAL, actions: [], usage };
@@ -218,6 +258,7 @@ export async function chat(config, user, permissionContext, messages, {
     ? classifyScope(config, latest.content, { previous: lastReply, signal })
       .then((verdict) => {
         usage.inputTokens += verdict.usage.inputTokens;
+        usage.cachedInputTokens += verdict.usage.cachedInputTokens || 0;
         usage.outputTokens += verdict.usage.outputTokens;
         return verdict.inScope;
       })
@@ -270,14 +311,24 @@ export async function chat(config, user, permissionContext, messages, {
     return response;
   };
 
-  for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
+  /**
+   * Whether another lookup round would run past this message's budget: the
+   * token ceiling, or what is left of the user's daily allowance (chat, voice
+   * and WhatsApp all spend the same allowance). Each round resends everything so
+   * far, so the next costs at least what the last did; the answer round needs
+   * room too, hence twice the last round.
+   */
+  const overBudget = (last) => usage.inputTokens + 2 * last.inputTokens > TURN_INPUT_TOKENS
+    || (budgetUsd != null && costUsd(config.assistant.prices, usage) + 2 * costUsd(config.assistant.prices, last) > budgetUsd);
+
+  let rounds = 0;
+  for (; rounds < MAX_TOOL_ROUNDS; rounds += 1) {
     // Sequential on purpose: each round depends on the previous tool results.
     if (signal?.aborted) throw new ApiError(499, 'ASSISTANT_CANCELLED', 'The request was cancelled.');
-    const response = await respond(round, { instructions, input, tools });
-    usage.inputTokens += Number(response.usage?.input_tokens) || 0;
-    usage.outputTokens += Number(response.usage?.output_tokens) || 0;
+    const response = await respond(rounds, { instructions, input, tools });
+    const spent = addUsage(response.usage);
     // Before any tool runs or any reply goes out.
-    if (round === 0 && !(await inScope)) return refuse('classifier', 'off_topic');
+    if (rounds === 0 && !(await inScope)) return refuse('classifier', 'off_topic');
     const calls = (response.output || []).filter((item) => item.type === 'function_call');
     if (!calls.length) return answer(outputText(response));
 
@@ -285,6 +336,8 @@ export async function chat(config, user, permissionContext, messages, {
     if (live.shown) onStream({ type: 'reset' });
     live.written = '';
     live.shown = '';
+    // Earlier rounds' results have been read and acted on; resending them in full every round is most of the cost.
+    shrinkOldOutputs(input);
     input.push(...response.output);
     for (const toolCall of calls) {
       // Sequential on purpose: tools share ctx (project cache, actions).
@@ -295,18 +348,21 @@ export async function chat(config, user, permissionContext, messages, {
       if (!ctx.actions.slice(drafted).every((action) => draftInScope(action, { userText }))) return refuse('draft', toolCall.name);
       input.push({ type: 'function_call_output', call_id: toolCall.call_id, output: JSON.stringify(result) });
     }
+    if (overBudget(spent)) {
+      logger.info('assistant: lookup budget reached', { mode, rounds: rounds + 1, inputTokens: usage.inputTokens });
+      break;
+    }
   }
 
-  // Out of lookups: answer from what was found instead of giving up.
+  // Out of lookups, or out of budget for more: answer from what was found instead of giving up.
   try {
-    const final = await respond(MAX_TOOL_ROUNDS, {
+    const final = await respond(rounds, {
       instructions: `${instructions}\n\nYou have used all your lookups for this message. Answer now from what you found; if something is still missing, say what and ask one short question.`,
       input,
       tools,
       toolChoice: 'none',
     });
-    usage.inputTokens += Number(final.usage?.input_tokens) || 0;
-    usage.outputTokens += Number(final.usage?.output_tokens) || 0;
+    addUsage(final.usage);
     const reply = outputText(final).trim();
     if (reply) return answer(reply);
   } catch (err) {
@@ -353,6 +409,7 @@ export async function summarize(config, messages, { signal } = {}) {
   });
   const usage = {
     inputTokens: Number(response.usage?.input_tokens) || 0,
+    cachedInputTokens: Number(response.usage?.input_tokens_details?.cached_tokens) || 0,
     outputTokens: Number(response.usage?.output_tokens) || 0,
   };
   const lines = outputText(response).trim();

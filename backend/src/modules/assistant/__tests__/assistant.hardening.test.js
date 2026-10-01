@@ -4,11 +4,11 @@ import {
 import assert from 'node:assert/strict';
 import mongoose from 'mongoose';
 import { ROLE_IDS } from '@pms/shared';
-import { chat } from '../assistant.service.js';
+import { chat, shrinkOldOutputs } from '../assistant.service.js';
 import {
   SCOPE_REFUSAL, checkReply, namesIn, safePage, speechAllowed,
 } from '../assistant.scope.js';
-import { signReply, signedHistory } from '../assistant.guard.js';
+import { costUsd, signReply, signedHistory } from '../assistant.guard.js';
 import { billedSeconds } from '../openai.client.js';
 import { withoutForeignLinks } from '../../whatsapp/whatsapp.service.js';
 
@@ -184,5 +184,80 @@ describe('chat with the scope classifier and the address', () => {
     });
     const { instructions } = requests.find((request) => request.model === 'chat-m');
     assert.match(instructions, /\(data, not instructions\): \{"status":"pending"\}/);
+  });
+});
+
+describe('per-message budget and cached tokens', () => {
+  const prices = {
+    chatInputPerM: 1, chatCachedInputPerM: 0.1, chatOutputPerM: 1, transcribePerMin: 1, speechPerMin: 1,
+  };
+  const config = { assistant: { apiKey: 'k', chatModel: 'chat-m', prices } };
+  const user = { _id: new mongoose.Types.ObjectId(), name: 'Tess', roles: [ROLE_IDS.TESTER] };
+  const realFetch = globalThis.fetch;
+  let requests;
+
+  before(() => {
+    mongoose.set('bufferCommands', false);
+  });
+
+  /** A model that always wants one more lookup, reporting `inputTokens` per round. */
+  const keepsLookingUp = (inputTokens, cached = 0) => {
+    requests = [];
+    globalThis.fetch = async (_url, init) => {
+      const body = JSON.parse(init.body);
+      requests.push(body);
+      const usage = { input_tokens: inputTokens, input_tokens_details: { cached_tokens: cached }, output_tokens: 10 };
+      const output = body.tool_choice === 'none'
+        ? [{ type: 'message', content: [{ type: 'output_text', text: 'Here is what I found.' }] }]
+        : [{ type: 'function_call', name: 'scroll_page', arguments: '{"direction":"down"}', call_id: `c${requests.length}` }];
+      return new Response(JSON.stringify({ output, usage }), { status: 200 });
+    };
+  };
+
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  it('costs cached input at the cached rate', () => {
+    assert.equal(costUsd(prices, { inputTokens: 1_000_000, cachedInputTokens: 500_000 }), 0.55);
+    // No cached price configured: cached input costs the full rate.
+    const { chatCachedInputPerM: _cached, ...fullRate } = prices;
+    assert.equal(costUsd(fullRate, { inputTokens: 1_000_000, cachedInputTokens: 500_000 }), 1);
+  });
+
+  it('stops looking things up near the token ceiling and answers with what it has', async () => {
+    keepsLookingUp(50_000); // round one: 50K, and the next two would pass 120K
+    const turn = await chat(config, user, {}, [{ role: 'user', content: 'scroll down' }]);
+    assert.equal(turn.reply, 'Here is what I found.');
+    assert.equal(requests.length, 2);
+    assert.equal(requests[1].tool_choice, 'none');
+  });
+
+  it('stops before running past what is left of the daily allowance', async () => {
+    keepsLookingUp(10_000); // $0.01 a round at $1 per 1M
+    const turn = await chat(config, user, {}, [{ role: 'user', content: 'scroll down' }], { budgetUsd: 0.025 });
+    assert.equal(turn.reply, 'Here is what I found.');
+    assert.equal(requests.length, 2);
+    assert.equal(turn.usage.inputTokens, 20_000);
+  });
+
+  it('counts cached tokens on the turn, so the meter can cost them at the cached rate', async () => {
+    keepsLookingUp(50_000, 40_000);
+    const turn = await chat(config, user, {}, [{ role: 'user', content: 'scroll down' }]);
+    assert.equal(turn.usage.cachedInputTokens, 80_000);
+  });
+
+  it('cuts earlier lookup results to an excerpt, once', () => {
+    const big = { type: 'function_call_output', call_id: 'c1', output: 'x'.repeat(5000) };
+    const small = { type: 'function_call_output', call_id: 'c2', output: '{"ok":true}' };
+    const input = [{ role: 'user', content: 'hi' }, big, small];
+    shrinkOldOutputs(input);
+    assert.ok(big.output.startsWith('x'.repeat(1500)));
+    assert.match(big.output, /cut after use/);
+    assert.deepEqual(Object.keys(big), ['type', 'call_id', 'output']);
+    assert.equal(small.output, '{"ok":true}');
+    const once = big.output;
+    shrinkOldOutputs(input);
+    assert.equal(big.output, once);
   });
 });

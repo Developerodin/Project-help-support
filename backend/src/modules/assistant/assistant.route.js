@@ -152,10 +152,11 @@ export default function assistantRoutes(config) {
       res.on('close', () => { if (!res.writableEnded) cancelled.abort(); });
       // One turn at a time per user, refused once today's allowance is spent.
       const { reply, actions } = await withChatLock(req.user, async () => {
-        await checkAllowance(config, req.user);
+        // What is left of today's allowance caps this turn's lookups too.
+        const { remainingUsd } = await checkAllowance(config, req.user);
         const started = Date.now();
         const turn = await chat(config, req.user, req.permissionContext, messages, {
-          mode, page, signal: cancelled.signal, ...(stream ? { onStream: send } : {}),
+          mode, page, signal: cancelled.signal, budgetUsd: remainingUsd, ...(stream ? { onStream: send } : {}),
         });
         logger.info('assistant: chat timing', { mode, ms: Date.now() - started });
         await recordUsage(config, req.user, turn.usage);

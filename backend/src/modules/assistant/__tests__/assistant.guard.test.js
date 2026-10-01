@@ -143,3 +143,11 @@ test('a new message waits for the previous turn to finish instead of failing str
   assert.equal(await first, 'first');
   assert.equal(await second, 'second ran');
 });
+
+test('the allowance check says how much of today is left, for the turn to budget against', async () => {
+  const may = new Date('2026-05-20T06:30:00Z');
+  const fresh = { _id: new mongoose.Types.ObjectId() };
+  assert.equal((await checkAllowance(config, fresh, may)).remainingUsd, 1);
+  await recordUsage(config, fresh, { inputTokens: 250_000 }, may); // $0.25 at $1 per 1M
+  assert.equal((await checkAllowance(config, fresh, may)).remainingUsd, 0.75);
+});

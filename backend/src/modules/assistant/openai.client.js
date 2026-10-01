@@ -231,6 +231,7 @@ export async function classifyScope(config, text, { previous = '', signal } = {}
   });
   const usage = {
     inputTokens: Number(response.usage?.input_tokens) || 0,
+    cachedInputTokens: Number(response.usage?.input_tokens_details?.cached_tokens) || 0,
     outputTokens: Number(response.usage?.output_tokens) || 0,
   };
   let verdict;

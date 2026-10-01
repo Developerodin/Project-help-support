@@ -318,8 +318,8 @@ async function askLocked(config, session, text, messageId, sentAt) {
   // The same note the app adds for files staged with the paperclip.
   const staged = files.length ? `\n[Files ready to attach: ${namesOf(files).join(', ')}]` : '';
   const messages = [...history, { role: 'user', content: `${text.slice(0, 4000)}${staged}` }];
-  await checkAllowance(config, user);
-  const turn = await chat(config, user, permissionContext, messages, { mode: 'whatsapp' });
+  const { remainingUsd } = await checkAllowance(config, user);
+  const turn = await chat(config, user, permissionContext, messages, { mode: 'whatsapp', budgetUsd: remainingUsd });
   await recordUsage(config, user, turn.usage);
   const drafted = turn.actions.filter((action) => action.type === 'create_ticket' || action.type === 'attach_files').at(-1);
   if (drafted?.type === 'attach_files') {
