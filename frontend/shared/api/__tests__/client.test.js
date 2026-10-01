@@ -234,6 +234,46 @@ describe('session recovery vs outage', () => {
       .toHaveLength(1);
   });
 
+  it('D: after a rate-limited refresh, later 401s wait out the cooldown instead of hammering refresh', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    global.fetch.mockImplementation((url) => Promise.resolve(String(url).endsWith('/auth/refresh')
+      ? jsonResponse(429, { error: { code: 'RATE_LIMITED', message: 'Too many requests' } })
+      : jsonResponse(401, { error: { code: 'UNAUTHENTICATED', message: 'x' } })));
+    const refreshes = () => global.fetch.mock.calls.filter((call) => String(call[0]).endsWith('/auth/refresh')).length;
+
+    await expect(apiFetch('/tickets')).rejects.toMatchObject({ status: 429 });
+    await expect(apiFetch('/notifications')).rejects.toMatchObject({ status: 429 });
+    await expect(apiFetch('/rbac/role-matrix/effective')).rejects.toMatchObject({ status: 429 });
+    expect(refreshes()).toBe(1);
+    expect(onLost).not.toHaveBeenCalled(); // rate limited is not signed out
+
+    now.mockReturnValue(1_000_000 + 61_000); // the minute is up: one more try
+    await expect(apiFetch('/tickets')).rejects.toMatchObject({ status: 429 });
+    expect(refreshes()).toBe(2);
+    now.mockRestore();
+  });
+
+  it('E: a server error backs off from 5s, and signing in clears the cooldown', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(2_000_000);
+    global.fetch.mockImplementation((url) => Promise.resolve(String(url).endsWith('/auth/refresh')
+      ? jsonResponse(503, { error: { code: 'UNAVAILABLE', message: 'down' } })
+      : jsonResponse(401, { error: { code: 'UNAUTHENTICATED', message: 'x' } })));
+    const refreshes = () => global.fetch.mock.calls.filter((call) => String(call[0]).endsWith('/auth/refresh')).length;
+
+    await expect(apiFetch('/tickets')).rejects.toMatchObject({ status: 503 });
+    now.mockReturnValue(2_000_000 + 4_000);
+    await expect(apiFetch('/tickets')).rejects.toMatchObject({ status: 503 });
+    expect(refreshes()).toBe(1);
+    now.mockReturnValue(2_000_000 + 6_000);
+    await expect(apiFetch('/tickets')).rejects.toMatchObject({ status: 503 });
+    expect(refreshes()).toBe(2); // and now it waits 10s
+
+    setAccessToken('signed-in-again');
+    await expect(apiFetch('/tickets')).rejects.toMatchObject({ status: 503 });
+    expect(refreshes()).toBe(3);
+    now.mockRestore();
+  });
+
   it('C: concurrent 401s share exactly one refresh', async () => {
     let releaseRefresh;
     const refreshHeld = new Promise((resolve) => { releaseRefresh = resolve; });

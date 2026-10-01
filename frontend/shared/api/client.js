@@ -66,10 +66,22 @@ let accessToken = null;
 let onSessionLost = null;
 let inFlightRefresh = null;
 let sessionLostEmitted = false;
+/**
+ * After a refresh fails for a reason other than a dead session (rate limited,
+ * server down), every request that 401s would otherwise try again at once:
+ * polls, the realtime stream, each open tab. That kept the refresh limiter
+ * tripped and the session stuck. Until `until`, refreshes fail fast with the
+ * same error instead.
+ */
+const refreshCooldown = { until: 0, error: null, ms: 0 };
+const RATE_LIMITED_COOLDOWN_MS = 60_000;
+const FIRST_COOLDOWN_MS = 5_000;
 
 export const setAccessToken = (token) => {
   accessToken = token;
   if (token) sessionLostEmitted = false;
+  // A sign-in, sign-out or fresh session starts over.
+  Object.assign(refreshCooldown, { until: 0, error: null, ms: 0 });
 };
 export const getAccessToken = () => accessToken;
 export const setSessionLostHandler = (fn) => {
@@ -156,6 +168,7 @@ async function rawFetch(path, { method = 'GET', body, formData, signal, redirect
  * recurse into another refresh.
  */
 async function refreshSession() {
+  if (Date.now() < refreshCooldown.until) throw refreshCooldown.error;
   if (!inFlightRefresh) {
     inFlightRefresh = (async () => {
       let response = await rawFetch('/auth/refresh', { method: 'POST' });
@@ -173,8 +186,14 @@ async function refreshSession() {
         setAccessToken(data.accessToken);
         return data;
       }
-      if (isTransientApiError(error)) throw error;
       if (error.status === 401 || isSessionInvalidError(error)) return null;
+      // Rate limited: the window lasts minutes, so wait a full minute. Otherwise
+      // back off from 5s, doubling to a minute while the failures go on.
+      refreshCooldown.ms = error.status === 429
+        ? RATE_LIMITED_COOLDOWN_MS
+        : Math.min(RATE_LIMITED_COOLDOWN_MS, refreshCooldown.ms ? refreshCooldown.ms * 2 : FIRST_COOLDOWN_MS);
+      refreshCooldown.until = Date.now() + refreshCooldown.ms;
+      refreshCooldown.error = error;
       throw error;
     })().finally(() => {
       inFlightRefresh = null;
