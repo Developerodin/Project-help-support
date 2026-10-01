@@ -5610,6 +5610,9 @@ body:has(.voice-dock) .page{ padding-bottom:120px; }
 .assistant-dropzone .file-drop-hint{ font-size:0.6875rem; }
 .voice-draft-files{ display:flex; flex-direction:column; gap:6px; }
 
+/* Copy and "Add to WEB-12" under a reply. */
+.assistant-msg-tools{ display:flex; flex-wrap:wrap; gap:2px; }
+
 /* Full-screen voice: the conversation so far, folded away until asked for. */
 .voice-transcript{ width:min(640px, 100%); text-align:left; font-size:0.875rem; }
 .voice-transcript summary{

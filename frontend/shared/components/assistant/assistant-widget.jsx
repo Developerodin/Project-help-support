@@ -7,7 +7,7 @@ import { flushSync } from 'react-dom';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
-  CATEGORIES, ENVIRONMENTS, PRIORITIES, SEVERITIES, speechLanguage, stageLabel,
+  CATEGORIES, ENVIRONMENTS, PRIORITIES, SEVERITIES, isExternalUser, speechLanguage, stageLabel,
 } from '@pms/shared';
 import Icon from '../icons.jsx';
 import {
@@ -1983,6 +1983,29 @@ export default function AssistantWidget() {
     inputRef.current?.focus();
   };
 
+  // The ticket a reply can be added to: the open one, unless its chip was dismissed.
+  const pinTicket = openTicket && openTicket !== ignoredTicket ? openTicket : null;
+
+  /**
+   * Turns a reply into a comment draft on the open ticket, under that reply, to
+   * confirm like any other card. Staff get an internal note; clients can only
+   * post public comments.
+   */
+  const pinReply = (message) => {
+    const draft = {
+      id: `pin-${crypto.randomUUID()}`,
+      type: 'comment',
+      ticketId: pinTicket,
+      content: message.content,
+      internal: !isExternalUser(user),
+      status: 'pending',
+      pinned: true,
+    };
+    setMessages((prev) => prev.map((entry) => (entry === message
+      ? { ...entry, actions: [...(entry.actions || []), draft] }
+      : entry)));
+  };
+
   /** Reopens an earlier chat; the one on screen takes its place in the list. */
   const openRecentChat = (id) => {
     const chat = takeRecentChat(chatOwner.current, id);
@@ -2249,7 +2272,22 @@ export default function AssistantWidget() {
             // Index keys are fine: the log only ever appends.
             <div key={index} className={`assistant-msg is-${message.role}${index >= enterFrom ? ' is-new' : ''}`}>
               <div className="assistant-bubble"><MessageText text={message.content} /></div>
-              {message.role === 'assistant' && message.sig ? <CopyButton text={message.content} /> : null}
+              {message.role === 'assistant' && message.sig ? (
+                <div className="assistant-msg-tools">
+                  <CopyButton text={message.content} />
+                  {pinTicket && !message.actions?.some((action) => action.pinned && action.ticketId === pinTicket) ? (
+                    <button
+                      type="button"
+                      className="assistant-msg-copy"
+                      onClick={() => pinReply(message)}
+                      title={`Draft this reply as ${isExternalUser(user) ? 'a comment' : 'an internal note'} on ${pinTicket}; you confirm it before it posts`}
+                    >
+                      <Icon name="msg" size={13} aria-hidden="true" />
+                      <span>Add to {pinTicket}</span>
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
               {message.attached?.length ? (
                 <p className="assistant-msg-files">
                   <Icon name="clip" size={12} aria-hidden="true" />

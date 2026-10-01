@@ -1222,6 +1222,33 @@ describe('ticket context chip', () => {
 
   const pageSent = () => sendAssistantMessage.mock.calls.at(-1)[1].page;
 
+  it('adds a reply to the open ticket as an internal note draft, posted only on confirm', async () => {
+    addComment.mockReset();
+    window.history.replaceState(null, '', '/tickets?ticket=WEB-12');
+    sendAssistantMessage.mockResolvedValue({ reply: 'Login fails on Safari only.', actions: [], sig: 'b'.repeat(64) });
+    render(<AssistantWidget />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Open assistant' }));
+    say('Summarise this ticket');
+    fireEvent.click(await screen.findByRole('button', { name: 'Add to WEB-12' }));
+
+    expect(screen.getByText('Internal note on WEB-12')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Add to WEB-12' })).toBeNull(); // once per reply
+    expect(addComment).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await waitFor(() => expect(addComment).toHaveBeenCalledWith('WEB-12', expect.objectContaining({
+      content: 'Login fails on Safari only.', internal: true,
+    })));
+  });
+
+  it('offers no "Add to" without an open ticket', async () => {
+    sendAssistantMessage.mockResolvedValue({ reply: 'Nothing is overdue.', actions: [], sig: 'b'.repeat(64) });
+    render(<AssistantWidget />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Open assistant' }));
+    say('What is overdue?');
+    await screen.findByText('Nothing is overdue.', { selector: '.assistant-bubble p' });
+    expect(screen.queryByRole('button', { name: /^Add to/ })).toBeNull();
+  });
+
   it('shows the open ticket, and dismissing it stops sending that ticket', async () => {
     window.history.replaceState(null, '', '/tickets?view=list&ticket=WEB-12&tab=details');
     render(<AssistantWidget />);
