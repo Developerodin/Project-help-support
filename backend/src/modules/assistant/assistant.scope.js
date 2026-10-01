@@ -406,6 +406,26 @@ function looksLikeVerse(text) {
   return stanzaBreaks >= 2 && average >= 10 && average <= 70 && plain;
 }
 
+/** The longest chat reply, with or without a lookup behind it (the widget stores messages to the same cap). */
+export const REPLY_MAX_CHARS = 6000;
+
+const CUT_NOTE = '\n\n(That\'s as much as fits in one reply. Ask for a narrower list, like one project, stage or person.)';
+
+/**
+ * A reply that looked data up but ran past REPLY_MAX_CHARS, cut at the last
+ * paragraph (or line) that fits, with a note saying so. A long summary of many
+ * tickets is still app work, so it is trimmed rather than refused like an essay.
+ */
+export function capReply(text) {
+  if (text.length <= REPLY_MAX_CHARS) return text;
+  const room = text.slice(0, REPLY_MAX_CHARS - CUT_NOTE.length);
+  const paragraph = room.lastIndexOf('\n\n');
+  const line = room.lastIndexOf('\n');
+  // Not so early that most of the room is wasted; a single huge block is cut where it reaches.
+  const at = paragraph > room.length / 2 ? paragraph : line > room.length / 2 ? line : room.length;
+  return `${room.slice(0, at).trimEnd()}${CUT_NOTE}`;
+}
+
 /**
  * Limits for a chat reply (short by design) and for the text the model itself
  * wrote into a draft (a ticket description can be longer; the user's own pasted
@@ -413,7 +433,7 @@ function looksLikeVerse(text) {
  */
 const LIMITS = {
   reply: {
-    codeLines: 12, appLines: 8, proseParagraphs: 3, proseMin: 220, essayChars: 1500, singleBlock: 1200, maxChars: 6000,
+    codeLines: 12, appLines: 8, proseParagraphs: 3, proseMin: 220, essayChars: 1500, singleBlock: 1200, maxChars: REPLY_MAX_CHARS,
   },
   draft: {
     codeLines: 15, appLines: 8, proseParagraphs: 4, proseMin: 300, essayChars: 1800, singleBlock: 1800, maxChars: Infinity,

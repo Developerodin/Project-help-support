@@ -9,7 +9,7 @@ import {
 } from '../../../test/test-harness.js';
 import { createApp } from '../../../app.js';
 import { chat } from '../assistant.service.js';
-import { SCOPE_REFUSAL } from '../assistant.scope.js';
+import { REPLY_MAX_CHARS, SCOPE_REFUSAL, capReply } from '../assistant.scope.js';
 import { createResponse } from '../openai.client.js';
 
 /*
@@ -153,6 +153,36 @@ describe('streamed replies', () => {
       const shown = events.map((event) => event.text).join('');
       assert.ok(shown.split('\n').filter(Boolean).length <= 12, 'never more code than one reply may carry');
       assert.equal(turn.reply, SCOPE_REFUSAL);
+    });
+  });
+
+  describe('reply length cap', () => {
+    const paragraphs = (count) => Array.from({ length: count }, (_, i) => `WEB-${i + 1} is overdue, owned by Priya, due 2026-09-${String((i % 28) + 1).padStart(2, '0')}.`).join('\n\n');
+    const NOTE = '\n\n(That\'s as much as fits in one reply.';
+
+    it('capReply leaves a short reply alone and cuts a long one at a paragraph, with a note', () => {
+      assert.equal(capReply('WEB-1 is done.'), 'WEB-1 is done.');
+      const long = paragraphs(300);
+      const cut = capReply(long);
+      assert.ok(cut.length <= REPLY_MAX_CHARS);
+      const kept = cut.slice(0, cut.indexOf(NOTE));
+      assert.ok(kept.endsWith('.'), 'cut after a whole paragraph');
+      assert.ok(long.startsWith(kept));
+    });
+
+    it('trims a long reply after a lookup instead of refusing it', async () => {
+      replies.push(
+        new Response(JSON.stringify({ output: [{ type: 'function_call', name: 'list_projects', arguments: '{}', call_id: 'c1' }], usage: {} })),
+        new Response(JSON.stringify({ output_text: paragraphs(300), output: [], usage: {} })),
+      );
+      const turn = await ask('list every overdue ticket');
+      assert.ok(turn.reply.length <= REPLY_MAX_CHARS);
+      assert.match(turn.reply, /Ask for a narrower list/);
+    });
+
+    it('still refuses an over-long reply that looked nothing up', async () => {
+      replies.push(new Response(JSON.stringify({ output_text: paragraphs(300), output: [], usage: {} })));
+      assert.equal((await ask('what is overdue?')).reply, SCOPE_REFUSAL);
     });
   });
 

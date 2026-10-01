@@ -7,6 +7,12 @@
 
 const PREFIX = 'assistant.chat:';
 const KEPT_MESSAGES = 40;
+/**
+ * The longest message kept: the server's reply cap (REPLY_MAX_CHARS in
+ * assistant.scope.js); typed messages stop at 4000. A reply's signature covers
+ * only its first 4000 characters, so a trimmed one still verifies.
+ */
+const MAX_MESSAGE_CHARS = 6000;
 /** Earlier chats set aside by New chat, newest first, kept like the current one. */
 const RECENT_PREFIX = 'assistant.recent:';
 const KEPT_CHATS = 5;
@@ -58,9 +64,14 @@ export function saveChat(userId, messages) {
 }
 
 /** A chat as stored: the newest messages, without a picked logo file (it can't be stored). */
-const storable = (messages) => messages.slice(-KEPT_MESSAGES).map((message) => (message.actions
-  ? { ...message, actions: message.actions.map(({ logoFile: _logoFile, ...action }) => action) }
-  : message));
+const storable = (messages) => messages.slice(-KEPT_MESSAGES).map((message) => {
+  const kept = typeof message.content === 'string' && message.content.length > MAX_MESSAGE_CHARS
+    ? { ...message, content: message.content.slice(0, MAX_MESSAGE_CHARS) }
+    : message;
+  return kept.actions
+    ? { ...kept, actions: kept.actions.map(({ logoFile: _logoFile, ...action }) => action) }
+    : kept;
+});
 
 /** This user's earlier chats in this tab, newest first: { id, title, at, messages }. */
 export function readRecentChats(userId) {

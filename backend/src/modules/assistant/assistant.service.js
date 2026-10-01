@@ -6,7 +6,7 @@ import {
   WHATSAPP_TOOLS, projectRoster, runTool, toolsFor,
 } from './assistant.tools.js';
 import {
-  SCOPE_REFUSAL, checkReply, checkScope, codeLineCount, draftInScope, sanitizeHistory,
+  REPLY_MAX_CHARS, SCOPE_REFUSAL, capReply, checkReply, checkScope, codeLineCount, draftInScope, sanitizeHistory,
 } from './assistant.scope.js';
 
 /** Enough for a multi-step lookup; stops a model that keeps calling tools. */
@@ -207,7 +207,8 @@ export async function chat(config, user, permissionContext, messages, {
   const answer = (text) => {
     const reply = text.trim();
     const verdict = checkReply(reply, { looked, priorCode });
-    return verdict.allowed ? { reply, actions: ctx.actions, usage } : refuse('output', verdict.reason);
+    // Without a lookup an over-long reply is refused (an essay); after one it is trimmed to the same cap.
+    return verdict.allowed ? { reply: capReply(reply), actions: ctx.actions, usage } : refuse('output', verdict.reason);
   };
   // The phrase lists miss paraphrases, other languages and encodings; a small
   // model judges the message too, alongside the first round so it adds no wait.
@@ -238,7 +239,8 @@ export async function chat(config, user, permissionContext, messages, {
   };
   const show = () => {
     if (!onStream || live.held || !live.cleared || live.written === live.shown) return;
-    if (!checkReply(live.written, { looked, priorCode }).allowed) {
+    // Never more than the finished reply could be: within the reply checks and the length cap.
+    if (live.written.length > REPLY_MAX_CHARS || !checkReply(live.written, { looked, priorCode }).allowed) {
       live.held = true;
       return;
     }

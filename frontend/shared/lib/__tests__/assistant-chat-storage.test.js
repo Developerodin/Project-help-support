@@ -44,6 +44,14 @@ describe('assistant chat storage', () => {
     expect(readRecentChats('u2')).toEqual([]);
   });
 
+  it('keeps each message to the reply cap, in the current chat and in earlier ones', () => {
+    const long = 'x'.repeat(9000);
+    saveChat('u1', [{ role: 'user', content: 'Overdue?' }, { role: 'assistant', content: long, sig: 's' }]);
+    expect(readSavedChat('u1')[1]).toEqual({ role: 'assistant', content: 'x'.repeat(6000), sig: 's' });
+    archiveChat('u1', [{ role: 'user', content: 'Overdue?' }, { role: 'assistant', content: long }]);
+    expect(readRecentChats('u1')[0].messages[1].content).toHaveLength(6000);
+  });
+
   it('does not keep a chat with no question in it', () => {
     archiveChat('u1', [{ role: 'assistant', content: 'Cancelled.' }]);
     expect(readRecentChats('u1')).toEqual([]);
