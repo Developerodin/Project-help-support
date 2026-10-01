@@ -5630,3 +5630,19 @@ body:has(.voice-dock) .page{ padding-bottom:120px; }
 .voice-transcript li p{ margin:2px 0 0; line-height:1.5; color:var(--ink); overflow-wrap:anywhere; }
 .voice-transcript li.is-user p{ color:var(--ink-2); }
 .voice-transcript-who{ font-size:0.6875rem; font-weight:600; letter-spacing:0.055em; text-transform:uppercase; color:var(--ink-3); }
+
+/* Empty chat: earlier chats in this tab, one tap to reopen. */
+.assistant-recent{ margin-top:18px; }
+.assistant-recent-head{ margin:0 0 6px; font-size:0.6875rem; font-weight:600; letter-spacing:0.055em; text-transform:uppercase; color:var(--ink-3); }
+.assistant-recent ul{ margin:0; padding:0; list-style:none; border-top:1px solid var(--rule-soft); }
+.assistant-recent li{ border-bottom:1px solid var(--rule-soft); }
+.assistant-recent button{
+  display:flex; align-items:center; gap:8px; width:100%; min-height:36px; padding:6px 4px;
+  border:0; background:none; font:inherit; font-size:0.8125rem; color:var(--ink); text-align:left; cursor:pointer;
+}
+.assistant-recent button:hover{ background:var(--panel); }
+.assistant-recent button:focus-visible{ outline:2px solid var(--sig); outline-offset:-2px; }
+.assistant-recent button svg{ flex:none; color:var(--ink-3); }
+.assistant-recent-title{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.assistant-recent-time{ flex:none; font-family:var(--mono); font-size:0.6875rem; color:var(--ink-3); }
+.assistant-panel.is-sheet .assistant-recent button{ min-height:44px; }

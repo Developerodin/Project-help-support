@@ -2131,6 +2131,8 @@ export default function AssistantWidget() {
     );
   }
 
+  // This tab's earlier chats, for the empty state and the menu.
+  const recentChats = readRecentChats(chatOwner.current);
   const activity = recording ? 'Listening…'
     : transcribing ? 'Transcribing…'
       : busy ? 'Thinking…'
@@ -2238,7 +2240,7 @@ export default function AssistantWidget() {
                 icon: shownSize === 'dock' ? 'float' : 'panel-right',
                 onSelect: () => changeSize(shownSize === 'dock' ? 'float' : 'dock'),
               }] : []),
-              ...recentMenuItems(readRecentChats(chatOwner.current), openRecentChat, busy),
+              ...recentMenuItems(recentChats, openRecentChat, busy),
             ]}
             note="Ctrl+J opens and closes the chat"
           />
@@ -2266,6 +2268,25 @@ export default function AssistantWidget() {
                   </button>
                 ))}
               </div>
+              {/* Earlier chats in this tab, where a fresh chat would otherwise hide them in the menu. */}
+              {recentChats.length ? (
+                <nav className="assistant-recent" aria-label="Recent chats">
+                  <p className="assistant-recent-head">Recent chats</p>
+                  <ul>
+                    {recentChats.map((chat) => (
+                      <li key={chat.id}>
+                        <button type="button" onClick={() => openRecentChat(chat.id)}>
+                          <Icon name="chat" size={14} aria-hidden="true" />
+                          <span className="assistant-recent-title">{chat.title}</span>
+                          <span className="assistant-recent-time">
+                            {new Date(chat.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </nav>
+              ) : null}
             </div>
           ) : null}
           {messages.map((message, index) => (

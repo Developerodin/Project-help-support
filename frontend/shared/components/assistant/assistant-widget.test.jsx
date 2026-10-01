@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StrictMode } from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 const getAssistantStatus = vi.fn();
 const sendAssistantMessage = vi.fn();
@@ -832,6 +832,13 @@ describe('AssistantWidget', () => {
       expect(screen.getByText('Two tickets are overdue.', { selector: '.assistant-bubble p' })).toBeTruthy();
       fireEvent.click(screen.getByRole('button', { name: 'More options' }));
       expect(screen.queryByRole('menuitem', { name: /What is overdue\?/ })).toBeNull(); // it is the open chat again
+      // A fresh chat lists it in the empty state too, not only in the menu.
+      fireEvent.keyDown(screen.getByRole('menuitem', { name: 'New chat' }), { key: 'Escape' });
+      fireEvent.click(screen.getByRole('button', { name: 'More options' }));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'New chat' }));
+      const recent = screen.getByRole('navigation', { name: 'Recent chats' });
+      fireEvent.click(within(recent).getByRole('button', { name: /What is overdue\?/ }));
+      expect(screen.getByText('Two tickets are overdue.', { selector: '.assistant-bubble p' })).toBeTruthy();
     });
 
     const openMenu = async () => {
