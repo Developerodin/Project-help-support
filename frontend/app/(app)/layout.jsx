@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { AuthProvider, useAuth } from '@/shared/contexts/auth-context.jsx';
 import { ProjectProvider, useProject } from '@/shared/contexts/project-context.jsx';
 import { AuthBootGate, AuthGuard } from '@/shared/components/auth/auth-guard.jsx';
@@ -147,7 +147,7 @@ function AppShell({ children }) {
         <div className="page">
           <ImpersonationBanner />
           <ExternalWorkspaceNotice />
-          {children}
+          <Fragment key="page">{children}</Fragment>
         </div>
       </SidebarInset>
     </SidebarProvider>
